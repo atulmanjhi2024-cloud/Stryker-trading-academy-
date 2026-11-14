@@ -9,8 +9,8 @@
 // every hash and signature with the SDK's own output (tools/fixtures/hl-trade/vectors.json).
 // Depends on: assets/vendor/noble-1 (secp256k1 3.2.0 + keccak from noble-hashes 2.0.1, MIT, unmodified).
 // Education only. Not financial advice.
-import { keccak_256 } from './vendor/noble-1/sha3.js?v=995';
-import * as secp from './vendor/noble-1/secp256k1.js?v=995';
+import { keccak_256 } from './vendor/noble-1/sha3.js?v=996';
+import * as secp from './vendor/noble-1/secp256k1.js?v=996';
 
 // ---- CONFIG (the Owner edits these; nothing here is a secret) -------------------------------------------------------------
 export const CONFIG = {

@@ -22,9 +22,9 @@
 // and shared-layout links all get the dot in every cell. The word "delayed" is allowed
 // here (Owner asked for it); the GEX wording ban is GEX-only.
 
-import { rtOnChange, isRealtimeAdmin, rtConfirmed, rtKnown } from './rt-access.js?v=1005';
-import { hubCovers } from './live-source.js?v=1005';
-import { labelFor } from './byo-core.js?v=1005';   // member's own connected source (Connect your own data)
+import { rtOnChange, isRealtimeAdmin, rtConfirmed, rtKnown } from './rt-access.js?v=1006';
+import { hubCovers } from './live-source.js?v=1006';
+import { labelFor } from './byo-core.js?v=1006';   // member's own connected source (Connect your own data)
 
 const H = 3600;
 const LAG_TTL_MS = 60000;        // re-measure each futures root at most once a minute

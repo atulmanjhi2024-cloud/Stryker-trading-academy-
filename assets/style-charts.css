@@ -598,13 +598,6 @@ tbody tr:hover{ background:var(--bg-3); }
 @keyframes gmBreath{ 0%,100%{ opacity:1; } 50%{ opacity:.75; } }
 .gm-icon-wrap{ position:relative; flex-shrink:0; display:flex; }
 .gm-icon-wrap .icon-btn{ position:relative; }
-.gm-live-dot{
-  position:absolute; top:50%; left:50%;
-  width:6px; height:6px; margin:-3px 0 0 -3px;
-  border-radius:50%; background:#ff2418;
-  pointer-events:none;
-  animation:gmLiveFlash 0.85s ease-in-out infinite;
-}
 @keyframes gmLiveFlash{
   0%   { opacity:1;   background:#ff5a4d;
          box-shadow:0 0 5px rgba(255,36,24,1), 0 0 11px rgba(255,36,24,.85),
@@ -619,10 +612,6 @@ tbody tr:hover{ background:var(--bg-3); }
          box-shadow:0 0 5px rgba(255,36,24,1), 0 0 11px rgba(255,36,24,.85),
                     0 0 20px rgba(255,36,24,.45); }
 }
-@media (prefers-reduced-motion:reduce){.gm-live-dot{
-    animation:none; opacity:1; background:#ff5a4d;
-    box-shadow:0 0 5px rgba(255,36,24,1), 0 0 11px rgba(255,36,24,.7);
-  }}
 @media (min-width:901px){html[data-device="mobile"] .dash-shell{
     grid-template-columns:1fr; min-height:100vh;
   }
@@ -3176,7 +3165,6 @@ html.appnav-sheet-open, html.appnav-sheet-open body{ overflow:hidden; }}
 :root[data-theme="light"] .appnav-sheet{ box-shadow:0 -12px 36px rgba(0,0,0,.18); }
 :root[data-theme="light"] .appnav-new.show{ box-shadow:0 0 0 2px #fff, 0 0 8px rgba(3,201,136,.6); }
 @media (prefers-reduced-motion: reduce){.appnav-sheet, .appnav-scrim{ transition:none; }}
-.charts-page .gm-live-dot{ animation:none; background:#ff3b2f; box-shadow:0 0 5px rgba(255,36,24,.9), 0 0 10px rgba(255,36,24,.5); }
 .charts-page .mclock-dot::after{ animation:none; display:none; }
 .pr{ display:flex; flex-direction:column; gap:10px; min-width:0; color:var(--ink-1); font-size:13px; }
 .pr *{ box-sizing:border-box; }

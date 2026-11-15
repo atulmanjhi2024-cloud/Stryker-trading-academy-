@@ -15265,7 +15265,7 @@
    ],
    "notes": [
     "It describes resting orders and prints. It does not predict anything and has no order buttons.",
-    "Futures depth for this tool is limited to admins for now; crypto works for Pro members.",
+    "Futures depth for this tool is limited for now; crypto works for every member.",
     "Contrast and size filters change only how the map looks, not the data."
    ],
    "explain": {
@@ -15278,7 +15278,7 @@
     ],
     "limits": [
      "It describes resting orders and prints. It does not predict anything.",
-     "Futures depth for this tool is limited for now; crypto works for Pro members."
+     "Futures depth for this tool is limited for now; crypto works for every member."
     ]
    },
    "changelog": {
@@ -15842,7 +15842,7 @@
     "Pair it with Big Trades (L2) or Wall Events (L2) for what traded at those levels."
    ],
    "notes": [
-    "Needs the full order book (Data feed L2), which is part of Pro. Works on NQ, ES, YM, RTY, CL and GC futures (micros use their mini's book) and on crypto order books.",
+    "Needs the full order book (Data feed L2); the tool is free, the live futures order book is the paid data feed (10 minutes delayed without it). Works on NQ, ES, YM, RTY, CL and GC futures (micros use their mini's book) and on crypto order books.",
     "The chart shows when the book was last updated (for example 'updated 2s ago').",
     "Micro contracts show their mini contract's book."
    ],
@@ -16284,7 +16284,7 @@
     "Use the wall size label to compare levels."
    ],
    "notes": [
-    "Needs the full order book (Data feed L2), which is part of Pro. Works on NQ, ES, YM, RTY, CL and GC futures (micros use their mini's book) and on crypto order books.",
+    "Needs the full order book (Data feed L2); the tool is free, the live futures order book is the paid data feed (10 minutes delayed without it). Works on NQ, ES, YM, RTY, CL and GC futures (micros use their mini's book) and on crypto order books.",
     "A wall is resting interest at one moment; it can be pulled at any time."
    ],
    "explain": {
@@ -16505,7 +16505,7 @@
     "Watch how imbalance changes as price approaches a level."
    ],
    "notes": [
-    "Needs the full order book (Data feed L2), which is part of Pro. Works on NQ, ES, YM, RTY, CL and GC futures (micros use their mini's book) and on crypto order books.",
+    "Needs the full order book (Data feed L2); the tool is free, the live futures order book is the paid data feed (10 minutes delayed without it). Works on NQ, ES, YM, RTY, CL and GC futures (micros use their mini's book) and on crypto order books.",
     "Resting size can be pulled at any time, so imbalance can flip quickly.",
     "It shows the book, not trades; pair it with Delta for what traded."
    ],
@@ -16593,7 +16593,7 @@
     "Hover a bubble to read its size."
    ],
    "notes": [
-    "No longer in the Indicators window: futures order flow is now the (L2) tools, part of Pro. A saved chart that still holds this one is switched to Big Trades (L2) automatically.",
+    "No longer in the Indicators window: futures order flow is now the (L2) tools, which are free. A saved chart that still holds this one is switched to Big Trades (L2) automatically.",
     "Joining fills into one order is an estimate based on timing and price.",
     "Futures only (NQ, ES, YM, RTY, CL, GC and their micros)."
    ],
@@ -16788,7 +16788,7 @@
     "Compare delta on bars that test a level."
    ],
    "notes": [
-    "No longer in the Indicators window: futures order flow is now the (L2) tools, part of Pro. A saved chart that still holds this one is switched to Delta (L2) automatically."
+    "No longer in the Indicators window: futures order flow is now the (L2) tools, which are free. A saved chart that still holds this one is switched to Delta (L2) automatically."
    ],
    "explain": null,
    "changelog": {
@@ -16850,7 +16850,7 @@
     "Watch the slope around key levels."
    ],
    "notes": [
-    "No longer in the Indicators window: futures order flow is now the (L2) tools, part of Pro. A saved chart that still holds this one is switched to Cumulative Delta (L2) automatically.",
+    "No longer in the Indicators window: futures order flow is now the (L2) tools, which are free. A saved chart that still holds this one is switched to Cumulative Delta (L2) automatically.",
     "The total depends on the reset point; a different reset gives different numbers."
    ],
    "explain": null,
@@ -16932,7 +16932,7 @@
     "Use the summary box for the last few minutes of net flow."
    ],
    "notes": [
-    "No longer in the Indicators window: futures order flow is now the (L2) tools, part of Pro. A saved chart that still holds this one is switched to Delta (L2) automatically.",
+    "No longer in the Indicators window: futures order flow is now the (L2) tools, which are free. A saved chart that still holds this one is switched to Delta (L2) automatically.",
     "No data means a plain note; nothing is estimated from candles."
    ],
    "explain": null,
@@ -17068,7 +17068,7 @@
     "Switch to the candle style to follow the session total."
    ],
    "notes": [
-    "No longer in the Indicators window: futures order flow is now the (L2) tools, part of Pro. A saved chart that still holds this one is switched to Delta (L2) automatically.",
+    "No longer in the Indicators window: futures order flow is now the (L2) tools, which are free. A saved chart that still holds this one is switched to Delta (L2) automatically.",
     "Divergence marks describe what already happened; they are not signals."
    ],
    "explain": null,
@@ -17160,7 +17160,7 @@
     "Compare fast periods with what price did."
    ],
    "notes": [
-    "Needs the full order book (Data feed L2), which is part of Pro. Works on NQ, ES, YM, RTY, CL and GC futures (micros use their mini's book) and on crypto order books.",
+    "Needs the full order book (Data feed L2); the tool is free, the live futures order book is the paid data feed (10 minutes delayed without it). Works on NQ, ES, YM, RTY, CL and GC futures (micros use their mini's book) and on crypto order books.",
     "Calm, normal and fast are relative to the current session, not fixed numbers."
    ],
    "explain": {
@@ -17261,7 +17261,7 @@
     "Compare the change since the session start with the session's direction."
    ],
    "notes": [
-    "Needs the full order book (Data feed L2), which is part of Pro. Works on NQ, ES, YM, RTY, CL and GC futures (micros use their mini's book) and on crypto order books.",
+    "Needs the full order book (Data feed L2); the tool is free, the live futures order book is the paid data feed (10 minutes delayed without it). Works on NQ, ES, YM, RTY, CL and GC futures (micros use their mini's book) and on crypto order books.",
     "Resting size can be pulled at any time."
    ],
    "explain": {
@@ -17347,7 +17347,7 @@
     "Combine it with Absorption to compare refills with price not moving."
    ],
    "notes": [
-    "Needs the full order book (Data feed L2), which is part of Pro. Works on NQ, ES, YM, RTY, CL and GC futures (micros use their mini's book) and on crypto order books.",
+    "Needs the full order book (Data feed L2); the tool is free, the live futures order book is the paid data feed (10 minutes delayed without it). Works on NQ, ES, YM, RTY, CL and GC futures (micros use their mini's book) and on crypto order books.",
     "A refill can come from many different orders; it is a hint, not proof of one large order."
    ],
    "explain": {
@@ -17442,7 +17442,7 @@
     "Use it as background context with other order-flow tools."
    ],
    "notes": [
-    "Needs the full order book (Data feed L2), which is part of Pro. Works on NQ, ES, YM, RTY, CL and GC futures (micros use their mini's book) and on crypto order books.",
+    "Needs the full order book (Data feed L2); the tool is free, the live futures order book is the paid data feed (10 minutes delayed without it). Works on NQ, ES, YM, RTY, CL and GC futures (micros use their mini's book) and on crypto order books.",
     "Tight, normal and wide are relative to the current session."
    ],
    "explain": {
@@ -17537,7 +17537,7 @@
     "Use the age to tell new orders from ones that have rested a long time."
    ],
    "notes": [
-    "Needs the full order book (Data feed L2), which is part of Pro. Works on NQ, ES, YM, RTY, CL and GC futures (micros use their mini's book) and on crypto order books.",
+    "Needs the full order book (Data feed L2); the tool is free, the live futures order book is the paid data feed (10 minutes delayed without it). Works on NQ, ES, YM, RTY, CL and GC futures (micros use their mini's book) and on crypto order books.",
     "Resting orders can be pulled at any time."
    ],
    "explain": {
@@ -17622,7 +17622,7 @@
     "Turn off any of the three events to focus on one."
    ],
    "notes": [
-    "Needs the full order book (Data feed L2), which is part of Pro. Works on NQ, ES, YM, RTY, CL and GC futures (micros use their mini's book) and on crypto order books.",
+    "Needs the full order book (Data feed L2); the tool is free, the live futures order book is the paid data feed (10 minutes delayed without it). Works on NQ, ES, YM, RTY, CL and GC futures (micros use their mini's book) and on crypto order books.",
     "These are hints from trades and book changes; the tool cannot see hidden orders directly."
    ],
    "explain": {
@@ -17718,7 +17718,7 @@
     "Use it on top of a DOM heatmap so the markers sit on the bands."
    ],
    "notes": [
-    "Needs the full order book (Data feed L2), which is part of Pro. Works on NQ, ES, YM, RTY, CL and GC futures (micros use their mini's book) and on crypto order books.",
+    "Needs the full order book (Data feed L2); the tool is free, the live futures order book is the paid data feed (10 minutes delayed without it). Works on NQ, ES, YM, RTY, CL and GC futures (micros use their mini's book) and on crypto order books.",
     "Pulled versus eaten is worked out from trades at the price; it is an estimate."
    ],
    "explain": {
@@ -17881,7 +17881,7 @@
     "Some traders watch bars with strong buying but the ask side still growing."
    ],
    "notes": [
-    "Needs the full order book (Data feed L2), which is part of Pro. Works on NQ, ES, YM, RTY, CL and GC futures (micros use their mini's book) and on crypto order books."
+    "Needs the full order book (Data feed L2); the tool is free, the live futures order book is the paid data feed (10 minutes delayed without it). Works on NQ, ES, YM, RTY, CL and GC futures (micros use their mini's book) and on crypto order books."
    ],
    "explain": {
     "shows": [
@@ -17971,7 +17971,7 @@
     "Watch the slope at key levels."
    ],
    "notes": [
-    "Needs the full order book (Data feed L2), which is part of Pro. Works on NQ, ES, YM, RTY, CL and GC futures (micros use their mini's book) and on crypto order books.",
+    "Needs the full order book (Data feed L2); the tool is free, the live futures order book is the paid data feed (10 minutes delayed without it). Works on NQ, ES, YM, RTY, CL and GC futures (micros use their mini's book) and on crypto order books.",
     "The total depends on the reset point."
    ],
    "explain": {
@@ -18076,7 +18076,7 @@
     "Zoom in for the numbers; zoomed out it shows bars only."
    ],
    "notes": [
-    "Needs the full order book (Data feed L2), which is part of Pro. Works on NQ, ES, YM, RTY, CL and GC futures (micros use their mini's book) and on crypto order books.",
+    "Needs the full order book (Data feed L2); the tool is free, the live futures order book is the paid data feed (10 minutes delayed without it). Works on NQ, ES, YM, RTY, CL and GC futures (micros use their mini's book) and on crypto order books.",
     "Resting size is a snapshot at bar close; orders inside the bar may have come and gone."
    ],
    "explain": {
@@ -18197,7 +18197,7 @@
     "Hover a bubble for its size."
    ],
    "notes": [
-    "Needs the full order book (Data feed L2), which is part of Pro. Works on NQ, ES, YM, RTY, CL and GC futures (micros use their mini's book) and on crypto order books.",
+    "Needs the full order book (Data feed L2); the tool is free, the live futures order book is the paid data feed (10 minutes delayed without it). Works on NQ, ES, YM, RTY, CL and GC futures (micros use their mini's book) and on crypto order books.",
     "Joining fills into one order and the tags are estimates from timing, price and book changes."
    ],
    "explain": {
@@ -18392,7 +18392,7 @@
     "Turn on hollow marks to compare confirmed and unconfirmed sweeps."
    ],
    "notes": [
-    "Needs the full order book (Data feed L2), which is part of Pro. Works on NQ, ES, YM, RTY, CL and GC futures (micros use their mini's book) and on crypto order books.",
+    "Needs the full order book (Data feed L2); the tool is free, the live futures order book is the paid data feed (10 minutes delayed without it). Works on NQ, ES, YM, RTY, CL and GC futures (micros use their mini's book) and on crypto order books.",
     "A mark describes what happened at that bar; it is not a signal."
    ],
    "explain": {
@@ -18488,7 +18488,7 @@
     "Use it alongside the standard volume profile tools."
    ],
    "notes": [
-    "Needs the full order book (Data feed L2), which is part of Pro. Works on NQ, ES, YM, RTY, CL and GC futures (micros use their mini's book) and on crypto order books."
+    "Needs the full order book (Data feed L2); the tool is free, the live futures order book is the paid data feed (10 minutes delayed without it). Works on NQ, ES, YM, RTY, CL and GC futures (micros use their mini's book) and on crypto order books."
    ],
    "explain": {
     "shows": [
@@ -18582,7 +18582,7 @@
     "Some traders compare the ladder with levels from other tools."
    ],
    "notes": [
-    "Needs the full order book (Data feed L2), which is part of Pro. Works on NQ, ES, YM, RTY, CL and GC futures (micros use their mini's book) and on crypto order books."
+    "Needs the full order book (Data feed L2); the tool is free, the live futures order book is the paid data feed (10 minutes delayed without it). Works on NQ, ES, YM, RTY, CL and GC futures (micros use their mini's book) and on crypto order books."
    ],
    "explain": {
     "shows": [
@@ -18662,7 +18662,7 @@
     "Use Fixed range to look at one move, from its first bar to its last."
    ],
    "notes": [
-    "Futures only (NQ, ES, YM, RTY, CL, GC and their micros). Needs the full order book data feed (L2), which is part of Pro.",
+    "Futures only (NQ, ES, YM, RTY, CL, GC and their micros). Needs the full order book data feed (L2); the tool is free, the live futures order book is the paid data feed (10 minutes delayed without it).",
     "To set a fixed range, pick \"Delta Profile (L2): click two bars for a fixed range\" in the Indicators list, then click the first and the last bar. Volume Profile (L2) also has a Delta view.",
     "It shows what traded. It does not predict what price will do."
    ],
@@ -18786,7 +18786,7 @@
     "Turn on Extend POC until touched to carry a leg's POC forward until a later bar trades through it."
    ],
    "notes": [
-    "Futures only (NQ, ES, YM, RTY, CL, GC and their micros). Needs the full order book data feed (L2), which is part of Pro.",
+    "Futures only (NQ, ES, YM, RTY, CL, GC and their micros). Needs the full order book data feed (L2); the tool is free, the live futures order book is the paid data feed (10 minutes delayed without it).",
     "It shows what traded. It does not predict what price will do."
    ],
    "explain": null,
@@ -19379,7 +19379,7 @@
     "SPX, SPY, QQQ, IWM, GLD and USO, futures mapped from them (ES, NQ, RTY, GC, CL), and the top US stocks with options. Crypto and forex show a short note instead.",
     "Index and ETF data is updated every 2 minutes during US cash hours, stocks every 15 minutes; the status line says when (for example \"updated 3 min ago\").",
     "0DTE shows a note on days when the symbol has no expiry today. Nothing is drawn in bar replay.",
-    "Part of Pro, like GEX+. Education only. Not financial advice."
+    "Free, like GEX+. Education only. Not financial advice."
    ],
    "explain": null,
    "changelog": {
@@ -19471,7 +19471,7 @@
     "SPX, SPY, QQQ, IWM, GLD and USO, futures mapped from them (ES, NQ, RTY, GC, CL), and the top US stocks with options. Crypto and forex show a short note instead.",
     "Index and ETF data is updated every 2 minutes during US cash hours, stocks every 15 minutes; the status line says when (for example \"updated 3 min ago\").",
     "0DTE shows a note on days when the symbol has no expiry today. Nothing is drawn in bar replay.",
-    "Part of Pro, like GEX+. Education only. Not financial advice."
+    "Free, like GEX+. Education only. Not financial advice."
    ],
    "explain": null,
    "changelog": {
@@ -19563,7 +19563,7 @@
     "SPX, SPY, QQQ, IWM, GLD and USO, futures mapped from them (ES, NQ, RTY, GC, CL), and the top US stocks with options. Crypto and forex show a short note instead.",
     "Index and ETF data is updated every 2 minutes during US cash hours, stocks every 15 minutes; the status line says when (for example \"updated 3 min ago\").",
     "0DTE shows a note on days when the symbol has no expiry today. Nothing is drawn in bar replay.",
-    "Part of Pro, like GEX+. Education only. Not financial advice."
+    "Free, like GEX+. Education only. Not financial advice."
    ],
    "explain": null,
    "changelog": {

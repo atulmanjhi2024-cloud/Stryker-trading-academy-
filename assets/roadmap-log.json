@@ -1,5 +1,17 @@
 [
  {
+  "build": 1019,
+  "date": "2026-11-15",
+  "title": "add requested features being worked on",
+  "link": ""
+ },
+ {
+  "build": 1019,
+  "date": "2026-11-15",
+  "title": "add requested features being worked on (build 1019)",
+  "link": ""
+ },
+ {
   "build": 1018,
   "date": "2026-11-15",
   "title": "workspaces",
@@ -27,12 +39,6 @@
   "build": 995,
   "date": "2026-11-14",
   "title": "vp-always-visible",
-  "link": ""
- },
- {
-  "build": 994,
-  "date": "2026-11-14",
-  "title": "add requested features being worked on",
   "link": ""
  },
  {

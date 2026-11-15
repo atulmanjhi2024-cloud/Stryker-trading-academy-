@@ -1077,6 +1077,10 @@ function visualOrder(R) {
   import('./chart-countdown.js?v=1033')
     .then((m) => m.installCountdown(ws))
     .catch((e) => console.warn('TradeZoro: countdown', e));
+  // Live browser-tab title: price, arrow, symbol of the active pane (assets/chart-tabtitle.js).
+  import('./chart-tabtitle.js?v=1033')
+    .then((m) => m.installTabTitle(ws))
+    .catch((e) => console.warn('TradeZoro: tab title', e));
   // Endless scroll-back: older history pages load before the view reaches the oldest bar,
   // the view stays on its candles (assets/chart-history-pager.js).
   import('./chart-history-pager.js?v=1033')

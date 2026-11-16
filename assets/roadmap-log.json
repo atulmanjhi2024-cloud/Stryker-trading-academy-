@@ -1,5 +1,17 @@
 [
  {
+  "build": 1060,
+  "date": "2026-11-16",
+  "title": "add requested features being worked on",
+  "link": ""
+ },
+ {
+  "build": 1060,
+  "date": "2026-11-16",
+  "title": "add requested features being worked on (build 1060)",
+  "link": ""
+ },
+ {
   "build": 1058,
   "date": "2026-11-16",
   "title": "chart-live-broker-trading",
@@ -39,12 +51,6 @@
   "build": 1028,
   "date": "2026-11-15",
   "title": "script-editor-v2",
-  "link": ""
- },
- {
-  "build": 1021,
-  "date": "2026-11-15",
-  "title": "add requested features being worked on",
   "link": ""
  },
  {

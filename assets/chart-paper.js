@@ -1,6 +1,6 @@
 // TradeZoro — Charts PAPER TRADING (ES module, charts.html only)
-import * as TM from './chart-trade-menu.js?v=1096';
-import { normFutures } from './chart-sym.js?v=1096';   // one futures test for every symbol form (CME_MINI:MNQ1!, MNQZ6 ...)
+import * as TM from './chart-trade-menu.js?v=1097';
+import { normFutures } from './chart-sym.js?v=1097';   // one futures test for every symbol form (CME_MINI:MNQ1!, MNQZ6 ...)
 // Owner order 2026-10-12: "Add complete full demo/paper trading feature inside the charts, like
 // tradingview". Modelled on TradingView's Paper Trading, in our own look.
 //

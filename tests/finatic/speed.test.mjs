@@ -94,11 +94,12 @@ for (let i = 0; i < 3; i++) { O._resetRate(); await O.handle(req(place()), live,
 assert.ok(adminReads <= 1, 'admin doc read at most once for 3 orders (' + adminReads + ')');
 
 // ---- parallel pre-send steps: kill switch + audit + read overlap (each step 40 ms) ---------------------------------------------
-F._resetSessions(); await F.cachedSession(live, deps, US); B.delay = 40;
+F._resetSessions(); await F.cachedSession(live, deps, US); B.delay = 150;   // 150 ms steps: a busy test server can't blur parallel vs serial
 O._resetRate(); let a = Date.now(); r = await O.handle(req(place()), live, deps); const took = Date.now() - a; B.delay = 0;
 assert.equal(r.status, 200);
 // serial would be: switch 40 + audit 40 + positions 40 + orders 40 + send 40 = 200 ms; parallel ~ 40 (gate) + 40 (audit|read) + 40 (send)
-assert.ok(took < 170, 'pre-send steps run in parallel (' + took + ' ms)');
+// serial = 5 x 150 = 750 ms; parallel ~ 3 x 150 = 450 ms (+ scheduling noise on a loaded box)
+assert.ok(took < 620, 'pre-send steps run in parallel (' + took + ' ms)');
 
 // ---- audit: attempt row BEFORE the order, result AFTER the reply (deferred), never skipped ---------------------------------------
 deferred.length = 0; O._resetRate(); const ka = key();

@@ -814,7 +814,7 @@ function ladderLayer() {
         const span = W * num(I.ladWidth, 16) / 100 * (phone ? 0.8 : 1), x = W - 1;
         const rowPx = Math.abs(Yp(a, R) - Yp(a, 0)), showNum = rowPx >= 11, fs = clamp(Math.floor(rowPx * 0.7), 8, phone ? 10 : 11);
         g.textBaseline = 'middle';
-        g.fillStyle = light() ? 'rgba(241,245,249,0.55)' : 'rgba(11,11,13,0.45)'; g.fillRect(x - span, top, span + 1, bot - top);   // strip: labels read on it, candles stay visible beside it
+        // no backing strip (Owner 17 Nov: the grey band behind the ladder shouldn't be there); bars + numbers draw straight on the chart
         const rows = new Set([...dl.keys(), ...net.keys()]);
         for (const r of rows) {
           const yT = Yp(a, (r + 1) * R), yB = Yp(a, r * R), y = Math.min(yT, yB), h = Math.max(1, Math.abs(yB - yT) - (rowPx > 4 ? 1 : 0));

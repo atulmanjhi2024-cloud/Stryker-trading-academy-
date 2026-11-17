@@ -1558,7 +1558,8 @@ body.charts-page .stkchart-credit{
 #stkc-bar.stkc-onebar .vela-widget-screenshot{ order:28; }
 :where(#stkc-bar.stkc-onebar .vela-topbar-right) > *{ order:28; }
 #stkc-bar.stkc-onebar .stkc-menu:not(.stkc-ob-more){ display:flex; align-items:center; }
-#stkc-bar.stkc-onebar .stkc-menu:has(> #stkc-paper-btn){ order:25; }
+#stkc-bar.stkc-onebar .stkc-menu:has(> #stkc-paper-btn){ order:9; }
+#stkc-bar.stkc-onebar .stkc-menu:has(> #stkc-paper-btn) > .stkc-pop{ left:0; right:auto; max-width:calc(100vw - 16px); }
 #stkc-bar.stkc-onebar #stkrb-chip{ order:31; }
 #stkc-bar.stkc-onebar #stkc-credits-btn, #stkc-bar.stkc-onebar #stkc-credits{ order:33; }
 #stkc-bar.stkc-onebar .stkc-ob-more{ order:40; }
@@ -5563,3 +5564,4 @@ html .stk-iv-menu, html .stk-ct, html .stkhm{ box-shadow:var(--shadow-pop); }
 :root[data-theme="light"] .stkop-br{ background:var(--surface-0); }
 .account-theme{ margin:4px 0; border-bottom:1px solid var(--line-soft); }
 html .vela-dsp-lab{ flex-basis:120px; }
+.stktm-hl{ width:100%; justify-content:flex-start; margin-top:8px; }

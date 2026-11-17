@@ -24,6 +24,7 @@ async function open(b, { w, h, mobile, theme, admin = true, connected = true }) 
   const ctx = await b.newContext({ viewport: { width: w, height: h }, deviceScaleFactor: mobile ? 2 : 1, isMobile: !!mobile, hasTouch: !!mobile });
   await ctx.addInitScript(stub);
   await ctx.addInitScript(({ t, admin, connected, US }) => {
+    if (admin) window.__stkHl = { open: () => { window.__hlOpened = (window.__hlOpened || 0) + 1; } };   // what hl-trade.js sets for admins
     window.__stkLiveTest = { isAdmin: () => admin, last: () => 28750 };
     window.__toasts = []; const keep = () => (t, m) => { window.__toasts.push(String(m)); return Promise.resolve(); };
     Object.defineProperty(window, 'showToast', { configurable: true, get: () => keep(), set: () => {} });
@@ -212,6 +213,11 @@ async function run(b, w, h, mobile, theme) {
   check(menu.foot && menu.foot.cySpread <= 1 && menu.foot.addH === menu.foot.manH && Math.abs(menu.foot.padL - menu.foot.padR) <= 1, tag + ': footer pills: same height, one centre, equal inset', menu.foot);
   check(menu.padL === menu.padR && menu.scrollW, tag + ': menu padding equal, no sideways scroll', [menu.padL, menu.padR]);
   if (!mobile) { await p.hover('#stkc-trade-pop .stktm-row[data-row="' + ACC + '"]'); await sleep(200); }
+  { const hl = await p.evaluate(() => { const x = document.querySelector('#stkc-trade-pop [data-a=hl]'); if (!x) return null; const r = x.getBoundingClientRect(), P = document.getElementById('stkc-trade-pop').getBoundingClientRect(); return { t: x.textContent.trim(), h: r.height, l: Math.round(r.left - P.left), r: Math.round(P.right - r.right), img: !!x.querySelector('img') }; });
+    console.log('HLROW ' + tag + ' ' + JSON.stringify(hl));
+    check(hl && hl.t === 'Hyperliquid wallet' && !hl.img, tag + ': admin sees one Hyperliquid wallet row in the Trade menu', hl);
+    await p.evaluate(() => document.querySelector('#stkc-trade-pop [data-a=hl]').click()); await sleep(150);
+    check(await p.evaluate(() => window.__hlOpened === 1), tag + ': the row calls the Hyperliquid panel opener'); if (!mobile) await p.click('#stkc-paper-btn'); await sleep(250); }
   await p.screenshot({ path: OUT + '/trade-' + tag + '-menu.png' }); await popShot(p, OUT + '/crop-menu-' + tag + '.png');
   if (!mobile) {
     // copy-on-click: the number copies, the row is NOT picked

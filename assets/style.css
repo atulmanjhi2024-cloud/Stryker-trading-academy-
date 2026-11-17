@@ -12802,3 +12802,5 @@ html .stk-iv-menu, html .stk-ct, html .stkhm{ box-shadow:var(--shadow-pop); }
 :root[data-theme="light"] .stkop-br{ background:var(--surface-0); }
 /* Account menu: Appearance group framed by hairlines above and below */
 .account-theme{ margin:4px 0; border-bottom:1px solid var(--line-soft); }
+/* Chart drawing settings: label column 120 px (the panel default is 96, which cut "Extend lines right") */
+html .vela-dsp-lab{ flex-basis:120px; }

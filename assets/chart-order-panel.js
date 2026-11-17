@@ -25,10 +25,10 @@
 // Hotkeys: B = Buy, S = Sell (market, Scalp quantity) — OFF by default, only while the panel is open and not typing in a field.
 // Tests: tools/tests/chart-live-browser.js (live + member paper, mocked endpoints only).
 // Education only. Not financial advice.
-import * as L from './chart-live-core.js?v=1082';
-import { acquire, rootState, l2Root, l2Delayed } from './chart-futures-l2.js?v=1082';
-import { openSource, SOURCES } from './book-panel-sources.js?v=1082';
-import { pairOf } from './book-panel-core.js?v=1082';
+import * as L from './chart-live-core.js?v=1083';
+import { acquire, rootState, l2Root, l2Delayed } from './chart-futures-l2.js?v=1083';
+import { openSource, SOURCES } from './book-panel-sources.js?v=1083';
+import { pairOf } from './book-panel-core.js?v=1083';
 
 const PHONE_MAX = 700, W_MIN = 320, W_MAX = 640, H_MIN = 300, W_DEF = 360, H_DEF = 640, PRESETS = [10, 25, 50, 100], QUOTE_MAX_AGE = 15000;
 const DISCLAIMER = 'Education only. Not financial advice.';

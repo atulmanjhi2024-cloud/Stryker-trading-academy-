@@ -1,5 +1,11 @@
 [
  {
+  "build": 1114,
+  "date": "2026-11-17",
+  "title": "chart-live-browser.js",
+  "link": ""
+ },
+ {
   "build": 1113,
   "date": "2026-11-17",
   "title": "chart-trade-btn-browser.js chart-live-browser.js chart-paper-trading-browser.js",

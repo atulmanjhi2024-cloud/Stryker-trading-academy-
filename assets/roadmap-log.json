@@ -1,5 +1,17 @@
 [
  {
+  "build": 1101,
+  "date": "2026-11-17",
+  "title": "add requested features being worked on",
+  "link": ""
+ },
+ {
+  "build": 1101,
+  "date": "2026-11-17",
+  "title": "add requested features being worked on (build 1101)",
+  "link": ""
+ },
+ {
   "build": 1081,
   "date": "2026-11-17",
   "title": "chart-order-panel-v2",
@@ -21,12 +33,6 @@
   "build": 1067,
   "date": "2026-11-16",
   "title": "show the new order panel and Trade menu cards (build 1067)",
-  "link": ""
- },
- {
-  "build": 1064,
-  "date": "2026-11-16",
-  "title": "add requested features being worked on",
   "link": ""
  },
  {

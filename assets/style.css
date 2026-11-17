@@ -6116,7 +6116,8 @@ html[data-theme="light"] .brand-plan{
   padding:30px; font-size:13.5px; color:var(--ink-2);
 }
 .stkchart-fallback b{ color:var(--ink-0); }
-.stkchart-credit{ font-size:11.5px; color:var(--ink-3); margin:14px 0 0; }
+/* Owner 17 Nov: footer data line under the chart removed (kept in the DOM, other scripts still read it) */
+.stkchart-credit{ display:none !important; }
 .stkchart-credit a{ color:var(--gold); }
 @media (max-width:900px){ .stkchart-panel{ height:calc(100vh - 220px); min-height:440px; } }
 

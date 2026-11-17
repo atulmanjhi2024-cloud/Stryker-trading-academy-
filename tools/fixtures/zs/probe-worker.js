@@ -1,6 +1,6 @@
 // Test-only probe: loads the real Zscript worker (so its lockdown runs first), then tries
 // every way out of the sandbox and reports what it reached. Never shipped to a page.
-import '../../../assets/zs/worker.js?v=1085';
+import '../../../assets/zs/worker.js?v=1086';
 
 const tries = {
   fetch: () => self.fetch('/'),

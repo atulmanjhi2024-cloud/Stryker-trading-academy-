@@ -9,7 +9,7 @@
   if (root.TzBrand) return;
   var SRC = '/assets/images/tradezoro-tzmark-1014-144.webp';
   var WM = '/assets/images/tradezoro-wordmark-1014-192.webp';   // official wordmark, same file as the app top bar
-  var OPACITY = 0.4;
+  var OPACITY = 1;   // Owner 17 Nov: zero transparency
   var phone = function () { return root.matchMedia && root.matchMedia('(max-width: 640px)').matches; };
   var size = function () { return phone() ? 32 : 40; };   // CSS px tall (resting chip)
   var img = null;
@@ -25,15 +25,15 @@
     // Chip: round dark glass at rest; .is-open (mouse hover) widens it to a pill and slides the name out. Only the chip takes the pointer.
     // Sizes (8pt grid): chip 40 / mark 28 / pad 5+1 border (phone 32 / 22 / 4+1); open = chip + 8 gap + wordmark (art 820x192, CSS height) + 0 .
     s.textContent = '.tz-brand{--c:40px;--m:28px;--wh:20px;--ww:85.42px;position:absolute;left:12px;z-index:5;box-sizing:border-box;height:var(--c);width:var(--c);border-radius:calc(var(--c)/2);padding:0 5px;display:flex;align-items:center;overflow:hidden;white-space:nowrap;' +
-      'background:rgba(12,12,14,.6);border:1px solid rgba(255,255,255,.12);pointer-events:auto;cursor:default;user-select:none;-webkit-user-select:none;opacity:.6;' +
+      'background:#0c0c0e;border:1px solid rgba(255,255,255,.14);pointer-events:auto;cursor:default;user-select:none;-webkit-user-select:none;opacity:1;' +
       'transition:width .22s ease-out,padding .22s ease-out,opacity .22s ease-out}' +
-      '.tz-brand.is-open{width:calc(var(--ww) + 26px);padding:0 12px;opacity:.95}' +
+      '.tz-brand.is-open{width:calc(var(--ww) + 26px);padding:0 12px;opacity:1}' +
       '.tz-brand.is-open img:first-child{width:0;opacity:0}' +
       '.tz-brand img{flex:none;display:block;height:var(--m);width:var(--m);pointer-events:none;-webkit-user-drag:none;transition:width .22s ease-out,opacity .22s ease-out}' +
       '.tz-brand img.tz-brand-w{height:var(--wh);width:var(--ww);margin-left:0;visibility:hidden;opacity:0;transform:translateX(-8px);' +
       'transition:opacity .22s ease-out,transform .22s ease-out,visibility 0s .22s}' +
       '.tz-brand.is-open img.tz-brand-w{visibility:visible;opacity:1;transform:none;transition-delay:0s}' +
-      ':root[data-theme="light"] .tz-brand{background:rgba(255,255,255,.7);border-color:rgba(0,0,0,.14)}' +
+      ':root[data-theme="light"] .tz-brand{background:#fff;border-color:rgba(0,0,0,.14)}' +
       ':root[data-theme="light"] .tz-brand img.tz-brand-w{filter:saturate(1.25) contrast(1.12) brightness(.82)}' +
       '@media (max-width:640px){.tz-brand{--c:32px;--m:22px;--wh:16px;--ww:68.33px;padding:0 4px}}' +
       '@media (hover:none){.tz-brand{pointer-events:none}}' +
@@ -69,7 +69,7 @@
     var im = image(repaint); if (!im.complete || !im.naturalWidth) return;
     // Canvas twin of the resting chip: glass disc + mark. (x, y) = top-left of the chip.
     var c = size() * (k || 1), m = c * 0.7, o = (c - m) / 2;
-    ctx.save(); ctx.globalAlpha = 0.6; ctx.fillStyle = 'rgba(12,12,14,.6)'; ctx.strokeStyle = 'rgba(255,255,255,.12)'; ctx.lineWidth = k || 1;
+    ctx.save(); ctx.globalAlpha = 1; ctx.fillStyle = '#0c0c0e'; ctx.strokeStyle = 'rgba(255,255,255,.14)'; ctx.lineWidth = k || 1;
     ctx.beginPath(); ctx.arc(x + c / 2, y + c / 2, c / 2 - (k || 1) / 2, 0, 6.2832); ctx.fill(); ctx.stroke();
     ctx.drawImage(im, x + o, y + o, m, m); ctx.restore();
   }

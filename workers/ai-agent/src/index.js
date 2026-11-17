@@ -48,7 +48,8 @@ async function readBody(request, max = 16384) {
   if (/application\/x-www-form-urlencoded/.test(ct)) return Object.fromEntries(new URLSearchParams(t));
   try { return JSON.parse(t || '{}'); } catch (e) { return null; }
 }
-const bearer = (request) => { const m = /^Bearer\s+(\S{10,600})$/i.exec(request.headers.get('authorization') || ''); return m ? m[1] : ''; };
+// Firebase ID tokens are ~900-1300 chars (the old 600 cap rejected every real member: "Please sign in again" on /ai/consent).
+const bearer = (request) => { const m = /^Bearer\s+(\S{10,4096})$/i.exec(request.headers.get('authorization') || ''); return m ? m[1] : ''; };
 function sameOrigin(request, origin) {
   const o = request.headers.get('origin');
   return o === origin;

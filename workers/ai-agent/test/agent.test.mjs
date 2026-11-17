@@ -134,6 +134,16 @@ test('limiter: exact per minute window', () => {
 });
 
 // ================================================================ discovery
+test('member calls accept a real-size Firebase ID token (~1100 chars), not only short ones', async () => {
+  const env = makeEnv();
+  let seen = '';
+  const v = env.__TEST_VERIFY; env.__TEST_VERIFY = async (t) => { seen = t; return v('id:member-alice'); };
+  const long = 'eyJ' + 'x'.repeat(1100);
+  const r = await memberPost(env, 'grants', {}, long);
+  assert.equal(seen, long, 'a 1100-char token must reach verifyMember');
+  assert.notEqual(r.status, 401);
+});
+
 test('metadata: protected resource + authorization server (S256, DCR, resource)', async () => {
   const env = makeEnv();
   const pr = await (await go(env, '/.well-known/oauth-protected-resource')).json();

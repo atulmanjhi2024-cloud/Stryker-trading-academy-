@@ -5420,3 +5420,4 @@ html .stk-iv-menu, html .stk-ct, html .stkhm{ box-shadow:var(--shadow-pop); }
 .stkop-br{ padding:12px; border:1px solid var(--line-card); border-radius:12px; background:var(--surface-2); }
 :root[data-theme="light"] .stkop-br{ background:var(--surface-0); }
 .account-theme{ margin:4px 0; border-bottom:1px solid var(--line-soft); }
+html .vela-dsp-lab{ flex-basis:120px; }

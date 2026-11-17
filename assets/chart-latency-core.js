@@ -73,14 +73,16 @@ export function feedStats(key, t = now()) {
   return { lastBar: f.lastBar, age: f.lastBar ? t - f.lastBar : null, delay: stats(ser, t) };
 }
 
-// Quality from a latency in ms: green < 80, amber < 200, red above; null = no data (grey).
+// Quality from a latency in ms: green < 160, amber < 300, red above; null = no data (grey).
+// Owner 17 Nov: our edge often serves India from Europe (~150 ms), so the site bands were widened for now.
+// Exchange feed bands (feed=true) are unchanged: < 500 / < 1250.
 // feed=true: an exchange -> you delay also holds the exchange's own publish time, so its bands are wider (< 500 / < 1250).
 export function quality(ms, feed) {
   if (ms == null || !Number.isFinite(ms)) return { q: 'none', word: 'No data', bars: 0 };
-  const k = feed ? 6.25 : 1;
-  if (ms < 40 * k) return { q: 'good', word: 'Excellent', bars: 4 };
-  if (ms < 80 * k) return { q: 'good', word: 'Good', bars: 3 };
-  if (ms < 200 * k) return { q: 'fair', word: 'Fair', bars: 2 };
+  const B = feed ? [250, 500, 1250] : [60, 160, 300];   // Excellent / Good / Fair upper bounds
+  if (ms < B[0]) return { q: 'good', word: 'Excellent', bars: 4 };
+  if (ms < B[1]) return { q: 'good', word: 'Good', bars: 3 };
+  if (ms < B[2]) return { q: 'fair', word: 'Fair', bars: 2 };
   return { q: 'poor', word: 'Poor', bars: 1 };
 }
 

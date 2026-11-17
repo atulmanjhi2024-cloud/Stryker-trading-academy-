@@ -5,9 +5,9 @@ import * as L from '../../assets/chart-latency-core.js';
 
 // quality bands: green < 80, amber < 200, red above, none = no data
 assert.equal(L.quality(null).q, 'none');
-assert.equal(L.quality(30).q, 'good'); assert.equal(L.quality(79).q, 'good');
-assert.equal(L.quality(80).q, 'fair'); assert.equal(L.quality(199).q, 'fair');
-assert.equal(L.quality(200).q, 'poor');
+assert.equal(L.quality(30).q, 'good'); assert.equal(L.quality(147).q, 'good'); assert.equal(L.quality(159).q, 'good');
+assert.equal(L.quality(160).q, 'fair'); assert.equal(L.quality(299).q, 'fair');
+assert.equal(L.quality(300).q, 'poor');
 assert.equal(L.quality(300, true).q, 'good'); assert.equal(L.quality(1000, true).q, 'fair'); assert.equal(L.quality(1300, true).q, 'poor');
 assert.equal(L.fmtMs(null), '—'); assert.equal(L.fmtMs(41.6), '42 ms');
 assert.equal(L.fmtAge(null), '—'); assert.equal(L.fmtAge(300), '0.3 s ago'); assert.equal(L.fmtAge(90000), '90 s ago');

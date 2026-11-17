@@ -5,7 +5,7 @@
 // the Book panel api (window.__stkBookPanel.feedState / reconnect, assets/chart-book-panel.js), /api/ping (functions/api/ping.js).
 //
 // Chip (bottom-right of the chart's bottom bar): signal bars coloured by the round trip to our edge
-// (green < 80 ms, amber < 200, red above, grey = no answer) + "42 ms"; a small dot breathes while candles are arriving.
+// (green < 160 ms, amber < 300, red above, grey = no answer) + "42 ms"; a small dot breathes while candles are arriving.
 // Popover (hover or click on desktop; a bottom sheet on phones): one row per real feed on screen
 //   Site & API      round trip of /api/ping (every 5 s, only while the tab is visible), average + jitter over 60 s
 //   each chart symbol  last update age; exchange -> you delay where the messages carry an exchange time

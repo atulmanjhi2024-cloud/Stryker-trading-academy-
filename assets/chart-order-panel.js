@@ -38,11 +38,11 @@
 //           risk sizing still works (capped at the live max).
 // Tests: tools/tests/chart-live-browser.js (live + member paper, mocked endpoints only), tools/tests/chart-paper-trading-browser.js.
 // Education only. Not financial advice.
-import * as L from './chart-live-core.js?v=1130';
-import { acquire, rootState, l2Root, l2Delayed } from './chart-futures-l2.js?v=1130';
-import { openSource, SOURCES } from './book-panel-sources.js?v=1130';
-import { pairOf } from './book-panel-core.js?v=1130';
-import { futRoot } from './chart-sym.js?v=1130';   // one futures test for every symbol form (CME_MINI:MNQ1!, MNQZ6 ...)
+import * as L from './chart-live-core.js?v=1131';
+import { acquire, rootState, l2Root, l2Delayed } from './chart-futures-l2.js?v=1131';
+import { openSource, SOURCES } from './book-panel-sources.js?v=1131';
+import { pairOf } from './book-panel-core.js?v=1131';
+import { futRoot } from './chart-sym.js?v=1131';   // one futures test for every symbol form (CME_MINI:MNQ1!, MNQZ6 ...)
 
 const PHONE_MAX = 700, W_MIN = 352, W_MAX = 640, DW_MIN = 280, DW_MAX = 480, DW_DEF = 340, H_MIN = 300, W_DEF = 360, H_DEF = 640, PRESETS = [10, 25, 50, 100], QUOTE_MAX_AGE = 15000;
 const DISCLAIMER = 'Education only. Not financial advice.';

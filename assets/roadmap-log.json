@@ -1,5 +1,11 @@
 [
  {
+  "build": 1119,
+  "date": "2026-11-18",
+  "title": "chart-live-browser.js chart-gex-indicator-browser.js",
+  "link": ""
+ },
+ {
   "build": 1117,
   "date": "2026-11-18",
   "title": "chart-trade-btn-browser.js chart-live-browser.js chart-paper-trading-browser.js",

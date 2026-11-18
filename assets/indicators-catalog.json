@@ -1710,22 +1710,30 @@
    ],
    "explain": null,
    "changelog": {
-    "current": "1.0",
+    "current": "1.1",
     "pickable": false,
     "list": [
+     {
+      "v": "1.1",
+      "date": "2026-11-18",
+      "notes": [
+       "Fix: the risk/reward box stays on the candle where the IFVG triggered, at its entry and stop, on a live chart without re-adding the indicator."
+      ],
+      "pick": true
+     },
      {
       "v": "1.0",
       "date": "2026-10-07",
       "notes": [
        "First release."
       ],
-      "pick": true
+      "pick": false
      }
     ]
    },
    "alerts": "Alerts: members can create an alert on Liquidity swept or IFVG from the chart's alert dialog; alerts from indicators run while ZoroCharts is open in the browser.",
    "learn": "fair-value-gap",
-   "updated": "2026-11-04",
+   "updated": "2026-11-18",
    "licence": "",
    "originalUrl": "",
    "settings": [
@@ -2953,16 +2961,25 @@
    ],
    "explain": null,
    "changelog": {
-    "current": "1.1",
+    "current": "1.2",
     "pickable": false,
     "list": [
+     {
+      "v": "1.2",
+      "date": "2026-11-18",
+      "notes": [
+       "Fix: higher-timeframe fair value gaps show as soon as their third candle closes on a live chart, at the right place.",
+       "Fix: with Highest timeframe wins on, a gap inside a higher one now comes back when the higher gap is filled, and a gap that only touches a higher one is kept."
+      ],
+      "pick": true
+     },
      {
       "v": "1.1",
       "date": "2026-11-10",
       "notes": [
        "Fix: an Asia session that starts on the first loaded bar is partial and is no longer drawn, so the Asia high and low are the same on every timeframe."
       ],
-      "pick": true
+      "pick": false
      },
      {
       "v": "1.0",
@@ -2976,7 +2993,7 @@
    },
    "alerts": "",
    "learn": "liquidity-sweeps",
-   "updated": "2026-11-10",
+   "updated": "2026-11-18",
    "licence": "",
    "originalUrl": "",
    "settings": [

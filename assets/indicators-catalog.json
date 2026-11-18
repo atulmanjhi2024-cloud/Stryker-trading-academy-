@@ -18750,9 +18750,17 @@
     ]
    },
    "changelog": {
-    "current": "1.0",
-    "pickable": false,
+    "current": "1.1",
+    "pickable": true,
     "list": [
+     {
+      "v": "1.1",
+      "date": "2026-11-18",
+      "notes": [
+       "New settings in groups: Delta bars, Second bar, Numbers, Highlights and Layout. Colours, opacity, which parts show, number format and size, side of the chart and row size."
+      ],
+      "pick": true
+     },
      {
       "v": "1.0",
       "date": "2026-11-03",
@@ -18765,7 +18773,7 @@
    },
    "alerts": "",
    "learn": "order-flow",
-   "updated": "2026-11-04",
+   "updated": "2026-11-18",
    "licence": "",
    "originalUrl": "",
    "settings": [

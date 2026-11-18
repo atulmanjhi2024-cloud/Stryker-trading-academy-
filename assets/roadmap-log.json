@@ -1,5 +1,17 @@
 [
  {
+  "build": 1122,
+  "date": "2026-11-18",
+  "title": "add requested features being worked on",
+  "link": ""
+ },
+ {
+  "build": 1122,
+  "date": "2026-11-18",
+  "title": "add requested features being worked on (build 1122)",
+  "link": ""
+ },
+ {
   "build": 1119,
   "date": "2026-11-18",
   "title": "chart-live-browser.js chart-gex-indicator-browser.js",
@@ -21,12 +33,6 @@
   "build": 1112,
   "date": "2026-11-17",
   "title": "spectra",
-  "link": ""
- },
- {
-  "build": 1110,
-  "date": "2026-11-17",
-  "title": "add requested features being worked on",
   "link": ""
  },
  {

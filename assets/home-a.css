@@ -195,3 +195,12 @@
 .cm-rainbow::after{ display:none; }   /* no glow / pulse (Owner 16 Nov): green spinning ring only */
 @keyframes rb-spin{ to{ --rb-a:360deg; } }
 @media (prefers-reduced-motion: reduce){ .cm-rainbow::before, .cm-rainbow::after{ animation:none; } }
+
+/* headline D (18 Nov): "probably the" / "Best Trading Platform" / "ever built" */
+.cm-hero h1.hh-h1.hh-h1-best{ display:grid; grid-template-columns:auto; width:max-content; max-width:100%; line-height:1; letter-spacing:0; font-size:inherit; }
+.cm-hero h1.hh-h1-best .v-b{ display:block; white-space:nowrap; font-weight:800; letter-spacing:-.035em; line-height:.92; font-size:min(7.2vw,118px); color:var(--ink); }
+.cm-hero h1.hh-h1-best .v-a,.cm-hero h1.hh-h1-best .v-c{ display:block; white-space:nowrap; line-height:1; font-size:clamp(22px,2.6vw,42px); font-weight:500; letter-spacing:0; }
+.cm-hero h1.hh-h1-best .v-a{ color:var(--ink-2); margin-bottom:.02em; }
+.cm-hero h1.hh-h1-best .v-c{ color:var(--gold); justify-self:end; margin-top:.06em; padding-bottom:.06em; border-bottom:3px solid var(--gold); }
+.cm-hero h1.hh-h1-best .hh-small{ margin-top:24px; }
+@media (max-width:600px){ .cm-hero h1.hh-h1-best .v-b{ font-size:8.4vw; } }

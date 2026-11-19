@@ -35,8 +35,11 @@ export function mountBookPanel(ws, opts) {
   if (!host) return null;
   const openSource = (isLocal() && window.__stkBookTest && window.__stkBookTest.openSource) || realOpen;   // localhost fixtures only
   const isPhone = () => window.innerWidth <= 700;
+  // an old floating spot (dragged header, chart-draggable.js) counts as "floating" so nobody's panel jumps
+  const hasOff = () => { try { const o = (JSON.parse(localStorage.getItem('stk_drag_pos.v1')) || {})['book-dom']; return !!(o && (o[0] || o[1])); } catch (e) { return false; } };
   const saved = load();
-  const S = { tab: ['book', 'dom', 'trades'].includes(saved.tab) ? saved.tab : 'book', src: saved.src || 'combined', g: clamp(+saved.g || 0, 0, MULT.length - 1), win: saved.win || 'session', lv: LEVELS.includes(saved.lv) ? saved.lv : 60, filter: saved.filter || '0', w: clamp(+saved.w || 400, 320, 640), sg: saved.sg !== false, zs: saved.zs !== false, sw: WINDOWS.includes(saved.sw) ? saved.sw : 30000, sf: FADES.includes(saved.sf) ? saved.sf : 20000 };
+  const S = { tab: ['book', 'dom', 'trades'].includes(saved.tab) ? saved.tab : 'book', src: saved.src || 'combined', g: clamp(+saved.g || 0, 0, MULT.length - 1), win: saved.win || 'session', lv: LEVELS.includes(saved.lv) ? saved.lv : 60, filter: saved.filter || '0', w: clamp(+saved.w || 400, 260, 560), dock: saved.dock != null ? saved.dock !== false : !hasOff(), sg: saved.sg !== false, zs: saved.zs !== false, sw: WINDOWS.includes(saved.sw) ? saved.sw : 30000, sf: FADES.includes(saved.sf) ? saved.sf : 20000 };
+  const DOCK_IC = svg('<rect x="3.5" y="4.5" width="17" height="15" rx="2.5"/><rect x="14.5" y="4.5" width="6" height="15" fill="currentColor"/>'), UNDOCK_IC = svg('<rect x="3.5" y="4.5" width="17" height="15" rx="2.5"/><rect x="3.5" y="4.5" width="6" height="15" fill="currentColor"/>');
   const save = () => { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) {} };
   let open = false, feed = null, raf = 0, tm = 0, lastPaint = 0, rh = 22, rowsN = 12, free = false, topKey = 0, paused = 0, zoneFrom = null, qty = 0, qtyKey = '', poolTab = '', drag = null, hint = false;
 
@@ -46,7 +49,7 @@ export function mountBookPanel(ws, opts) {
   const panel = el('aside', 'stkbp'); panel.id = 'stkbp'; panel.hidden = true; panel.setAttribute('aria-label', 'Order book, DOM and trades');
   panel.innerHTML =
     '<i class="stkbp-grip" aria-hidden="true"></i><div class="stkbp-grab" aria-hidden="true"></div>' +
-    '<div class="stkbp-hd"><label class="stkbp-srcw"><span class="stkbp-sym"></span><select class="stkbp-sel stkbp-src" aria-label="Data source"></select></label><span class="stkbp-sp"></span><button type="button" class="stkbp-x" aria-label="Close panel">' + svg('<path d="M6 6l12 12M18 6L6 18"/>') + '</button></div>' +
+    '<div class="stkbp-hd"><label class="stkbp-srcw"><span class="stkbp-sym"></span><select class="stkbp-sel stkbp-src" aria-label="Data source"></select></label><span class="stkbp-sp"></span><button type="button" class="stkbp-dk" aria-label="Dock to right" title="Dock to right"></button><button type="button" class="stkbp-x" aria-label="Close panel">' + svg('<path d="M6 6l12 12M18 6L6 18"/>') + '</button></div>' +
     '<div class="stkbp-tabs" role="tablist" aria-label="Panel view"><button type="button" role="tab" data-t="book">Book</button><button type="button" role="tab" data-t="dom">DOM</button><button type="button" role="tab" data-t="trades">Trades</button></div>' +
     '<div class="stkbp-ctl"><select class="stkbp-sel stkbp-grp" data-for="book dom" aria-label="Price grouping"></select>' +
     '<span class="stkbp-seg" data-for="dom" role="group" aria-label="Window"></span><span class="stkbp-seg stkbp-lvs" data-for="dom" role="group" aria-label="Levels"></span>' +
@@ -396,10 +399,30 @@ export function mountBookPanel(ws, opts) {
     clearTimeout(tm); tm = 0; detach(); closeMenu(); hideLeg(); eng = null;
     try { window.dispatchEvent(new Event('stkbp:unembedded')); } catch (e) {}
   }
+  const dkBtn = $('.stkbp-dk');
+  function applyDock() {
+    host.classList.toggle('stkbp-float', !S.dock); panel.classList.toggle('stkbp-float', !S.dock);
+    dkBtn.innerHTML = S.dock ? UNDOCK_IC : DOCK_IC; const t = S.dock ? 'Undock' : 'Dock to right'; dkBtn.title = t; dkBtn.setAttribute('aria-label', t);
+    if (S.dock) panel.style.translate = '';
+  }
+  function setDock(v) {
+    S.dock = !!v; if (S.dock && window.StkDraggable) window.StkDraggable.reset('book-dom');
+    applyDock(); save(); try { window.dispatchEvent(new Event('resize')); } catch (e) {} schedule();
+  }
+  dkBtn.addEventListener('click', () => setDock(!S.dock));
+  // dragging the header of a docked panel pulls it out (chart-draggable.js then moves it)
+  panel.querySelector('.stkbp-hd').addEventListener('pointerdown', (e) => {
+    if (!S.dock || isPhone() || embedBox || (e.button > 0 && e.pointerType === 'mouse') || e.target.closest('button,select,input,label')) return;
+    const x0 = e.clientX, y0 = e.clientY;
+    const end = () => { removeEventListener('pointermove', mv); removeEventListener('pointerup', end); removeEventListener('pointercancel', end); };
+    const mv = (ev) => { if (Math.abs(ev.clientX - x0) + Math.abs(ev.clientY - y0) < 4) return; end(); S.dock = false; applyDock(); save(); try { window.dispatchEvent(new Event('resize')); } catch (er) {} };
+    addEventListener('pointermove', mv); addEventListener('pointerup', end); addEventListener('pointercancel', end);
+  });
   function setOpen(v) {
     if (embedBox) unembed();
     open = !!v; panel.hidden = !open; host.classList.toggle('stkbp-open', open);
     panel.style.setProperty('--stkbp-w', S.w + 'px'); host.style.setProperty('--stkbp-w', S.w + 'px');
+    applyDock();
     document.documentElement.classList.toggle('stkbp-sheet', open && isPhone());
     railBtn.setAttribute('aria-pressed', String(open)); railBtn.classList.toggle('on', open); phoneBtn.classList.toggle('on', open);
     if (open) {
@@ -539,13 +562,13 @@ export function mountBookPanel(ws, opts) {
   // ------------------------------------------------------------------------------------------------ resize (>= 821 px)
   $('.stkbp-grip').addEventListener('pointerdown', (e) => {
     if (window.innerWidth < 821) return; e.preventDefault(); const g = e.currentTarget, x0 = e.clientX, w0 = S.w; g.setPointerCapture(e.pointerId); panel.classList.add('sizing');
-    const mv = (ev) => { S.w = clamp(Math.round(w0 + (x0 - ev.clientX)), 320, Math.min(640, Math.floor(window.innerWidth * 0.6))); panel.style.setProperty('--stkbp-w', S.w + 'px'); host.style.setProperty('--stkbp-w', S.w + 'px'); };
+    const mv = (ev) => { S.w = clamp(Math.round(w0 + (x0 - ev.clientX)), 260, Math.min(560, Math.floor(window.innerWidth * 0.6))); panel.style.setProperty('--stkbp-w', S.w + 'px'); host.style.setProperty('--stkbp-w', S.w + 'px'); };
     const up = () => { g.removeEventListener('pointermove', mv); g.removeEventListener('pointerup', up); panel.classList.remove('sizing'); save(); try { window.dispatchEvent(new Event('resize')); } catch (e) {} schedule(); };
     g.addEventListener('pointermove', mv); g.addEventListener('pointerup', up);
   });
 
   const api = { open: () => setOpen(true), close: () => setOpen(false), get isOpen() { return open && !embedBox; }, embed, unembed, get embedded() { return !!embedBox; }, get width() { return S.w; },
-    setWidth: (px) => { S.w = clamp(Math.round(+px) || 400, 320, 640); panel.style.setProperty('--stkbp-w', S.w + 'px'); host.style.setProperty('--stkbp-w', S.w + 'px'); save(); try { window.dispatchEvent(new Event('resize')); } catch (e) {} }, setLevels: (n) => { S.lv = n; schedule(); }, setTab: (t) => { S.tab = t; save(); schedule(); }, _paint: paint, _signals: () => eng /* test hook */, _state: () => ({ S, free, feed: !!feed }), _feed: () => feed && { key: feed.key, rp: !!feed.rp, bb: feed.bf ? feed.bf.bookNow().bestBid : null } /* test hook */, setLevelsCompat: () => {} };
+    setWidth: (px) => { S.w = clamp(Math.round(+px) || 400, 260, 560); panel.style.setProperty('--stkbp-w', S.w + 'px'); host.style.setProperty('--stkbp-w', S.w + 'px'); save(); try { window.dispatchEvent(new Event('resize')); } catch (e) {} }, setLevels: (n) => { S.lv = n; schedule(); }, setTab: (t) => { S.tab = t; save(); schedule(); }, _paint: paint, _signals: () => eng /* test hook */, _state: () => ({ S, free, feed: !!feed }), _feed: () => feed && { key: feed.key, rp: !!feed.rp, bb: feed.bf ? feed.bf.bookNow().bestBid : null } /* test hook */, setLevelsCompat: () => {} };
   // Connection popover (assets/chart-latency.js): the feed's state in plain words + when the last book frame arrived. Reconnect re-opens it.
   api.feedState = () => {
     if (!open || !feed || !feed.key) return null;

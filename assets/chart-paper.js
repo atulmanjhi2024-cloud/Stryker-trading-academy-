@@ -233,7 +233,7 @@ function toast(msg, type){
     // Book panel open on a phone: one short toast at a time, 2.5 s, parked above the sheet (CSS)
     const sheet = document.documentElement.classList.contains('stkbp-sheet');
     if (sheet) box.textContent = '';
-    box.appendChild(el);
+    box.appendChild(el); if (window.__tzToastPlace) window.__tzToastPlace();
     while (box.children.length > TOAST_MAX) box.firstChild.remove();
     setTimeout(() => { el.classList.add('out'); setTimeout(() => el.remove(), 220); }, sheet && type !== 'error' ? 2500 : type === 'error' ? 6000 : TOAST_MS);
   } catch (e) {}
@@ -2015,7 +2015,7 @@ html.stklv-on .stkpt-badge{ display:none; }
 .stkpt-grip::after{ content:""; position:absolute; left:50%; top:3px; width:36px; height:3px; margin-left:-18px; border-radius:2px; background:var(--line); opacity:0; transition:opacity .15s; }
 .stkpt-grip:hover::after,.stkpt-grip:focus-visible::after,.stkpt.resizing .stkpt-grip::after{ opacity:1; background:#03c988; }
 .stkpt.resizing{ user-select:none; }
-#stkpt-toasts{ position:absolute; left:12px; bottom:34px; z-index:30; display:flex; flex-direction:column; gap:6px; max-width:min(340px, calc(100% - 110px)); pointer-events:none; }
+#stkpt-toasts{ position:absolute; left:64px; bottom:34px; z-index:30; display:flex; flex-direction:column; gap:6px; max-width:min(340px, calc(100% - 194px)); pointer-events:none; }
 .stkpt-toast{ pointer-events:auto; display:flex; align-items:center; gap:8px; padding:6px 10px; border-radius:8px; background:rgba(19,23,34,.94); color:#d1d4dc; border:1px solid var(--line); font:500 12px/1.35 var(--font-body, sans-serif); box-shadow:0 6px 18px rgba(0,0,0,.4); cursor:pointer; animation:stkpt-in .18s ease; transition:opacity .2s; }
 .stkpt-toast.out{ opacity:0; }
 .stkpt-toast i{ flex:none; width:7px; height:7px; border-radius:50%; background:#03c988; }

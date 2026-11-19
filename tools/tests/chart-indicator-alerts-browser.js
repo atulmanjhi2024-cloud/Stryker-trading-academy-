@@ -76,7 +76,7 @@ async function setup(p){
   await p.evaluate(() => {
     window.__toasts = [];
     const ob = new MutationObserver(() => {
-      document.querySelectorAll('.stk-al-toast:not([data-seen])').forEach((t) => { t.dataset.seen = '1'; window.__toasts.push('stk:' + t.textContent); });
+      document.querySelectorAll('.stk-al-toast:not([data-seen]), #stryker-toast-host .toast:not([data-seen])').forEach((t) => { t.dataset.seen = '1'; window.__toasts.push('stk:' + t.textContent); });
       document.querySelectorAll('.vela-toast[data-open]:not([data-seen])').forEach((t) => { t.dataset.seen = '1'; window.__toasts.push('vela:' + t.textContent); });
     });
     ob.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['data-open'] });

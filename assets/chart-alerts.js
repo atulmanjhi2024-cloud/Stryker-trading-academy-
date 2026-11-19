@@ -528,6 +528,8 @@ function playAlertSound(event, opts){
   } catch (e) {}
 }
 function showToast(title, sub){
+  // the shared chart toast stack (bottom-left of the chart); sticky unless "Automatically hide toasts" is on
+  if (window.showToast) { const p = window.showToast('info', title, { description: sub, hold: true }); if (prefs.autoHide && p.toast) p.toast.arm(8000); return; }
   let box = document.getElementById('stk-al-toasts');
   if (!box) { box = document.createElement('div'); box.id = 'stk-al-toasts'; document.body.appendChild(box); }
   const t = document.createElement('div'); t.className = 'stk-al-toast'; t.setAttribute('role', 'alert');

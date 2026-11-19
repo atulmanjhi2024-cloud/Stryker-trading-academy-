@@ -40,7 +40,7 @@ async function docsOf(coll, field, val) { const ps = await G.queryEq(coll, field
     await ctx.addInitScript(() => {
       window.__toastLog = []; window.__fireEvents = [];
       window.addEventListener('stryker:chart-alert', (e) => window.__fireEvents.push(e.detail));
-      new MutationObserver((ms) => ms.forEach((m) => m.addedNodes.forEach((n) => { if (n.classList && n.classList.contains('stk-al-toast')) window.__toastLog.push(n.textContent); }))).observe(document, { childList: true, subtree: true });
+      new MutationObserver((ms) => ms.forEach((m) => m.addedNodes.forEach((n) => { if (n.classList && (n.classList.contains('stk-al-toast') || n.classList.contains('toast'))) window.__toastLog.push(n.textContent); }))).observe(document, { childList: true, subtree: true });
     });
     await ctx.addInitScript(() => { try { localStorage.setItem('stryker_install_prompt_dismissed', '1'); } catch (e) {} });
     const p = await ctx.newPage();

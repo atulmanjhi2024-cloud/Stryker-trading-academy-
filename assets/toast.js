@@ -25,7 +25,7 @@
   // success/info 4 s, warning 6 s; error and loading stay until closed/resolved.
   var DEFAULT_MS = { success: 4000, info: 4000, warning: 6000 };
   var TITLES = { success: 'Done', error: 'Something went wrong', info: 'Heads up', warning: 'Warning', loading: 'Loading…' };
-  var MAX = 10, GAP = 8;
+  var MAX = 10, GAP = 8, MAX_BL = 3;
 
   var ICONS = {
     success: '<path d="M5 12.5l4.5 4.5L19 7.5"/>',
@@ -45,6 +45,7 @@
   '.toast{--tc:#22c55e;position:absolute;left:0;right:0;top:0;transform-origin:50% 0;box-sizing:border-box;display:flex;align-items:flex-start;gap:12px;padding:12px 10px 12px 12px;overflow:hidden;' +
     'background:var(--card);border:1px solid var(--line);border-radius:12px;box-shadow:var(--sh);color:var(--ink);font-family:inherit;pointer-events:auto;touch-action:pan-y;' +
     'transition:transform .28s cubic-bezier(.2,.8,.2,1),opacity .28s ease}' +
+  '.toast-host.bl{top:auto;right:auto}' +
   '.toast.up{top:auto;bottom:0;transform-origin:50% 100%}.toast.dragging{transition:none}' +
   '.toast-success{--tc:#22c55e}.toast-info{--tc:#4c8dff}.toast-warning{--tc:#e8b44c}.toast-error{--tc:#ef4444}.toast-loading{--tc:#a3a7b0}' +
   ':root[data-theme="light"] .toast-success{--tc:#16a34a}:root[data-theme="light"] .toast-info{--tc:#2563eb}:root[data-theme="light"] .toast-warning{--tc:#b7791f}:root[data-theme="light"] .toast-error{--tc:#dc2626}:root[data-theme="light"] .toast-loading{--tc:#5b6070}' +
@@ -78,7 +79,9 @@
   var fanned = false, leaveT = null;
   var reduce = window.matchMedia && matchMedia('(prefers-reduced-motion:reduce)');
   var noMotion = function () { return !!(reduce && reduce.matches); };
-  var isUp = function () { return window.innerWidth <= 600 && !document.documentElement.classList.contains('bt-tz'); };   // phones: bottom centre, stack grows upward (replay trainer keeps the top, clear of Sell/Buy)
+  // Charts page, tablet/desktop (>= 768): bottom-left inside the chart pane, stack grows upward, max 3 (Owner 19 Nov)
+  var chartBL = function () { return window.innerWidth >= 768 && !!document.getElementById('stkc-bar') && !document.documentElement.classList.contains('bt-tz') && !!document.querySelector('.vela-cell'); };
+  var isUp = function () { return chartBL() || (window.innerWidth <= 600 && !document.documentElement.classList.contains('bt-tz') && !document.getElementById('stkc-bar')); };   // phones: bottom centre, stack grows upward; phone Charts keeps the top, stack grows downward (replay trainer too)
 
   function host() {
     var el = document.getElementById(HOST_ID);
@@ -95,6 +98,34 @@
     return el;
   }
 
+  // Anchor = the TZ mark's baseline (12 px above the time axis, above any bar-stats strip); left = right of the mark.
+  // In a multi-chart layout: the bottom-left cell. Paper toasts (#stkpt-toasts) share the spot; this stack sits above them.
+  function place() {
+    var h = document.getElementById(HOST_ID), pb = document.getElementById('stkpt-toasts');
+    if (!chartBL()) {
+      if (h) { h.classList.remove('bl'); h.style.left = h.style.bottom = h.style.width = h.style.top = h.style.right = ''; }
+      if (pb) { pb.style.left = pb.style.bottom = ''; }
+      return;
+    }
+    var cells = [].slice.call(document.querySelectorAll('.vela-cell')).filter(function (c) { return c.offsetWidth > 0; });
+    if (!cells.length) return;
+    var c = cells.reduce(function (a, b) { var ra = a.getBoundingClientRect(), rb = b.getBoundingClientRect(); return (rb.bottom > ra.bottom + 4 || (Math.abs(rb.bottom - ra.bottom) <= 4 && rb.left < ra.left)) ? b : a; });
+    var cr = c.getBoundingClientRect(), br = c.querySelector('.tz-brand'), bb = br && br.style.display !== 'none' && br.offsetWidth ? br.getBoundingClientRect() : null;
+    var left = bb ? cr.left + 12 + 40 + 12 : cr.left + 12, bottom = bb ? bb.bottom : cr.bottom - 34;
+    var vb = window.innerHeight - bottom, base = vb;
+    if (pb && pb.offsetParent) {
+      var op = pb.offsetParent.getBoundingClientRect();
+      pb.style.left = (left - op.left) + 'px'; pb.style.bottom = (op.bottom - bottom) + 'px';
+      if (pb.children.length) { var pr = pb.getBoundingClientRect(); vb = window.innerHeight - pr.top + 6; }
+    }
+    if (!h) return;
+    h.classList.add('bl'); h.style.top = 'auto'; h.style.right = 'auto'; h.style.left = left + 'px'; h.style.bottom = vb + 'px';
+    h.style.width = Math.max(200, Math.min(360, cr.right - left - 12)) + 'px';
+  }
+  window.__tzToastPlace = place;
+  window.addEventListener('resize', place);
+  setInterval(function () { if (list.length || document.getElementById('stkpt-toasts')) place(); }, 400);   // panels, layouts and the bar-stats strip move the anchor
+
   function setFan(v) {
     if (fanned === v) return;
     fanned = v;
@@ -105,19 +136,19 @@
   // Collapsed = 3-deep stack (newest in front); fanned (hover/focus) = a list.
   function layout() {
     if (!list.length) fanned = false;   // the hovered toast vanished under the cursor: no pointerleave will come
-    var up = isUp(), off = 0;
+    var up = isUp(), off = 0; place();
     list.forEach(function (c, i) {
       var el = c.el, y, s = 1, o = 1;
       el.classList.toggle('up', up);
-      if (fanned) { y = off; off += el.offsetHeight + GAP; }
+      if (fanned || chartBL()) { y = off; off += el.offsetHeight + GAP; }
       else {
         y = i === 0 ? 0 : i === 1 ? 10 : 22;
         s = i === 0 ? 1 : i === 1 ? .95 : .9; o = i === 0 ? 1 : i === 1 ? .75 : i === 2 ? .45 : 0;
       }
       if (noMotion()) s = 1;
       el.style.zIndex = String(100 - i);
-      el.style.opacity = String(o);
-      el.style.pointerEvents = (!fanned && i > 0) ? 'none' : '';
+      el.style.opacity = String(chartBL() ? 1 : o);
+      el.style.pointerEvents = (!fanned && !chartBL() && i > 0) ? 'none' : '';
       if (!el._drag) el.style.transform = 'translateY(' + (up ? -y : y) + 'px) scale(' + s + ')';
     });
   }
@@ -233,10 +264,10 @@
 
     var h = host();
     toast.style.transition = 'none'; toast.style.opacity = '0';
-    toast.style.transform = 'translateY(' + (isUp() ? 14 : -14) + 'px) scale(.96)';
+    toast.style.transform = chartBL() ? 'translate(-24px,12px) scale(.96)' : 'translateY(' + (isUp() ? 14 : -14) + 'px) scale(.96)';
     h.appendChild(toast);
     list.unshift(api);
-    while (list.length > MAX) list[list.length - 1].close();
+    while (list.length > (chartBL() ? MAX_BL : MAX)) list[list.length - 1].close();
     if (fanned) paused = true;
     void toast.offsetWidth; toast.style.transition = '';
     layout();

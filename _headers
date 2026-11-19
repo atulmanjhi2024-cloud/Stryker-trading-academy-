@@ -185,3 +185,10 @@
 /offline.html
   Cache-Control: public, max-age=0, must-revalidate
   X-Robots-Tag: noindex
+
+# Android beta build: force a download with the right type.
+/downloads/*.apk
+  Content-Type: application/vnd.android.package-archive
+  Content-Disposition: attachment
+  Cache-Control: public, max-age=300
+  X-Robots-Tag: noindex

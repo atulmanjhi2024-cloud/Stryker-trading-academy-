@@ -70,6 +70,7 @@
   }
 
   document.documentElement.setAttribute('data-device', device);
+  if (/Android/i.test(ua)) document.documentElement.classList.add('dl-is-android');
 })();
 </script>
 <script src="assets/toast.js?v=1138" defer></script>
@@ -114,6 +115,11 @@
 .dl-card{ border:1px solid var(--line); border-radius:16px; background:var(--bg-2); padding:16px; }
 .dl-card h3{ font-size:15px; line-height:22px; font-weight:600; color:var(--ink-0); margin:0 0 4px; display:flex; align-items:center; gap:8px; }
 .dl-card p{ font-size:14px; line-height:20px; color:var(--ink-2); margin:0; }
+.dl-card .dl-btn-sm{ margin:12px 0; height:44px; padding:0 20px; font-size:14px; }
+.dl-card .dl-steps{ font-size:13px; line-height:20px; }
+.dl-beta{ color:var(--gold); border-color:var(--gold-dim); font-weight:600; vertical-align:middle; }
+h1 .dl-beta{ font-size:12px; position:relative; top:-4px; margin-left:4px; }
+html.dl-is-android #dl-android-card{ border-color:var(--gold); order:-1; box-shadow:0 0 0 1px var(--gold) inset; }
 .dl-pill{ font-size:11px; line-height:13px; font-weight:500; padding:4px 8px; border-radius:999px; border:1px solid var(--line); color:var(--ink-2); }
 .dl-steps{ margin:0; padding-left:20px; font-size:14px; line-height:20px; color:var(--ink-2); }
 .dl-steps li + li{ margin-top:8px; }
@@ -143,20 +149,20 @@
       <a href="/features/community">Community</a>
       <a href="/#faq">FAQ</a>
       <a href="/help">Help</a>
-    </div>
-    <div class="nav-cta">
+    <div class="dl-drawer"><p class="dl-drawer-h">Download app</p><a href="/dl/TradeZoro-Setup.exe" rel="noopener"><svg class="ci" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="3" y="3" width="8" height="8" rx="1"/><rect x="13" y="3" width="8" height="8" rx="1"/><rect x="3" y="13" width="8" height="8" rx="1"/><rect x="13" y="13" width="8" height="8" rx="1"/></svg><div><b>TradeZoro for Windows</b><span>Desktop app for Windows 10 and 11</span></div><em class="dl-beta">Beta</em></a><a href="/downloads/tradezoro-android-beta.apk" download><svg class="ci" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="7" y="2.5" width="10" height="19" rx="2.5"/><path d="M11 18.5h2"/></svg><div><b>TradeZoro for Android</b><span>Charts, paper trading and alerts on your phone</span></div><em class="dl-beta">Beta</em></a></div></div>
+    <div class="nav-cta"><details class="dl-menu"><summary class="dl-pill-btn"><svg class="ci" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 4v11"/><path d="M7 10.5l5 5 5-5"/><path d="M5 20h14"/></svg><span>Download</span><svg class="ci dl-chev" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M6 9l6 6 6-6"/></svg></summary><div class="dl-panel"><a href="/dl/TradeZoro-Setup.exe" rel="noopener"><svg class="ci" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="3" y="3" width="8" height="8" rx="1"/><rect x="13" y="3" width="8" height="8" rx="1"/><rect x="3" y="13" width="8" height="8" rx="1"/><rect x="13" y="13" width="8" height="8" rx="1"/></svg><div><b>TradeZoro for Windows</b><span>Desktop app for Windows 10 and 11</span></div><em class="dl-beta">Beta</em></a><a href="/downloads/tradezoro-android-beta.apk" download><svg class="ci" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="7" y="2.5" width="10" height="19" rx="2.5"/><path d="M11 18.5h2"/></svg><div><b>TradeZoro for Android</b><span>Charts, paper trading and alerts on your phone</span></div><em class="dl-beta">Beta</em></a><a class="dl-all" href="/download">All downloads</a></div></details>
       <a href="login" class="btn btn-ghost btn-sm">Log in</a>
       <a href="signup" class="btn btn-primary btn-sm">Start learning</a>
       <button class="nav-toggle" aria-label="Menu">☰</button>
     </div>
   </div>
-</nav>
+</nav><script src="/assets/dl-menu.js?v=1138" defer></script>
 <main id="main" tabindex="-1">
 <div class="dl">
   <section class="dl-hero" aria-labelledby="dl-title">
     <div>
       <p class="dl-eyebrow">Desktop app</p>
-      <h1 id="dl-title">TradeZoro for Windows</h1>
+      <h1 id="dl-title">TradeZoro for Windows <span class="dl-pill dl-beta">Beta</span></h1>
       <p class="dl-lead">Your TradeZoro desk in its own app. Charts get their own windows for a second monitor, stay on top when you want them to, and alerts arrive as Windows notifications.</p>
       <div class="dl-actions">
         <a class="dl-btn" id="dl-win" href="/dl/TradeZoro-Setup.exe" rel="noopener"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v12"/><path d="M7 11l5 5 5-5"/><path d="M5 20h14"/></svg>Download for Windows</a>
@@ -178,7 +184,9 @@
 
   <h2>Other devices</h2>
   <div class="dl-cards">
-    <div class="dl-card"><h3>Android <span class="dl-pill">Coming soon</span></h3><p>Until then, open tradezoro.com in Chrome and choose Add to Home screen.</p></div>
+    <div class="dl-card" id="dl-android-card"><h3>Android <span class="dl-pill dl-beta">Beta</span></h3><p>Charts, paper trading and alerts on your phone.</p>
+      <a class="dl-btn dl-btn-sm" id="dl-android" href="/downloads/tradezoro-android-beta.apk" download><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v12"/><path d="M7 11l5 5 5-5"/><path d="M5 20h14"/></svg>Download for Android (Beta)</a>
+      <ol class="dl-steps"><li>Open the file.</li><li>Allow install from this source.</li><li>Open TradeZoro.</li></ol></div>
     <div class="dl-card"><h3>iPhone, iPad and Mac</h3><p>Use tradezoro.com in Safari or Chrome. On iPhone, Share then Add to Home Screen.</p></div>
   </div>
 

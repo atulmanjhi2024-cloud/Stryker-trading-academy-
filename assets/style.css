@@ -13196,6 +13196,11 @@ html .vela-dsp-lab{ flex-basis:120px; }
 .dl-panel a:hover, .dl-drawer a:hover{ background:var(--bg-3); }
 .dl-panel a:focus-visible, .dl-drawer a:focus-visible{ outline:2px solid var(--gold); outline-offset:-2px; }
 .dl-panel a > .ci, .dl-drawer a > .ci{ width:20px; height:20px; color:var(--gold); }
+.dl-panel a > .dl-logo, .dl-drawer a > .dl-logo{ width:22px; height:22px; flex:none; display:block; }
+.dl-logo.dl-win{ fill:#0078D4; }
+.dl-logo.dl-and{ fill:#3DDC84; }
+.dl-logo.dl-and .dl-ant{ fill:none; stroke:#3DDC84; stroke-width:1.6; stroke-linecap:round; }
+.dl-logo.dl-and .dl-eye{ fill:var(--bg-2); }
 .dl-panel a > div, .dl-drawer a > div{ flex:1; min-width:0; }
 .dl-panel b, .dl-drawer b{ display:block; font-size:14px; line-height:20px; font-weight:600; color:var(--ink-0); }
 .dl-panel a span, .dl-drawer a span{ display:block; font-size:12px; line-height:16px; color:var(--ink-2); }

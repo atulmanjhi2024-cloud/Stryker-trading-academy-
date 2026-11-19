@@ -19,7 +19,7 @@
 // Depends on: assets/crypto-deriv-data.js (pure maths), the Vela plugin Core (registerNativeIndicator, registerRendererLayer,
 // registerStatePersistence). Gate: assets/chart-pro-gate.js OF_TYPES (Pro, like crypto footprint / delta). Education only. Not financial advice.
 
-import * as D from './crypto-deriv-data.js?v=1137';
+import * as D from './crypto-deriv-data.js?v=1138';
 
 export const DERIV_TYPES = ['stk_liq', 'stk_liq_bars', 'stk_oi', 'stk_funding', 'stk_lsr'];
 export const DERIV_DESC = {

@@ -1406,6 +1406,8 @@ function legendFold(R) {
     refreshLayoutUi();
   }
 
+  // theme changed while open (another device via assets/account-sync.js, or another tab): repaint the charts too
+  document.addEventListener('stryker:theme', () => { try { ws.setTheme(currentTheme()); } catch (e) {} });
   try { ws.on('layout:changed', () => setTimeout(refreshLayoutUi, 0)); } catch (e) {}
   try { ws.on('cell:active', () => setTimeout(applyPhoneLayout, 0)); } catch (e) {}
   try { ws.on('state:changed', () => { if (plMode) applyPhoneLayout(); }); } catch (e) {}
@@ -1522,6 +1524,7 @@ function legendFold(R) {
   let saving = false;
   let lastErr = '';
 
+  window.addEventListener('stk:templates-changed', () => { if (tplPop.isConnected && !tplPop.hidden && tplPop.getClientRects().length && !editing && !saving) renderTemplates(); });
   async function renderTemplates(){
     let list = [];
     let defId = null;

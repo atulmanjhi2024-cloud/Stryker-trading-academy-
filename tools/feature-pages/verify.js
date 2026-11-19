@@ -83,7 +83,7 @@ const SECS = ['top', 'problem', 'tour', 'more', 'how', 'list', 'related', 'faq',
             if (Math.abs(dt - db) > 1.5) push('vpad ' + e.className + ' ' + Math.round(dt) + '/' + Math.round(db));
             if (!e.classList.contains('fpg-chip')) { const dl = t.left - r.left, dr = r.right - t.right; if (Math.abs(dl - dr) > 1.5) push('hpad ' + e.className + ' ' + Math.round(dl) + '/' + Math.round(dr)); }
           });
-          document.querySelectorAll('.fpg-chip').forEach((e) => { const r = R(e), i = R(e.querySelector('img')); if (Math.abs(cen(r) - cen(i)) > 1) push('chip icon off-centre'); });
+          document.querySelectorAll('.fpg-chip').forEach((e) => { const r = R(e), i = R(e.querySelector('img, .fpg-svgic')); if (Math.abs(cen(r) - cen(i)) > 1) push('chip icon off-centre'); });
           document.querySelectorAll('.fpg-arrow span, .fpg-card h3 .ci, .fpg-val > .ci').forEach((e) => {
             const r = R(e), s = e.querySelector ? (e.querySelector('svg') || e) : e; const k = R(s);
             if (s !== e && (Math.abs(cen(r) - cen(k)) > 1 || Math.abs((r.left + r.width / 2) - (k.left + k.width / 2)) > 1)) push('icon off-centre');
@@ -109,7 +109,8 @@ const SECS = ['top', 'problem', 'tour', 'more', 'how', 'list', 'related', 'faq',
         await p.screenshot({ path: path.join(dir, `full-${tag}.png`), fullPage: true });
         // section shots: hide the fixed app bars so they do not get stitched into tall element captures
         await p.addStyleTag({ content: '.mobile-topnav, .appnav-dock, #site-nav, .cookie-notice, [class*=cookie]{ visibility:hidden !important; }' });
-        for (const id of SECS) {
+        const secIds = await p.evaluate(() => [...document.querySelectorAll('main.fpg > [id], main.fpg > section[id]')].map((e) => e.id));
+        for (const id of [...new Set([...secIds, ...SECS])]) {
           const el = await p.$(id === 'end-h' ? '.fpg-final' : '#' + id);
           if (!el) continue;
           await el.scrollIntoViewIfNeeded(); await p.waitForTimeout(250);

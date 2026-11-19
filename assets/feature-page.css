@@ -263,3 +263,10 @@ html.fpg-anim .fpg-rv.is-in{ opacity:1; transform:none; }
 /* light theme: screenshot wells stay dark (the captures are dark-theme UI) */
 :root[data-theme="light"] .fpg-device.fp-pad{ background:var(--surface-1); }
 :root[data-theme="light"] .fpg-dots i{ background:var(--line); }
+
+/* market-stats etc (FEATC): tools without a product tile image get an svg tile of the same size (Global Monitor,
+   Smart Money, Trading Floor) in the hero chip and the related cards */
+.fpg-svgic{ display:grid; place-items:center; flex:none; width:var(--s); height:var(--s); border-radius:calc(var(--s) * .25);
+  color:var(--gold); background:color-mix(in srgb, var(--gold) 14%, var(--surface-2)); border:1px solid color-mix(in srgb, var(--gold) 28%, transparent); }
+.fpg .fpg-svgic .ci{ width:60%; height:60%; color:inherit; }
+.fpg-relc:hover .fpg-svgic .ci{ transform:none; color:var(--gold); }

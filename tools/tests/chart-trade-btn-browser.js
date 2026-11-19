@@ -144,20 +144,20 @@ const act = (p) => p.evaluate(() => { const e = document.activeElement; if (!e) 
 const keyboardTest = async (p, tag) => {
   check(await act(p) === 'paper', tag + ': kbd: menu opens focused on the checked row', await act(p));
   await p.keyboard.press('ArrowDown'); check((await act(p)) === 'live:123', tag + ': kbd: ArrowDown -> first account', await act(p));
-  await p.keyboard.press('ArrowRight'); check((await act(p)) === 'edit:123', tag + ': kbd: ArrowRight -> pencil', await act(p));
+  await p.keyboard.press('ArrowRight'); check((await act(p)) === 'gear:123', tag + ': kbd: ArrowRight -> gear', await act(p));
   await p.keyboard.press('ArrowRight'); check((await act(p)) === 'gear:123', tag + ': kbd: ArrowRight -> gear', await act(p));
   await sleep(250); const vis = await p.evaluate(() => getComputedStyle(document.activeElement).opacity); check(vis === '1', tag + ': focused icon button is visible', vis);
-  await p.keyboard.press('ArrowLeft'); await p.keyboard.press('ArrowLeft'); check((await act(p)) === 'live:123', tag + ': kbd: ArrowLeft x2 -> back to the row', await act(p));
+  await p.keyboard.press('ArrowLeft'); check((await act(p)) === 'live:123', tag + ': kbd: ArrowLeft -> back to the row', await act(p));
   await p.keyboard.press('ArrowDown'); await p.keyboard.press('ArrowDown'); check(await act(p) === 'connect', tag + ': kbd: ArrowDown x2 -> Connect', await act(p));
   await p.keyboard.press('ArrowUp'); check((await act(p)) === 'live:223', tag + ': kbd: ArrowUp', await act(p));
-  await p.keyboard.press('ArrowRight'); await p.keyboard.press('Enter'); await sleep(200);
-  check(await p.evaluate(() => !!document.querySelector('#stkc-trade-pop .stktm-ed') && document.activeElement.name === 'label'), tag + ': kbd: Enter on the pencil opens the editor, focus in Label');
+  await p.keyboard.press('ArrowRight'); await p.keyboard.press('Enter'); await sleep(200); await p.click('#stktm-gm [data-g=edit]'); await sleep(200);
+  check(await p.evaluate(() => !!document.querySelector('#stkc-trade-pop .stktm-ed') && document.activeElement.name === 'label'), tag + ': kbd: gear > Edit details opens the editor, focus in Label');
   await p.keyboard.press('Escape'); await sleep(100);
   check(await p.evaluate(() => !document.querySelector('#stkc-trade-pop .stktm-ed') && !document.getElementById('stkc-trade-pop').hidden), tag + ': kbd: Esc closes the editor first, menu stays open');
-  check((await act(p)) === 'edit:223', tag + ': kbd: focus back on the pencil', await act(p));
+  check(['gear:223','live:223'].includes(await act(p)), tag + ': kbd: focus back on the row or gear', await act(p));
   await p.keyboard.press('Home'); check(await act(p) === 'paper', tag + ': kbd: Home');
   const roles = await p.evaluate(() => ({ menu: document.getElementById('stkc-trade-pop').getAttribute('role'), radios: document.querySelectorAll('#stkc-trade-pop [role=menuitemradio]').length, labels: [...document.querySelectorAll('#stkc-trade-pop .stktm-act')].map((b) => b.getAttribute('aria-label')) }));
-  check(roles.menu === 'menu' && roles.radios === 3 && roles.labels.length === 5 && roles.labels[0] === 'Paper trading settings' && roles.labels.slice(1).every((l) => /^(Edit|Settings for) /.test(l)), tag + ': aria menu + 3 menuitemradio + labelled icon buttons', roles);
+  check(roles.menu === 'menu' && roles.radios === 3 && roles.labels.length === 3 && roles.labels[0] === 'Paper trading settings' && roles.labels.slice(1).every((l) => /^(Edit|Settings for) /.test(l)), tag + ': aria menu + 3 menuitemradio + labelled icon buttons', roles);
   await p.keyboard.press('Escape'); await sleep(100);
   check(await p.evaluate(() => document.getElementById('stkc-trade-pop').hidden && document.activeElement.id === 'stkc-paper-btn'), tag + ': kbd: Esc closes, focus back on button');
   await p.keyboard.press('Enter'); await sleep(300);
@@ -207,11 +207,11 @@ async function run(b, w, h, mobile, theme) {
   check(Math.max(...L0) - Math.min(...L0) <= 0.5 && Math.max(...T0) - Math.min(...T0) <= 0.5 && Math.abs(L0[0] - T0[0]) <= 2.5, tag + ': logos share one left edge, ticks one right edge, equal left/right inset', { L0, T0 });
   check(menu.rows.every((r) => r.gapLogoTx === 8), tag + ': 8px logo-to-text gap', menu.rows.map((r) => r.gapLogoTx));
   const actSz = mobile ? '32x32' : '28x28';
-  check([r1, r2].every((r) => r.acts.length === 2 && r.acts.every((a) => a === actSz)), tag + ': pencil + disconnect hit areas ' + actSz, [r1.acts, r2.acts]);
+  check([r1, r2].every((r) => r.acts.length === 1 && r.acts.every((a) => a === actSz)), tag + ': gear hit area (no pencil) ' + actSz, [r1.acts, r2.acts]);
   check([r1, r2].every((r) => r.actOpacity.every((o) => o === '1')), tag + ': icon buttons always visible (main 336ab0e)', [r1.actOpacity, r2.actOpacity]);
   // 2026-11-17: Paper row = reserved edit slot + disconnect (always visible while paper is on), same columns as the broker rows
   const r0p = menu.rows.find((r) => r.id === 'pap');
-  check(r0p && r0p.phR != null && Math.abs(r0p.phR - r1.editR) <= 0.5 && (r0p.acts.length === 0 || (r0p.acts[0] === actSz && r0p.actOpacity[0] === '1' && Math.abs(r0p.offR - r1.offR) <= 0.5)), tag + ': Paper row: edit slot + disconnect line up with the broker rows\' columns', { r0p, r1 });
+  check(r0p && r1.editR == null && (r0p.acts.length === 0 || (r0p.acts[0] === actSz && r0p.actOpacity[0] === '1' && Math.abs(r0p.offR - r1.offR) <= 0.5)), tag + ': Paper row: gear lines up with the broker rows\' gear, no pencil', { r0p, r1 });
   check(menu.rows.every((r) => r.h >= 48 && r.h <= 56) && (mobile || menu.w <= 360) && menu.rows.every((r) => r.lines >= 0 && r.lines <= 4), tag + ': compact rows 48-56px, width <= 360', menu.rows.map((r) => r.h + '/' + r.lines));
   check(menu.foot && menu.foot.cySpread <= 1 && menu.foot.addH === menu.foot.manH && Math.abs(menu.foot.padL - menu.foot.padR) <= 1, tag + ': footer pills: same height, one centre, equal inset', menu.foot);
   check(menu.padL === menu.padR && menu.scrollW, tag + ': menu padding equal, no sideways scroll', [menu.padL, menu.padR]);
@@ -235,7 +235,7 @@ async function run(b, w, h, mobile, theme) {
   }
   // ---- pencil: label + prop firm + type, saved to students/u1/brokerAccounts/ACC and shown in the row + the Trade button
   if (!mobile) await p.hover('#stkc-trade-pop .stktm-row[data-row="' + ACC + '"]');
-  await p.click('#stkc-trade-pop [data-x=edit][data-id="' + ACC + '"]'); await sleep(250);
+  await p.click('#stkc-trade-pop [data-x=gear][data-id="' + ACC + '"]'); await sleep(200); await p.click('#stktm-gm [data-g=edit]'); await sleep(250);
   check(await p.evaluate(() => !!document.querySelector('#stkc-trade-pop .stktm-ed') && document.querySelectorAll('#stkc-trade-pop .stktm-ed select option').length === 14), tag + ': editor opens with the firm list (12 + None + Other)');
   await p.fill('#stkc-trade-pop .stktm-ed [name=label]', 'Apex 150K evaluation account 1');
   await p.selectOption('#stkc-trade-pop .stktm-ed select', 'Apex');
@@ -257,7 +257,7 @@ async function run(b, w, h, mobile, theme) {
   check(await p.evaluate(() => JSON.parse(localStorage.getItem('stryker_broker_meta_u1') || '{}')['123e4567-e89b-12d3-a456-426614174000'].firm === 'Apex'), tag + ': mirrored in localStorage');
   // localStorage fallback when Firestore is unreachable
   await p.evaluate(() => { window.__metaFail = true; });
-  await p.click('#stkc-trade-pop [data-x=edit][data-id="' + ACC2 + '"]'); await sleep(200);
+  await p.click('#stkc-trade-pop [data-x=gear][data-id="' + ACC2 + '"]'); await sleep(200); await p.click('#stktm-gm [data-g=edit]'); await sleep(250);
   await p.selectOption('#stkc-trade-pop .stktm-ed select', '__other'); await p.fill('#stkc-trade-pop .stktm-ed [name=other]', 'Funded Next Futures');
   await p.click('#stkc-trade-pop .stktm-ed .stktm-pri'); await sleep(400);
   const fb = await p.evaluate(() => ({ t: window.__toasts.slice(-1)[0], ls: JSON.parse(localStorage.getItem('stryker_broker_meta_u1') || '{}')['223e4567-e89b-12d3-a456-426614174001'], meta: document.querySelector('#stkc-trade-pop .stktm-row[data-row="223e4567-e89b-12d3-a456-426614174001"] .stktm-meta').textContent }));

@@ -70,7 +70,7 @@ function paperRow(paper, on, admin) {
   return '<div class="stktm-row" data-row="paper">' + pickBtn('data-a="paper"', on, 'Paper trading' + (p.bal ? ', balance ' + p.bal : ''), PAPER_IC +
     '<span class="stktm-tx"><span class="stktm-l1"><span class="stktm-nm">Paper Trading</span></span><span class="stktm-l2"><span class="stktm-chip">Simulated</span></span></span>' + VD +
     (p.bal ? balCell(esc(p.bal), ' title="Paper balance"', upl) : balCell('—', '')) ) +
-    (admin ? '<span class="stktm-acts"><span class="stktm-ph" aria-hidden="true"></span>' + gear + '</span>' : '') + (on ? CHK : NOCHK) + '</div>';
+    (admin ? '<span class="stktm-acts">' + gear + '</span>' : '') + (on ? CHK : NOCHK) + '</div>';
 }
 // mode 'sheet' = Manage accounts sheet: no pick / tick, Disconnect shown instead of the gear
 function liveRow(a, live, on, mode) {
@@ -82,7 +82,7 @@ function liveRow(a, live, on, mode) {
   const pen = iconBtn('edit', a.id, 'Edit ' + t.full, PEN);
   return '<div class="stktm-row" data-row="' + esc(a.id) + '">' +
     (sheet ? '<div class="stktm-pick stktm-static">' + info + '</div>' : pickBtn('data-a="live" data-id="' + esc(a.id) + '"', on, t.full + ', ' + s.t, info)) +
-    '<span class="stktm-acts">' + pen + (sheet ? iconBtn('off', a.id, 'Disconnect ' + a.text, UNPLUG, 'stktm-act-off') : iconBtn('gear', a.id, 'Settings for ' + t.full, GEAR)) + '</span>' +
+    '<span class="stktm-acts">' + (sheet ? pen : '') + (sheet ? iconBtn('off', a.id, 'Disconnect ' + a.text, UNPLUG, 'stktm-act-off') : iconBtn('gear', a.id, 'Settings for ' + t.full, GEAR)) + '</span>' +
     (sheet ? '' : on ? CHK : NOCHK) + '</div>';
 }
 
@@ -176,7 +176,7 @@ function openEditor(pop, id) {   // pop = the menu or the Manage sheet
   const sel = ed.querySelector('select'), oth = ed.querySelector('.stktm-f-other');
   sel.addEventListener('change', () => { oth.hidden = sel.value !== '__other'; if (!oth.hidden) oth.querySelector('input').focus(); });
   ed.querySelectorAll('[data-ty]').forEach((b) => b.addEventListener('click', () => { const on = b.getAttribute('aria-checked') !== 'true'; ed.querySelectorAll('[data-ty]').forEach((x) => x.setAttribute('aria-checked', 'false')); b.setAttribute('aria-checked', String(on)); }));
-  ed.querySelector('[data-ed=cancel]').addEventListener('click', () => { closeEditor(pop); focusRow(pop, id, 'edit'); });
+  ed.querySelector('[data-ed=cancel]').addEventListener('click', () => { closeEditor(pop); focusRow(pop, id, pop.querySelector('[data-x=edit][data-id="' + id + '"]') ? 'edit' : 'gear'); });
   ed.addEventListener('keydown', (e) => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); closeEditor(pop); focusRow(pop, id, 'edit'); } else e.stopPropagation(); });
   ed.addEventListener('submit', async (e) => {
     e.preventDefault();

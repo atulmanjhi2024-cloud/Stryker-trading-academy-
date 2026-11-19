@@ -36,7 +36,7 @@ const MIN_GAP = 200;   // redraw at most 5 a second
 const { clamp, num } = D;
 const minHist = () => (typeof window !== 'undefined' && window.__stkBookPackMin) || 800;   // level sizes seen this session before the top-% size means anything (~20 s of a 20-level book)
 const defaults = (schema) => Object.fromEntries(schema.map((i) => [i.key, i.defval]));
-const light = () => { try { return document.documentElement.getAttribute('data-theme') === 'light'; } catch (e) { return false; } };
+const light = () => { try { return (window.tzChartLight ? window.tzChartLight() : document.documentElement.getAttribute('data-theme') === 'light'); } catch (e) { return false; } };
 function rgba(hex, a) {
   const m = /^#?([0-9a-f]{6})/i.exec(String(hex || ''));
   if (!m) return hex;

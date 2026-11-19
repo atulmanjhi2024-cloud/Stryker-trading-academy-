@@ -18,7 +18,7 @@ const MONO = '"JetBrains Mono", ui-monospace, monospace';
 const SANS = '-apple-system, BlinkMacSystemFont, "SF Pro Text", Roboto, "Segoe UI", system-ui, sans-serif';
 const num = (v, d) => (typeof v === 'number' && Number.isFinite(v) ? v : d);
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
-const light = () => { try { return document.documentElement.getAttribute('data-theme') === 'light'; } catch (e) { return false; } };
+const light = () => { try { return (window.tzChartLight ? window.tzChartLight() : document.documentElement.getAttribute('data-theme') === 'light'); } catch (e) { return false; } };
 function rgba(hex, a) {
   const m = /^#?([0-9a-f]{6})/i.exec(String(hex || ''));
   if (!m) return hex;

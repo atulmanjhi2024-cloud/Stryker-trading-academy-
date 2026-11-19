@@ -34,7 +34,7 @@ function rgba(hex, a) {
   const n = parseInt(m[1], 16);
   return 'rgba(' + (n >> 16 & 255) + ',' + (n >> 8 & 255) + ',' + (n & 255) + ',' + a + ')';
 }
-function light() { try { return document.documentElement.getAttribute('data-theme') === 'light'; } catch (e) { return false; } }
+function light() { try { return (window.tzChartLight ? window.tzChartLight() : document.documentElement.getAttribute('data-theme') === 'light'); } catch (e) { return false; } }
 const when = (...ids) => ({ key: 'style', anyOf: OVERLAY_STYLES.filter((s) => ids.includes(styleId(s))) });
 
 const DS_SCHEMA = [

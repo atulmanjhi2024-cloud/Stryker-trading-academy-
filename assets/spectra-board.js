@@ -13,7 +13,7 @@ const POLL_MS = 30000;
 const LONG_PRESS_MS = 500;
 const isNum = (v) => typeof v === 'number' && Number.isFinite(v);
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-const theme = () => (document.documentElement.getAttribute('data-theme') === 'light' ? 'light' : 'dark');
+const theme = () => ((window.tzChartLight ? window.tzChartLight() : document.documentElement.getAttribute('data-theme') === 'light') ? 'light' : 'dark');
 const rgb = (a) => 'rgb(' + a.join(',') + ')';
 const ICON = '/assets/images/spectra/spectra-20';
 export const iconImg = (sz) => '<img class="spx-ic" src="' + ICON + '.png" srcset="' + ICON + '@2x.png 2x" width="' + (sz || 20) + '" height="' + (sz || 20) + '" alt="" aria-hidden="true" decoding="async">';

@@ -578,7 +578,7 @@ function restore(id, snap, opts){
 // rewritten: it is applied only to a cell created without a saved document, and undone first when a
 // saved document / template / layout is loaded over it (so those load exactly as they always did).
 // ---------------------------------------------------------------------------------------
-const isLight = () => document.documentElement.getAttribute('data-theme') === 'light';
+const isLight = () => (window.tzChartLight ? window.tzChartLight() : document.documentElement.getAttribute('data-theme') === 'light');
 function defStylePatch(){
   const light = isLight();
   const up = '#24A34E', down = light ? '#8B8E94' : '#ADADAD';
@@ -635,7 +635,7 @@ function mountDefaultLook(ws, fresh){
   try { ws.on('cell:created', ({ id }) => { if (loading) return; if (pooled.delete(id)) return; setTimeout(() => wearDefault(id), 0); }); } catch (e) {}
   // Day / night switch: our values are theme-specific, so follow the theme while the cell wears them.
   const st = ws.setTheme.bind(ws);
-  ws.setTheme = function(t){ return quietly(() => { const r = st(t); stockOf.forEach((_, id) => { const c = cellOf(id); if (c && c.chart) { try { c.chart.renderer.applyConfig(defStylePatch()); } catch (e) {} } }); return r; }); };
+  ws.setTheme = function(t){ if (t === 'dark' || t === 'light') { try { localStorage.setItem('stryker_chart_theme', t); } catch (e) {} } return quietly(() => { const r = st(t); stockOf.forEach((_, id) => { const c = cellOf(id); if (c && c.chart) { try { c.chart.renderer.applyConfig(defStylePatch()); } catch (e) {} } }); return r; }); };
 }
 function stykerDefaults(id){
   const cell = cellOf(id); const R = inner(cell);

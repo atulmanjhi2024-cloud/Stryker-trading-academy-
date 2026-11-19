@@ -84,7 +84,7 @@ export function load() {
 export const _setData = (j) => { cache = j; at = Date.now(); };   // test hook
 
 // ---- native ---------------------------------------------------------------------------------------
-const light = () => { try { return document.documentElement.getAttribute('data-theme') === 'light'; } catch (e) { return false; } };
+const light = () => { try { return (window.tzChartLight ? window.tzChartLight() : document.documentElement.getAttribute('data-theme') === 'light'); } catch (e) { return false; } };
 function msgTable(text) {
   const day = light();
   return { id: 'offex-msg', paneId: '', position: 'bottom_center', columns: 1, rows: 1, bgColor: day ? 'rgba(255,255,255,0.92)' : 'rgba(11,11,13,0.9)', frameWidth: 0, borderWidth: 0,

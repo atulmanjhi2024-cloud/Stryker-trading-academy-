@@ -39,7 +39,7 @@ function rgba(hex, a) {
   const n = parseInt(m[1], 16);
   return 'rgba(' + (n >> 16 & 255) + ',' + (n >> 8 & 255) + ',' + (n & 255) + ',' + a + ')';
 }
-function light() { try { return document.documentElement.getAttribute('data-theme') === 'light'; } catch (e) { return false; } }
+function light() { try { return (window.tzChartLight ? window.tzChartLight() : document.documentElement.getAttribute('data-theme') === 'light'); } catch (e) { return false; } }
 const ink = () => (light() ? '#0f172a' : '#f4f4f6');
 const dim = () => (light() ? '#64748b' : '#8a90a0');
 const plateC = () => (light() ? 'rgba(255,255,255,0.9)' : 'rgba(11,11,13,0.85)');

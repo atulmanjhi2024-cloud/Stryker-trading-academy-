@@ -122,7 +122,7 @@ if (typeof document !== 'undefined') {
 }
 
 // ---- the native ----------------------------------------------------------------------------------
-function light() { try { return document.documentElement.getAttribute('data-theme') === 'light'; } catch (e) { return false; } }
+function light() { try { return (window.tzChartLight ? window.tzChartLight() : document.documentElement.getAttribute('data-theme') === 'light'); } catch (e) { return false; } }
 function msgTable(id, text) {
   const day = light();
   return { id, paneId: '', position: 'bottom_center', columns: 1, rows: 1, bgColor: day ? 'rgba(255,255,255,0.92)' : 'rgba(11,11,13,0.9)', frameWidth: 0, borderWidth: 0,

@@ -773,8 +773,8 @@ function lateLists(provider){
   if (BT && BT.install) { try { await BT.install(Core); } catch (e) { console.warn('TradeZoro: backtest layer', e); } }
 
   pm('stk:installs-done');
-  let day = false;
-  try { day = localStorage.getItem('stryker_theme') === 'day'; } catch (e) {}
+  // Day/Night is site chrome only; the chart keeps its own theme (window.tzChartLight, head snippet of charts.html).
+  const day = !!(window.tzChartLight && window.tzChartLight());
   migrateTvLook();
   let hadSession = false;
   try { hadSession = !!localStorage.getItem(PERSIST_KEY); } catch (e) {}
@@ -1053,7 +1053,7 @@ function legendFold(R) {
   } catch (e) { console.warn('TradeZoro: commodities tab', e); }
 
   const cellCount = () => { try { return ws.layout.cells.length; } catch (e) { return 1; } };
-  const currentTheme = () => (document.documentElement.getAttribute('data-theme') === 'light' ? 'light' : 'dark');
+  const currentTheme = () => ((window.tzChartLight ? window.tzChartLight() : document.documentElement.getAttribute('data-theme') === 'light') ? 'light' : 'dark');
   const liveCells = () => { try { return ws.context().cells; } catch (e) { return []; } };
 
   // ---------------- prefetch (Owner order 2026-10-14: symbol switch under 1 s) ----------------
@@ -1406,8 +1406,6 @@ function legendFold(R) {
     refreshLayoutUi();
   }
 
-  // theme changed while open (another device via assets/account-sync.js, or another tab): repaint the charts too
-  document.addEventListener('stryker:theme', () => { try { ws.setTheme(currentTheme()); } catch (e) {} });
   try { ws.on('layout:changed', () => setTimeout(refreshLayoutUi, 0)); } catch (e) {}
   try { ws.on('cell:active', () => setTimeout(applyPhoneLayout, 0)); } catch (e) {}
   try { ws.on('state:changed', () => { if (plMode) applyPhoneLayout(); }); } catch (e) {}

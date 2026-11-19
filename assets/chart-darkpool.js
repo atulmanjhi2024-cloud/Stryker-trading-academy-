@@ -178,7 +178,7 @@ const onData = (f) => { subs.add(f); return () => subs.delete(f); };
 
 // ---- native + layer ------------------------------------------------------------------------------
 const replayOn = () => !!(window.__stkReplay && window.__stkReplay.on);
-const light = () => { try { return document.documentElement.getAttribute('data-theme') === 'light'; } catch (e) { return false; } };
+const light = () => { try { return (window.tzChartLight ? window.tzChartLight() : document.documentElement.getAttribute('data-theme') === 'light'); } catch (e) { return false; } };
 const hits = new WeakMap();
 // ---- alerts glue (the module loads on demand: assets/chart-dp-alerts.js) ----
 let WSREF = null, alertsP = null;

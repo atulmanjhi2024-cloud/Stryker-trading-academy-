@@ -38,7 +38,7 @@ const MIN_COVER = 90000;             // Delta Profile: a window whose first trad
 const MIN_GAP = 200;                 // redraw at most 5 a second
 const GAP_MAX = 5 * 60000;           // two book samples further apart than this are not one "change" (the recorder's archive is one sample per few minutes)
 const ROW_STEPS = [1, 2, 4, 5, 8, 10, 16, 20, 25, 40, 50, 80, 100, 200, 400];
-const light = () => { try { return document.documentElement.getAttribute('data-theme') === 'light'; } catch (e) { return false; } };
+const light = () => { try { return (window.tzChartLight ? window.tzChartLight() : document.documentElement.getAttribute('data-theme') === 'light'); } catch (e) { return false; } };
 const defaults = (schema) => Object.fromEntries(schema.map((i) => [i.key, i.defval]));
 const hhmm = (ms) => { try { return new Date(ms).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false }); } catch (e) { return ''; } };
 const sgn = (v) => (v >= 0 ? '+' : '-') + fmtK(Math.abs(v));

@@ -32,7 +32,7 @@ export const DERIV_DESC = {
 const LOWER = 'Exchanges send only part of their liquidations (Binance at most one per symbol per second), so these are a lower bound.';
 const UP = '#03c988', DN = '#f23645';
 const FONT = '-apple-system,BlinkMacSystemFont,"SF Pro Text",Roboto,"Segoe UI",system-ui,sans-serif';
-const light = () => { try { return document.documentElement.getAttribute('data-theme') === 'light'; } catch (e) { return false; } };
+const light = () => { try { return (window.tzChartLight ? window.tzChartLight() : document.documentElement.getAttribute('data-theme') === 'light'); } catch (e) { return false; } };
 const replayOn = () => { try { return !!(window.__stkReplay && window.__stkReplay.on); } catch (e) { return false; } };
 const isNum = (v) => typeof v === 'number' && Number.isFinite(v);
 const exBools = (def) => ['binance', 'bybit', 'okx'].map((e) => ({ key: e, title: D.EX_NAME[e], type: 'bool', defval: def.includes(e) }));

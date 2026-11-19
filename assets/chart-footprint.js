@@ -66,7 +66,7 @@ function tfMin(tf) {
   const n = m.length === 3 ? +m[1] : 1, u = (m.length === 3 ? m[2] : m[1]).toUpperCase();
   return u === 'S' ? n / 60 : u === 'D' ? n * 1440 : u === 'W' ? n * 10080 : n * 43200;
 }
-function light() { try { return document.documentElement.getAttribute('data-theme') === 'light'; } catch (e) { return false; } }
+function light() { try { return (window.tzChartLight ? window.tzChartLight() : document.documentElement.getAttribute('data-theme') === 'light'); } catch (e) { return false; } }
 
 const sgn = (v) => (v > 0 ? '+' : v < 0 ? '-' : '') + fmt(Math.abs(v));
 // The CME session (18:00 New York -> 17:00) a time belongs to, keyed by the NY date it ends on.

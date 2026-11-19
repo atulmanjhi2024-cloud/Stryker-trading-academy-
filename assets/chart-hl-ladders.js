@@ -56,7 +56,7 @@ export function mountLadders(ws, host) {
   // ---- bands on the chart (called from the Wallet Intel layer while it draws; g is clipped to the plot) ----------------------
   function bands(G, g) {
     if (!S.bands || !g) return;
-    const Wd = G.co.width, day = document.documentElement.getAttribute('data-theme') === 'light';
+    const Wd = G.co.width, day = (window.tzChartLight ? window.tzChartLight() : document.documentElement.getAttribute('data-theme') === 'light');
     for (const [k] of LADDERS) {
       for (const r of G.cols[k].view) {
         const y0 = yOf(G, r.hi), y1 = yOf(G, r.lo); if (!isNum(y0) || !isNum(y1)) continue;

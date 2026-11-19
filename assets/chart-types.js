@@ -271,7 +271,7 @@ function boxes(f, a) {
 // ---------------------------------------------------------------- group 4: TPO + session volume profile (Pro)
 const FUT = /^(MNQ|NQ|MES|ES|MYM|YM|MGC|GC|SIL|SI|MCL|CL|RTY|M2K)\d*!?$/i;
 const isFut = () => { try { const sym = String(window.STRYKER_VELA.active.symbol || '').replace(/^.*:/, ''); return FUT.test(sym); } catch (e) { return false; } };
-const lightPage = () => { try { return document.documentElement.getAttribute('data-theme') === 'light'; } catch (e) { return false; } };
+const lightPage = () => { try { return (window.tzChartLight ? window.tzChartLight() : document.documentElement.getAttribute('data-theme') === 'light'); } catch (e) { return false; } };
 const TPO_IN = '#9aa3ad', TPO_OUT = '#3f8f9a', MAGENTA = '#e040fb', VAL_LN = '#8fd8dc';
 function sessionsOf(bars, fut) {   // futures: the regular session (New York day); everything else: the UTC day
   const out = []; let cur = null;

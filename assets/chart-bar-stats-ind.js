@@ -20,7 +20,7 @@ export const SCHEMA = [
   { key: 'opacity', title: 'Opacity %', type: 'int', defval: 100, min: 20, max: 100, step: 5 }
 ];
 const defaults = () => Object.fromEntries(SCHEMA.map((i) => [i.key, i.defval]));
-const light = () => { try { return document.documentElement.getAttribute('data-theme') === 'light'; } catch (e) { return false; } };
+const light = () => { try { return (window.tzChartLight ? window.tzChartLight() : document.documentElement.getAttribute('data-theme') === 'light'); } catch (e) { return false; } };
 export function cfgOf(I) {
   const sc = SCHEMES[I.scheme] || SCHEMES['Heat map (default)'], op = Number(I.opacity);
   return { adj: SIZES[I.textSize] != null ? SIZES[I.textSize] : 0, tblPos: (I.position === 'Top' ? 't' : 'b') + (I.labelSide === 'Left' ? 'l' : 'r'),

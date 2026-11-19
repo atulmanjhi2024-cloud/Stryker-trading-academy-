@@ -110,7 +110,7 @@ function rgba(hex, a) {
   const n = parseInt(m[1], 16);
   return 'rgba(' + (n >> 16 & 255) + ',' + (n >> 8 & 255) + ',' + (n & 255) + ',' + a + ')';
 }
-const isLight = () => { try { return document.documentElement.getAttribute('data-theme') === 'light'; } catch (e) { return false; } };
+const isLight = () => { try { return (window.tzChartLight ? window.tzChartLight() : document.documentElement.getAttribute('data-theme') === 'light'); } catch (e) { return false; } };
 const TAG_H = 16;
 // Push tags apart so none overlaps (top to bottom), keeping order.
 export function spread(ys, gap, top, bot) {

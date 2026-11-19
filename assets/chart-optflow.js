@@ -167,7 +167,7 @@ class ZvolNative {
 // ---- native + layer ------------------------------------------------------------------------------
 const replayOn = () => !!(window.__stkReplay && window.__stkReplay.on);
 const hits = new WeakMap();   // canvas -> [{ x, y, r, m }]
-const light = () => { try { return document.documentElement.getAttribute('data-theme') === 'light'; } catch (e) { return false; } };
+const light = () => { try { return (window.tzChartLight ? window.tzChartLight() : document.documentElement.getAttribute('data-theme') === 'light'); } catch (e) { return false; } };
 
 class FlowNative {
   constructor() { this.ctx = null; this.inputs = {}; this.sig = ''; this.timer = 0; }

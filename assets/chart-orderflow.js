@@ -184,7 +184,7 @@ function themeIsLight(theme) {
 }
 // The page theme (theme.js sets data-theme="light" for day). Used for on-chart labels.
 function pageIsDay() {
-  try { return document.documentElement.getAttribute('data-theme') === 'light'; } catch (e) { return false; }
+  try { return (window.tzChartLight ? window.tzChartLight() : document.documentElement.getAttribute('data-theme') === 'light'); } catch (e) { return false; }
 }
 function alpha(hex, a) {
   const m = /^#?([0-9a-f]{6})$/i.exec(String(hex || ''));

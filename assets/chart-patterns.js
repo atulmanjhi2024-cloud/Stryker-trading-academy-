@@ -9,7 +9,7 @@ import * as D from './chart-patterns-data.js?v=1139';
 export const PATTERN_TYPES = ['stk_patterns'];
 const UP = '#03c988', DN = '#f23645', NEUTRAL = '#f5b301';
 const MONO = '"JetBrains Mono", ui-monospace, monospace';
-const light = () => { try { return document.documentElement.getAttribute('data-theme') === 'light'; } catch (e) { return false; } };
+const light = () => { try { return (window.tzChartLight ? window.tzChartLight() : document.documentElement.getAttribute('data-theme') === 'light'); } catch (e) { return false; } };
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 function rgba(hex, a) {
   const m = /^#?([0-9a-f]{6})/i.exec(String(hex || ''));

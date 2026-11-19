@@ -239,7 +239,7 @@ export const hexA = (hex, a) => {
   const n = parseInt(m[1], 16);
   return 'rgba(' + (n >> 16 & 255) + ',' + (n >> 8 & 255) + ',' + (n & 255) + ',' + a + ')';
 };
-export const lightTheme = () => { try { return document.documentElement.getAttribute('data-theme') === 'light'; } catch (e) { return false; } };
+export const lightTheme = () => { try { return (window.tzChartLight ? window.tzChartLight() : document.documentElement.getAttribute('data-theme') === 'light'); } catch (e) { return false; } };
 // Standard persistence block, same behaviour as the other natives.
 export function persist(Core, key, type, schema, max) {
   Core.registerStatePersistence({

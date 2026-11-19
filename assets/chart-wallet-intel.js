@@ -198,7 +198,7 @@ export const P = {
 
 // ---- native + layer -------------------------------------------------------------------------------------------------
 const replayOn = () => !!(window.__stkReplay && window.__stkReplay.on);
-const light = () => { try { return document.documentElement.getAttribute('data-theme') === 'light'; } catch (e) { return false; } };
+const light = () => { try { return (window.tzChartLight ? window.tzChartLight() : document.documentElement.getAttribute('data-theme') === 'light'); } catch (e) { return false; } };
 const hits = new WeakMap();   // canvas -> { boxes, geo }
 let sel = null;               // { coin, t } selected candle (outlined on the chart)
 let inputsNow = Object.fromEntries(SCHEMA.map((x) => [x.key, x.defval]));

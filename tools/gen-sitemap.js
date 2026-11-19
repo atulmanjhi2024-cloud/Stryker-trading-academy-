@@ -19,6 +19,7 @@ const ORIGIN = 'https://tradezoro.com';
 const PAGES = [
   ['/',                     '1.0', 'weekly'],
   ['/about',                '0.8', 'monthly'],
+  ['/traders-for-traders',  '0.7', 'monthly'],
   ['/signup',               '0.8', 'monthly'],
   ['/academy',              '0.9', 'weekly'],
   ['/learn',                '0.8', 'weekly'],

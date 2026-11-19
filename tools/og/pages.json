@@ -335,6 +335,13 @@
       "alt": "About TradeZoro share card with the TradeZoro logo"
     },
     {
+      "page": "traders-for-traders.html",
+      "title": "Traders for Traders",
+      "og_title": "Traders for Traders: The Open Trading Project | TradeZoro",
+      "visual": "brand",
+      "alt": "Traders for Traders share card with the TradeZoro logo"
+    },
+    {
       "page": "download.html",
       "title": "Desktop App",
       "og_title": "Download TradeZoro for Windows: the desktop app for traders",

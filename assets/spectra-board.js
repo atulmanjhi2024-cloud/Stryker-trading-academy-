@@ -5,8 +5,8 @@
 // agreement view (SPX, SPY, QQQ). Maths: assets/spectra-core.js. Styles: assets/spectra.css (loaded here, once).
 // DATA: GET /api/zo/board?u=SYM[&vs=seconds] with the member's Firebase ID token (free for signed-in members; the API and the
 //   Worker check the token). Copy rules: "Updated X s ago" only. Education only. Not financial advice.
-import * as S from './spectra-core.js?v=1144';
-import * as ProGate from './chart-pro-gate.js?v=1144';
+import * as S from './spectra-core.js?v=1145';
+import * as ProGate from './chart-pro-gate.js?v=1145';
 
 const API = '/api/zo/board';
 const POLL_MS = 30000;
@@ -20,7 +20,7 @@ export const iconImg = (sz) => '<img class="spx-ic" src="' + ICON + '.png" srcse
 
 export function loadCss() {
   if (document.getElementById('spx-css')) return;
-  const l = document.createElement('link'); l.id = 'spx-css'; l.rel = 'stylesheet'; l.href = '/assets/spectra.css?v=1144';
+  const l = document.createElement('link'); l.id = 'spx-css'; l.rel = 'stylesheet'; l.href = '/assets/spectra.css?v=1145';
   document.head.appendChild(l);
 }
 

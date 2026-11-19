@@ -5,10 +5,10 @@
 // Join Bid/Ask = limit at the best bid/ask, Order tab (limit tick-rounding; Stop/SL/TP/Trail disabled live with the reason), DOM tab
 // embeds the ladder, footer kill switch, Flatten, 10 orders/min, 2-contract cap; members: the same panel on PAPER with SL/TP bracket,
 // Trail, Stop, Join Bid/Ask, hotkeys (off by default), remembered position/size/tab; phone = bottom sheet. Waits on state, not sleeps.
-// Checks: picker hidden for non-admins; Paper is the default; picking the account -> red LIVE badge (panel + chart); first order needs the
-// contract typed; then a tap; "skip" after the first; payload (contract, qty, idemKey unique); read failure blocks; working-order + position
+// Checks: picker hidden for non-admins; Paper is the default; picking the account -> red LIVE badge (panel + chart); orders send on the
+// click with NO confirm (Owner 19 Nov); the broker's account NAME everywhere (number as a small second line); payload (contract, qty, idemKey unique); read failure blocks; working-order + position
 // lines; drag = modify (confirm); cancel+new when modify isn't allowed; DOM ladder click = limit at that price; flatten = server op with
-// a key; Connect a broker opens the Nemesis sheet; alignment numbers (getBoundingClientRect) printed for the report.
+// a key; Connect a broker ALWAYS shows the connect step + portal (even with a saved connection); alignment numbers (getBoundingClientRect) printed for the report.
 const fs = require('fs');
 const { launch } = require('./lib.js');
 const stub = require('./richstub.js');
@@ -55,9 +55,9 @@ async function open(b, { w, h, mobile, theme, admin = true, connected = true, fl
     if (M.delay && u.pathname.endsWith('/order') && ['place', 'cancel', 'modify', 'flatten'].includes(body.op)) await sleep(M.delay);
     if (!admin) return r.fulfill(j({ error: 'Admins only' }, 403));
     if (u.pathname.endsWith('/session') && r.request().method() === 'GET') return r.fulfill(j({ configured: true }));
-    if (u.pathname.endsWith('/session')) return r.fulfill(j({ portalUrl: 'http://127.0.0.1:1/portal', sessionId: 's1' }));
+    if (u.pathname.endsWith('/session')) return r.fulfill(j({ portalUrl: 'http://127.0.0.1:1/portal', sessionId: 's1', userId: body.userId || '' }));
     if (u.pathname.endsWith('/data')) {
-      if (body.op === 'accounts') return r.fulfill(j({ userId: US, data: [{ accountId: ACC, accountName: 'DEMO 5551234', accountNumber: 'DEMO5551234', brokerName: 'tradovate' }] }));
+      if (body.op === 'accounts') return r.fulfill(j({ userId: US, data: [{ accountId: ACC, accountName: 'SAMPLEDEMO5551234', accountNumber: '70001234', brokerName: 'tradovate' }] }));   // sample data
       if (body.op === 'live') return M.failRead ? r.fulfill(j({ error: 'Broker data is unavailable right now', code: 'upstream' }, 503)) : r.fulfill(j({ data: { positions: M.positions, orders: M.orders } }));
       return r.fulfill(j({ data: [] }));
     }
@@ -151,23 +151,18 @@ async function run(b, w, h, mobile, theme) {
   await opWait(p, () => /^NQ/.test(document.querySelector('#stkop [data-k=code]').textContent) && /Nasdaq/.test(document.querySelector('#stkop [data-k=name]').textContent));
   const hd = await p.evaluate(() => ({ sym: document.querySelector('#stkop [data-k=root]').textContent, name: document.querySelector('#stkop [data-k=name]').textContent, code: document.querySelector('#stkop [data-k=code]').textContent, live: (document.querySelector('#stkop .stkop-acct.live') || {}).textContent.replace('Trading account: ', ''), liveBg: (() => { const e = document.querySelector('#stkop .stkop-acct.live'); return e ? getComputedStyle(e).backgroundColor : ''; })(), strip: (() => { const s = document.getElementById('stkpt'); return !s || s.hidden || getComputedStyle(s).display === 'none'; })(), chip: (document.querySelector('.stkop-lchip') || {}).textContent || '', cbadge: (document.querySelector('.stklv-cbadge') || {}).textContent || '' }));
   check(hd.sym === 'NQ' && /Nasdaq-100/.test(hd.name) && hd.code === code, tag + ': header row 2: NQ · full name, the contract', hd);
-  check(/^LIVE · Tradovate …1234$/.test(hd.live) && hd.liveBg === 'rgb(217, 45, 32)', tag + ': red read-only "LIVE · Tradovate …1234" in the footer', hd);
+  check(/^LIVE · SAMPLEDEMO5551234$/.test(hd.live) && hd.liveBg === 'rgb(217, 45, 32)', tag + ': red read-only "LIVE · <account name>" in the footer', hd);
   check(hd.strip, tag + ': old bottom "Live trading" strip is gone while live', hd);
-  check(/^LIVE …1234 · NQ/.test(hd.chip), tag + ': small LIVE status chip on the chart', hd);
-  check(/^LIVE Tradovate DEMO5551234 · NQ[HMUZ]\d$/.test(hd.cbadge), tag + ': red LIVE badge on the chart with the contract', hd);
-  // ---- Scalp: Buy market. First live order = typed contract
+  check(/^LIVE SAMPLEDEMO5551234 · NQ/.test(hd.chip), tag + ': small LIVE status chip on the chart (account name)', hd);
+  check(/^LIVE Tradovate SAMPLEDEMO5551234 · NQ[HMUZ]\d$/.test(hd.cbadge), tag + ': red LIVE badge on the chart with the account name + contract', hd);
+  check(!/70001234|…1234/.test(hd.live + hd.chip + hd.cbadge), tag + ': the internal number is not the account label', hd);
+  // ---- Scalp: Buy market. Owner 19 Nov: NO first-order typed confirm, no tap: the click sends (like paper)
   await opTab(p, 'scalp', mobile);
   await blockFree(p);
   if (theme === 'dark' || w === 1440) await p.screenshot({ path: OUT + '/op-' + tag + '-1-scalp-live.png' });
   await tap(p, '#stkop .stkop-scalp [data-a=buy]', mobile);
-  await p.waitForSelector('#stklv-cf');
-  const cf1 = await p.evaluate(() => ({ t: document.getElementById('stklv-cf').innerText, dis: document.querySelector('#stklv-cf [data-k=yes]').disabled, typing: !!document.querySelector('.stklv-cf-type input') }));
-  check(cf1.typing && cf1.dis && cf1.t.includes(code) && /Tradovate DEMO5551234/.test(cf1.t), tag + ': first live order needs the contract typed', cf1);
-  await p.fill('.stklv-cf-type input', 'NQ'); check(await p.$eval('#stklv-cf [data-k=yes]', (e) => e.disabled), tag + ': wrong text keeps Send disabled');
-  if (theme === 'dark' || w === 1440) await p.screenshot({ path: OUT + '/op-' + tag + '-2-typed.png' });
-  await p.fill('.stklv-cf-type input', code.toLowerCase());
-  await tap(p, '#stklv-cf [data-k=yes]', mobile);
   await waitWrites(p, M, 1);
+  check(!(await p.$('#stklv-cf')) && !(await p.$('.stklv-cf-type')), tag + ': first live order sends on the click, no confirm sheet, no typed contract');
   let W = writes(M);
   check(W.length === 1 && W[0].op === 'place' && W[0].symbol === code && W[0].qty === 1 && W[0].type === 'market' && W[0].side === 'buy' && W[0].src === 'chart' && /^[A-Za-z0-9-]{16,64}$/.test(W[0].idemKey || '') && W[0].accountId === ACC, tag + ': Scalp Buy = market BUY 1 with contract + idemKey', W[0]);
   // SPEED (main 2026-11-16): the 'env' call that pre-warms the server carries the broker user; reads run straight after the write
@@ -189,13 +184,8 @@ async function run(b, w, h, mobile, theme) {
   await opWait(p, () => document.querySelector('#stkop .stkop-join.ask b').textContent === '28,756.00');
   check(true, tag + ': bid / ask update live');
   await blockFree(p);
-  await tap(p, '#stkop [data-a=jask]', mobile);
-  await p.waitForSelector('#stklv-cf');
-  const cf2 = await p.evaluate(() => ({ typing: !!document.querySelector('.stklv-cf-type input'), skip: !!document.querySelector('#stklv-cf [data-k=skip]'), t: document.getElementById('stklv-cf').innerText }));
-  check(!cf2.typing && cf2.skip && /SELL 1 NQ.. LIMIT @ 28,756.00/.test(cf2.t), tag + ': Join Ask = SELL LIMIT at the ask, one tap', cf2);
-  if (theme === 'dark' || w === 1440) await p.screenshot({ path: OUT + '/op-' + tag + '-3-tap.png' });
   M.delay = 1200; M.timing = true;
-  await tap(p, '#stklv-cf [data-k=yes]', mobile);
+  await tap(p, '#stkop [data-a=jask]', mobile);   // Join Ask = SELL LIMIT at the ask, straight out
   { const okS = await opWait(p, () => [...document.querySelectorAll('.stkpt-chip[data-live]')].some((c) => /^SENDING SELL 1 LMT/.test(c.textContent)), null, 1000);
     const sending = await p.evaluate(() => ({ chips: [...document.querySelectorAll('.stkpt-chip[data-live]')].map((c) => c.textContent), st: document.querySelector('#stkop [data-k=status]').textContent }));
     check(okS && sending.chips.some((t) => /^SENDING SELL 1 LMT28,756\.00/.test(t)) && /^Sending/.test(sending.st), tag + ': order line drawn at once as SENDING while the broker answers', sending);
@@ -222,8 +212,7 @@ async function run(b, w, h, mobile, theme) {
   const od = await p.evaluate(() => ({ stop: document.querySelector('#stkop [data-type=stop]').disabled, sl: document.querySelector('#stkop [data-f="sl.on"]').disabled, tp: document.querySelector('#stkop [data-f="tp.on"]').disabled, trail: document.querySelector('#stkop [data-f=trail]').disabled, why: document.querySelector('#stkop [data-k=why]').textContent, bid: document.querySelector('#stkop .stkop-side.buy em').textContent }));
   check(od.stop && od.sl && od.tp && od.trail && /^Stops and targets aren’t supported by this broker link yet\. Set them at your broker\.$/.test(od.why), tag + ': live, account without stops: Stop, SL, TP, Trail disabled with the plain reason', od);
   check(od.bid === '28,749.75', tag + ': Buy card shows the live BID', od);
-  // limit BUY at a typed price, tick-rounded; skip on -> straight out
-  await p.evaluate(() => { window.__stkLive.state.skip = true; });
+  // limit BUY at a typed price, tick-rounded; straight out
   await tap(p, '#stkop [data-type=limit]', mobile);
   await p.fill('#stkop [data-f=price]', '28745.1'); await p.locator('#stkop [data-f=price]').blur();
   check((await p.$eval('#stkop [data-f=price]', (e) => e.value)) === '28745.00', tag + ': limit price rounded to the tick');
@@ -231,7 +220,7 @@ async function run(b, w, h, mobile, theme) {
   await tap(p, '#stkop [data-k=confirm]', mobile);
   await waitWrites(p, M, 3);
   W = writes(M);
-  check(W.length === 3 && W[2].type === 'limit' && W[2].limitPrice === 28745 && W[2].side === 'buy' && !(await p.$('#stklv-cf')), tag + ': Order tab Confirm = BUY LIMIT 28,745 (skip honoured)', W[2]);
+  check(W.length === 3 && W[2].type === 'limit' && W[2].limitPrice === 28745 && W[2].side === 'buy' && !(await p.$('#stklv-cf')), tag + ': Order tab Confirm = BUY LIMIT 28,745, no confirm sheet', W[2]);
   if (theme === 'dark' || w === 1440) await p.screenshot({ path: OUT + '/op-' + tag + '-4-order-live.png' });
   // exposure: long 1 + working buy 1 = 2; one more buy is refused in the browser
   await p.evaluate(() => window.__stkLive.read()); await blockFree(p);
@@ -253,7 +242,7 @@ async function run(b, w, h, mobile, theme) {
     await p.evaluate(() => window.__stkOrderPanel.close());
     await p.mouse.move(ordChip.x, ordChip.y); await p.mouse.down(); await p.mouse.move(ordChip.x, ordChip.y - 30, { steps: 6 }); await p.mouse.up();
     const sheet = await p.waitForSelector('#stklv-cf', { timeout: 4000 }).then(() => true, () => false);
-    check(sheet && /Move SELL 1/.test(await p.$eval('#stklv-cf', (e) => e.innerText)), tag + ': drag opens a Move confirm even with skip on');
+    check(sheet && /Move SELL 1/.test(await p.$eval('#stklv-cf', (e) => e.innerText)), tag + ': drag still opens a Move confirm');
     if (sheet) { await tap(p, '#stklv-cf [data-k=yes]', mobile); await waitWrites(p, M, nBefore0 + 1); }
     W = writes(M); check(W.at(-1).op === 'modify' && W.at(-1).limitPrice > 28756, tag + ': modify sent with the dragged price', W.at(-1));
     check(await openOP(p, mobile), tag + ": order panel opens again after the drag"); if (process.env.DBG2) { await p.screenshot({ path: OUT + "/dbg-reopen.png" }); console.log("DBG2", JSON.stringify(await p.evaluate(() => { const o = document.getElementById("stkop"); return { hidden: o.hidden, cls: o.className, tab: o.dataset.tab, r: o.getBoundingClientRect(), pop: !document.getElementById("stkc-trade-pop").hidden }; }))); }
@@ -264,15 +253,14 @@ async function run(b, w, h, mobile, theme) {
     const emb = await opWait(p, () => { const b = document.querySelector('#stkop .stkop-dom > .stkbp.stkbp-embed'); return b && !b.hidden && b.getBoundingClientRect().height > 100; });
     check(emb && (await p.evaluate(() => window.__stkBookPanel.embedded)), tag + ': DOM tab embeds the Book/DOM ladder');
     if (theme === 'dark' || w === 1440) await p.screenshot({ path: OUT + '/op-' + tag + '-5-dom.png' });
-    await p.evaluate(() => { window.__stkLive.state.skip = false; window.__stkLive.state.reading = false; return window.__stkLive.read(); });
+    await p.evaluate(() => { window.__stkLive.state.reading = false; return window.__stkLive.read(); });
     check(await blockFree(p), tag + ': fresh read after the move: orders allowed again', await p.evaluate(() => window.__stkLive.blockReason));
     const nL = writes(M).length;
-    await p.evaluate(() => { window.__stkPaper.live.ladder('futures:NQ1!', 'ask', 28770, 28749.75, 28750, 1); });   // don't await: it waits for the confirm
-    const ls = await p.waitForSelector('#stklv-cf', { timeout: 5000 }).then(() => true, () => false); const lt = ls ? await p.$eval('#stklv-cf', (e) => e.innerText) : '';
-    check(ls && /SELL 1 NQ.. LIMIT @ 28,770.00/.test(lt), tag + ': DOM ask click = live SELL LIMIT at the clicked price', [lt.slice(0, 160), await toastsSince(p, 0).then((t) => t.slice(-3)), await p.evaluate(() => window.__stkLive.blockReason)]);
-    if (ls) await tap(p, '#stklv-cf [data-k=no]', mobile);
-    await opWait(p, () => !document.getElementById('stklv-cf'));
-    check(writes(M).length === nL, tag + ': Cancel in the confirm sends nothing');
+    await p.evaluate(() => { window.__stkPaper.live.ladder('futures:NQ1!', 'ask', 28770, 28749.75, 28750, 1); });
+    await waitWrites(p, M, nL + 1, 5000);
+    const lw = writes(M).at(-1);
+    check(writes(M).length === nL + 1 && lw.op === 'place' && lw.side === 'sell' && lw.type === 'limit' && lw.limitPrice === 28770 && !(await p.$('#stklv-cf')), tag + ': DOM ask click = live SELL LIMIT at the clicked price, sent on the click', [lw, await toastsSince(p, 0).then((t) => t.slice(-3)), await p.evaluate(() => window.__stkLive.blockReason)]);
+    M.orders = M.orders.filter((o) => !(o.legs && o.legs[0].limitPrice === 28770));   // keep the exposure checks below unchanged
     await opTab(p, 'scalp', mobile);
     check(await opWait(p, () => !window.__stkBookPanel.embedded), tag + ': leaving the DOM tab releases the ladder');
   }
@@ -299,11 +287,10 @@ async function run(b, w, h, mobile, theme) {
   check(await opWait(p, () => window.__stkLive.state.killed === false), tag + ': switched back on only after typing LIVE');
   p.removeAllListeners('dialog'); p.on('dialog', (d) => d.dismiss());
   // flatten from the footer: server op with a key, confirm never skippable
-  await p.evaluate(() => { window.__stkLive.state.skip = true; });
   await blockFree(p);
   await tap(p, '#stkop [data-a=flat]', mobile);
   const fs2 = await p.waitForSelector('#stklv-cf', { timeout: 5000 }).then(() => true, () => false);
-  check(fs2 && !(await p.$('#stklv-cf [data-k=skip]')), tag + ': Flatten confirm has no skip');
+  check(fs2 && !(await p.$('#stklv-cf [data-k=skip]')), tag + ': Flatten still asks one tap (no skip box)');
   if (fs2) { const nf = writes(M).length; await tap(p, '#stklv-cf [data-k=yes]', mobile); await waitWrites(p, M, nf + 1); }
   W = writes(M); check(W.at(-1).op === 'flatten' && W.at(-1).symbol === code && /^[A-Za-z0-9-]{16,64}$/.test(W.at(-1).idemKey), tag + ': Flatten = server op with a deterministic key', W.at(-1));
   // ---- alignment (getBoundingClientRect)
@@ -625,15 +612,12 @@ async function envAndBrackets(b, w, h, mobile, theme) {
   if (theme === 'dark' || w === 1440) await p.screenshot({ path: OUT + '/sltp-' + tag + '-2-order.png' });
   { const el = await p.$('#stkop'); if (el) await el.screenshot({ path: OUT + '/crop-sltp-order-' + tag + '.png' }); }
   const n0 = writes(M).length;
+  const nT = await p.evaluate(() => window.__toasts.length);
   await tap(p, '#stkop [data-k=confirm]', mobile);
-  await p.waitForSelector('#stklv-cf', { timeout: 6000 });
-  check(M.calls.filter((c) => c.body.op === 'env').length > nEnv, tag + ': env older than 60 s re-checked before the confirm');
-  const cf = await p.evaluate(() => ({ t: document.getElementById('stklv-cf').innerText, skip: !!document.querySelector('#stklv-cf [data-k=skip]') }));
-  check(/Stop loss [\d,.]+/.test(cf.t) && /Take profit [\d,.]+/.test(cf.t) && /cancels the other/.test(cf.t) && !cf.skip, tag + ': confirm lists the stop loss + take profit, no skip', cf.t.slice(0, 400));
-  if (theme === 'dark' || w === 1440) await p.screenshot({ path: OUT + '/sltp-' + tag + '-3-confirm.png' });
-  if (await p.$('.stklv-cf-type input')) { const code = await p.evaluate(() => window.__stkLive.info('futures:NQ1!').code); await p.fill('.stklv-cf-type input', code); }
-  await tap(p, '#stklv-cf [data-k=yes]', mobile);
   await waitWrites(p, M, n0 + 1);
+  check(M.calls.filter((c) => c.body.op === 'env').length > nEnv, tag + ': env older than 60 s re-checked before sending');
+  check(!(await p.$('#stklv-cf')), tag + ': bracket order sends on the click, no confirm sheet');
+  check(await opWait(p, (n) => window.__toasts.slice(n).some((t) => /Stop loss and take profit go to your broker after the entry fills/.test(t)), nT, 4000), tag + ': toast explains the stop loss / take profit follow the fill');
   const W = writes(M).at(-1);
   check(W.op === 'place' && W.type === 'market' && W.bracket && W.bracket.sl < 28750 && W.bracket.tp > 28750, tag + ': place carries the bracket (sl below, tp above for a buy)', W);
   check(await opWait(p, () => !document.querySelector('#stkop [data-k=alert]').hidden && /Waiting for the fill/.test(document.querySelector('#stkop [data-k=alt]').textContent)), tag + ': panel shows the pending stop loss / take profit');
@@ -687,12 +671,39 @@ async function notConnected(b) {
   check(!writes(M).length, 'connect flow sends no order');
   await ctx.close();
 }
+// Owner 19 Nov: with a saved connection, "Connect a broker" must still show the connect step and open the broker portal (to add a new
+// broker), and the portal session carries the saved user so the linked accounts stay; nothing auto-closes.
+async function connectAlways(b) {
+  for (const [w, h, mobile] of [[1440, 900, false], [390, 844, true]]) {
+    const { ctx, p, M } = await open(b, { w, h, mobile, theme: 'dark', connected: true });
+    await p.waitForFunction(() => window.__stkLive && window.__stkLive.state.loaded && window.__stkLive.state.accounts.length, null, { timeout: 20000 });
+    await p.evaluate(() => { window.__opened = []; window.open = () => { const o = { location: {}, close() {} }; window.__opened.push(o); return o; }; });
+    const nAcc = M.calls.filter((c) => c.body.op === 'accounts').length;
+    await p.evaluate(() => window.__stkPaper.openTradeMenu());
+    await p.waitForSelector('#stkc-trade-pop:not([hidden]) [data-a=connect]', { timeout: 5000 });
+    await p.evaluate(() => document.querySelector('#stkc-trade-pop [data-a=connect]').click());
+    const st = await p.waitForSelector('#fjs #fjs-connect', { timeout: 10000 }).then(() => true, () => false);
+    await sleep(800);
+    const sh = await p.evaluate(() => ({ open: !!document.getElementById('fjs'), btn: (document.getElementById('fjs-connect') || {}).textContent, have: (document.getElementById('fjs-have') || {}).textContent }));
+    check(st && sh.open && /Connect a broker/.test(sh.btn), w + ': saved connection: Connect a broker still shows the connect step (no auto-reconnect, no auto-close)', sh);
+    check(M.calls.filter((c) => c.body.op === 'accounts').length === nAcc, w + ': no silent accounts reload on Connect', M.calls.length);
+    await p.screenshot({ path: OUT + '/connect-always-' + w + '.png' });
+    await p.evaluate(() => document.getElementById('fjs-connect').click());
+    await opWait(p, () => window.__opened.length && window.__opened[0].location.href, null, 5000);
+    const ses = M.calls.filter((c) => c.path.endsWith('/session') && c.body.mode).at(-1);
+    const href = await p.evaluate(() => window.__opened[0] && window.__opened[0].location.href);
+    check(ses && ses.body.userId === US && href === 'http://127.0.0.1:1/portal', w + ': Connect opens the broker portal, started for the saved user (linked accounts stay)', [ses && ses.body, href]);
+    check(await opWait(p, () => document.getElementById('fjs-cont'), null, 3000), w + ': then "Continue" waits for the new broker');
+    check(!writes(M).length && await p.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), w + ': no order sent, no horizontal scroll');
+    await ctx.close();
+  }
+}
 
 (async () => {
   const b = await launch({ args: ['--js-flags=--max-old-space-size=768'] });
   try {
     const only = process.env.ONLY || '';
-    if (!only || only === 'base') { await nonAdmin(b); await notConnected(b); }
+    if (!only || only === 'base') { await nonAdmin(b); await notConnected(b); await connectAlways(b); }
     const sizes = [[1440, 900, false, 'dark'], [1440, 900, false, 'light'], [412, 915, true, 'dark'], [412, 915, true, 'light'], [390, 844, true, 'dark'], [390, 844, true, 'light']];
     for (const [w, h, mobile, theme] of sizes) if (!only || only === w + '-' + theme) await run(b, w, h, mobile, theme);
     for (const [w, h, mobile, theme] of sizes) if (!only || only === 'sltp-' + w + '-' + theme) await envAndBrackets(b, w, h, mobile, theme);

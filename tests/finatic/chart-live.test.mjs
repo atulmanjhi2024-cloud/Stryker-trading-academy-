@@ -117,7 +117,19 @@ assert.deepEqual(L.acctLabel({ broker: 'tradovate', name: 'DEMO123456' }), { bro
   // a real broker account number wins
   assert.equal(L.acctInfo({ accountId: U, brokerName: 'ibkr', accountNumber: 'U1234567', accountName: 'Individual' }).number, 'U1234567');
   // snake_case grant-style shape
-  assert.equal(L.acctInfo({ id: U, broker_id: 'ninja_trader', account_number: 'NT-778899', account_display_name: 'Sim101' }).number, 'NT-778899');
+  // the broker's account NAME wins over its number now (Owner 19 Nov); the number rides along as alt
+  { const nt = L.acctInfo({ id: U, broker_id: 'ninja_trader', account_number: 'NT-778899', account_display_name: 'Sim101' }); assert.equal(nt.number, 'Sim101'); assert.equal(nt.alt, 'NT-778899'); }
+  // Owner bug 19 Nov: Tradovate gives accountNumber = its internal numeric id and accountName = the name the trader sees
+  { const t = L.acctInfo({ accountId: U, brokerName: 'Tradovate', accountNumber: '71012029', accountName: 'FNFTFAGAURAVSINGH27021', accountType: 'futures' });
+    assert.equal(t.number, 'FNFTFAGAURAVSINGH27021'); assert.equal(t.text, 'Tradovate FNFTFAGAURAVSINGH27021'); assert.equal(t.alt, '71012029', 'number kept as a small second line');
+    assert.deepEqual(L.acctShow(t, {}), { short: 'FNFTFAGAURAVSINGH27021', badge: 'Tradovate FNFTFAGAURAVSINGH27021', full: 'Tradovate FNFTFAGAURAVSINGH27021' });
+    assert.deepEqual(L.acctShow(t, { label: 'Apex eval 1' }), { short: 'Apex eval 1', badge: 'Apex eval 1', full: 'Apex eval 1 · Tradovate FNFTFAGAURAVSINGH27021' }, "the Owner's own label wins");
+    assert.equal(L.acctTitle(t, {}).name, 'FNFTFAGAURAVSINGH27021'); assert.equal(L.acctTitle(t, { label: 'Apex eval 1' }).name, 'Apex eval 1'); }
+  // other spellings of the name field; same name and number -> no second line; generic name -> the number
+  for (const k of ['account_name', 'displayName', 'display_name', 'nickname', 'name', 'accountDisplayName']) assert.equal(L.acctInfo({ accountId: U, brokerName: 'x', accountNumber: '1', [k]: 'MYACCT' }).number, 'MYACCT', k);
+  assert.equal(L.acctInfo({ accountId: U, brokerName: 'x', accountNumber: 'SAME1', accountName: 'SAME1' }).alt, '');
+  assert.equal(L.acctInfo({ accountId: U, brokerName: 'x', accountNumber: '5551', accountName: 'Margin' }).number, '5551');
+  assert.equal(L.acctInfo({ accountId: U, brokerName: 'x', accountNumber: '5551' }).alt, '', 'number only: no second line');
   assert.equal(L.acctInfo({ id: U, broker_id: 'ninja_trader', account_display_name: 'Sim101' }).text, 'NinjaTrader Sim101');
   // never a UUID, never our own id, never the internal id alone
   assert.equal(L.acctInfo({ accountId: U, brokerName: 'rithmic', accountName: U }).number, '');
@@ -149,7 +161,7 @@ assert.deepEqual(L.acctLabel({ broker: 'tradovate', name: 'DEMO123456' }), { bro
   assert.deepEqual(L.cleanMeta(null), { label: '', firm: '', type: '' });
   const ti = L.acctTitle(tv, { label: 'Apex eval 1', firm: 'Apex', type: 'eval' });
   assert.equal(ti.name, 'Apex eval 1'); assert.equal(ti.full, 'Apex eval 1 · Apex · Tradovate APEX-123456-01'); assert.equal(ti.type, 'Evaluation');
-  assert.equal(L.acctTitle(tv, {}).name, 'Tradovate'); assert.equal(L.acctTitle(tv, {}).full, 'Tradovate APEX-123456-01');
+  assert.equal(L.acctTitle(tv, {}).name, 'APEX-123456-01', 'no label: the broker account name (19 Nov)'); assert.equal(L.acctTitle(tv, {}).full, 'Tradovate APEX-123456-01');
   assert.ok(L.FIRMS.includes('Apex') && L.FIRMS.includes('Own account') && L.FIRMS.length === 12);
 }
 assert.equal(L.openPnl(1, 21000, 21010, 20, null), 200); assert.equal(L.openPnl(-2, 6000, 5990, 50, null), 1000); assert.equal(L.openPnl(1, null, 5, 2, -12), -12);

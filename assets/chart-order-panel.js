@@ -24,7 +24,7 @@
 //           + "Change" (opens the Trade menu; no account picker in the panel), position + open P&L, working orders, Flatten, and
 //           (live) "Turn off live trading" (the kill switch). Members never see a broker name.
 //   Phone (<= 700 px): a bottom sheet with Scalp + Order only.
-// SAFETY: every live order goes through chart-live.js place(): admin-only module, typed contract on the first live order then a tap,
+// SAFETY: every live order goes through chart-live.js place(): admin-only module, sent on the click like paper (no confirm, 19 Nov),
 // 2-contract cap + worst-case exposure, 10 orders a minute (client + server), fresh-read gate, kill switch, back to Paper after 15 min
 // idle, every attempt audited on the server. This file never calls the order endpoint itself.
 // Hotkeys: B = Buy, S = Sell (market, Scalp quantity) — OFF by default, only while the panel is open and not typing in a field.
@@ -556,15 +556,16 @@ function acctLabel(c) {
   if (!c.live) return { t: 'Paper · DEMO', live: false };
   const L2 = window.__stkLive && window.__stkLive.state, a = L2 && L2.acct;
   const env = c.li && c.li.env ? c.li.env : 'LIVE';
-  return { t: env + (a ? ' · ' + (a.broker || 'Broker') + (a.last4 ? ' …' + a.last4 : '') : ''), live: true };
+  // the Owner's label, else the broker's account NAME (19 Nov); the full "Tradovate NAME" rides in the title (the badge ellipsizes)
+  return { t: env + (a ? ' · ' + (a.short || a.broker || 'Broker') : ''), full: a ? env + ' · ' + (a.label || a.broker) : '', live: true };
 }
 function renderFoot(c) {
   const al = acctLabel(c);
-  const sig = JSON.stringify([al.t, c.live, c.li && c.li.killed, !!P.openTradeMenu]);
+  const sig = JSON.stringify([al.t, al.full, c.live, c.li && c.li.killed, !!P.openTradeMenu]);
   if (footSig === sig) return; footSig = sig;
   footEl.innerHTML =
     '<div class="stkop-fr">' +
-      '<span class="stkop-acct' + (al.live ? ' live' : '') + '" data-k="acct" title="Trading account (pick it in the Trade menu)"><span class="stkop-vh">Trading account: </span>' + esc(al.t) + '</span>' +
+      '<span class="stkop-acct' + (al.live ? ' live' : '') + '" data-k="acct" title="' + esc((al.full ? al.full + '. ' : '') + 'Trading account (pick it in the Trade menu)') + '"><span class="stkop-vh">Trading account: </span>' + esc(al.t) + '</span>' +
       (P.openTradeMenu ? '<button type="button" class="stkop-link" data-a="change" aria-label="Change the trading account in the Trade menu">Change</button>' : '') +
       '<span class="stkop-sp"></span><button type="button" class="stkop-b warn" data-a="flat">Flatten</button>' +
     '</div>' +
@@ -700,7 +701,7 @@ export function update() {
     const gt = 'Confirm ' + (F.side === 'buy' ? 'buy' : 'sell') + ' ' + qty; if (go.textContent !== gt) go.textContent = gt;
   }
   // status
-  const st = why || (qt && qt.note) || (c.live ? ((c.li && c.li.rtt ? c.li.rtt + ' ' : '') + 'Ready. Real orders at your broker, you confirm each one.') : '');
+  const st = why || (qt && qt.note) || (c.live ? ((c.li && c.li.rtt ? c.li.rtt + ' ' : '') + 'Ready. Real orders at your broker, sent on the click.') : '');
   for (const n of el.querySelectorAll('[data-k=status]')) { if (n.textContent !== st) n.textContent = st; n.classList.toggle('bad', !!why); }
   renderAlert(c);
   // footer numbers
@@ -744,8 +745,8 @@ function renderChip(c) {
     chipEl.addEventListener('pointerdown', (e) => e.stopPropagation());
     host.appendChild(chipEl);
   }
-  const L2 = window.__stkLive && window.__stkLive.state, last4 = L2 && L2.acct ? L2.acct.last4 : '';
-  const t = (c.li ? c.li.env : 'LIVE') + ' …' + last4 + (c.li ? ' · ' + c.li.code + ' · ' + (c.li.pos.qty ? (c.li.pos.qty > 0 ? 'Long ' : 'Short ') + Math.abs(c.li.pos.qty) + ' ' + money(c.li.pnl, true) : 'Flat') : ' · not tradable here');
+  const L2 = window.__stkLive && window.__stkLive.state, nm = L2 && L2.acct ? (L2.acct.short || L2.acct.last4) : '';
+  const t = (c.li ? c.li.env : 'LIVE') + ' ' + nm + (c.li ? ' · ' + c.li.code + ' · ' + (c.li.pos.qty ? (c.li.pos.qty > 0 ? 'Long ' : 'Short ') + Math.abs(c.li.pos.qty) + ' ' + money(c.li.pnl, true) : 'Flat') : ' · not tradable here');
   const s = chipEl.querySelector('span'); if (s.textContent !== t) s.textContent = t;
   chipEl.setAttribute('aria-label', t + '. Open the order panel');
   chipEl.dataset.pnl = c.li && c.li.pnl > 0 ? 'up' : c.li && c.li.pnl < 0 ? 'down' : '';   // white text on the red chip; no global .up/.down colour

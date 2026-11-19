@@ -1864,6 +1864,7 @@ function mountToolbar(bar){
     if (a === 'paper') { if (liveOn()) L.leave(true); if (!paperOn() && liveOf()) setPaperEnabled(true); orderPanel(); }   // Paper again after a disconnect = on
     else if (a === 'live' && L) L.pick(it.dataset.id).then(() => orderPanel());
     else if (a === 'connect' && L) L.connect();
+    else if (a === 'reconnect' && L) (L.reconnect || L.connect)();
     else if (a === 'hl' && window.__stkHl) window.__stkHl.open();
   });
   document.addEventListener('click', (e) => { if (!pop.hidden && !wrap.contains(e.target)) setOpen(false); });

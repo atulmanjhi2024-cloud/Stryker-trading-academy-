@@ -13,9 +13,9 @@
 // SAFETY (advisor-reviewed design, 2026-11-15):
 // - Symbols: only NQ1!/ES1!/MNQ1!/MES1! charts; front-month contract (assets/chart-live-core.js), the held contract wins; shown in every
 //   confirm. The server re-checks the contract list.
-// - Confirm: the FIRST order for an account+contract in this page session needs the contract code typed; every order then needs a
-//   confirm tap. "Skip the tap for this session" can be ticked after the typed confirm; it never applies to flatten, drag moves or
-//   cancel+new, and it is cleared by a reject, an unknown result, an account switch or a reload.
+// - Orders send on the click, like paper (Owner order 19 Nov: "REMOVE this first trade confirmation"; the typed-contract step and the
+//   per-order tap are gone). The red LIVE badge, the server guards (admin, kill switch, contract list, 2-contract cap and exposure,
+//   10 a minute, idempotency key, audit row before the order) all stay. Flatten and dragging a working order still ask one tap.
 // - Reads: positions + orders every POLL_MS while live is picked and the tab is visible, and right after every write. New orders are
 //   blocked unless a read STARTED after the last write and is younger than STALE_MS; an unknown write result blocks until a read lands.
 // - One write in flight at a time. Every write carries a fresh idempotency key (= the server's audit doc id: a repeat is refused).
@@ -41,7 +41,7 @@ let P = null, uid = '', toastFn = null;
 const S = {
   accounts: [], acct: null, userId: '', env: null, loaded: false, loadErr: '',
   data: { positions: [], orders: [] }, lastOkStart: 0, lastWriteAt: 0, unknown: false, readErr: '', reading: false,
-  busy: false, typed: new Set(), skip: false, form: { side: 'buy', type: 'market', qty: 1, price: '' }, modifyOk: null,
+  busy: false, form: { side: 'buy', type: 'market', qty: 1, price: '' }, modifyOk: null,
   placeSchema: null, placeErr: '', killed: null, lastAct: Date.now(), hiddenAt: 0, lock: null, msg: '', sentAt: [], rtt: null, pending: null,
   // env check (Owner bug 2026-11-17): S.env stays null until the server ANSWERS; envErr = why it could not be reached (never "off")
   envAt: 0, envErr: '', envBusy: null,
@@ -78,11 +78,17 @@ async function loadAccounts() {
   try {
     const r = await data('accounts');
     if (r.userId && r.userId !== S.userId) { S.userId = r.userId; try { localStorage.setItem(lsUserKey(), r.userId); } catch (e) {} }
-    // L.acctInfo: the broker's own account number / name as the broker shows it (never Finatic's UUID, never the internal broker id)
-    S.accounts = (Array.isArray(r.data) ? r.data : []).map((x) => { const a = L.acctInfo(x); return Object.assign(a, { label: a.text, name: a.number }); }).filter((a) => a.id);
+    // L.acctInfo: the broker's account NAME as the broker shows it (Owner 19 Nov; never Finatic's UUID, never the internal broker id).
+    // label / short are live getters (L.acctShow): the Owner's own label from Edit details wins as soon as it is saved.
+    S.accounts = (Array.isArray(r.data) ? r.data : []).map((x) => { const a = L.acctInfo(x); a.name = a.number; return withShow(a); }).filter((a) => a.id);
     if (S.acct) { const still = S.accounts.find((a) => a.id === S.acct.id); if (still) S.acct = still; else leave(true); }
   } catch (e) { S.accounts = []; if (!e.needsConnect) S.loadErr = e.message; }
   S.loaded = true; render(); menuEvent('accounts');
+}
+function withShow(a) {
+  Object.defineProperty(a, 'label', { configurable: true, enumerable: true, get: () => L.acctShow(a, metaOf(a.id)).badge });
+  Object.defineProperty(a, 'short', { configurable: true, enumerable: true, get: () => L.acctShow(a, metaOf(a.id)).short });
+  return a;
 }
 const menuEvent = (what, id) => { try { window.dispatchEvent(new CustomEvent('stklive:menu', { detail: { what, id } })); } catch (e) {} };
 
@@ -230,13 +236,17 @@ async function disconnect(id) {
   if (was) await leave(true);
   delete S.bal[id];
   await loadAccounts();
-  toast(a.text + ' disconnected.', 'success');
+  toast(a.label + ' disconnected.', 'success');
   return { ok: true, wasActive: was };
 }
-function connect() {
-  import('./finatic-journal-ui.js?v=1145').then((m) => m.openBrokerSync({ uid, mode: 'chart', onConnected: () => { loadAccounts().then(() => toast('Broker connected. Pick the account in the panel.', 'success')); } }))
+// connect(): "Connect a broker" ALWAYS shows the connect step whose button opens the broker portal, even with a saved connection
+// (Owner 19 Nov: a new broker could not be added because the saved session auto-reconnected and closed). reconnect(): the quiet path
+// for an expired connection, reloads the saved one without the portal (the portal is one tap away if that fails).
+function openSync(portal) {
+  import('./finatic-journal-ui.js?v=1145').then((m) => m.openBrokerSync({ uid, mode: 'chart', portal, onConnected: () => { loadAccounts().then(() => toast('Broker connected. Pick the account in the panel.', 'success')); } }))
     .catch(() => toast('Could not open the broker connection.', 'error'));
 }
+const connect = () => openSync(true), reconnect = () => openSync(false);
 
 // ------------------------------------------------------------------------------------------ pick / leave live
 export const active = () => !!S.acct;
@@ -250,7 +260,7 @@ async function pick(id) {
     const got = await new Promise((res) => { navigator.locks.request('stryker-live-' + id, { ifAvailable: true }, (lk) => { if (!lk) { res(false); return; } res(true); return new Promise((rel) => { S.lock = rel; }); }).catch(() => res(true)); });
     if (!got) { toast('This live account is open in another ZoroCharts tab. Use that tab, or close it first.', 'error'); render(); return; }
   }
-  S.acct = a; S.data = { positions: [], orders: [] }; S.lastOkStart = 0; S.lastWriteAt = 0; S.unknown = false; S.readErr = ''; S.skip = false; S.modifyOk = null; S.placeSchema = null; S.placeErr = ''; S.lastAct = Date.now();
+  S.acct = a; S.data = { positions: [], orders: [] }; S.lastOkStart = 0; S.lastWriteAt = 0; S.unknown = false; S.readErr = ''; S.modifyOk = null; S.placeSchema = null; S.placeErr = ''; S.lastAct = Date.now();
   S.env = null; S.envAt = 0; S.envErr = ''; S.group = null; S.groupCode = ''; S.alarmSeen = '';
   S.day = { at: 0, busy: false, key: '', fills: [], truncated: false, sig: '' }; balance(id, true);
   // 'env' also pre-warms the server (Finatic session + kill switch cached) and the browser's connection; reads start in parallel
@@ -290,7 +300,7 @@ function envCheck() {
 export function retryEnv() { if (!S.acct) return; S.envErr = ''; envCheck().then(() => { if (!S.placeSchema) schemaCheck(); }); }
 async function leave(quiet) {
   const had = !!S.acct;
-  S.acct = null; S.skip = false; S.data = { positions: [], orders: [] }; S.lastOkStart = 0; S.env = null; S.envErr = ''; S.group = null;
+  S.acct = null; S.data = { positions: [], orders: [] }; S.lastOkStart = 0; S.env = null; S.envErr = ''; S.group = null;
   if (S.lock) { try { S.lock(); } catch (e) {} S.lock = null; }
   closeConfirm();
   if (had && !quiet) toast('Back on Paper. No live orders from this tab.', 'info');
@@ -326,7 +336,7 @@ async function read() {
     S.lastOkStart = start; S.readErr = '';
     if (S.unknown && start > S.lastWriteAt) S.unknown = false;
     syncSoon(); afterRead();
-  } catch (e) { if (S.acct && S.acct.id === id) S.readErr = e.message || 'Read failed.'; if (e.needsConnect) S.readErr = 'The broker connection needs to be renewed. Connect a broker again.'; }
+  } catch (e) { if (S.acct && S.acct.id === id) S.readErr = e.message || 'Read failed.'; if (e.needsConnect) S.readErr = 'The broker connection needs to be renewed. Tap Reconnect in the Trade menu.'; }
   finally { S.reading = false; }
   render();
 }
@@ -392,31 +402,26 @@ export const tickOf = (sym) => { const r = L.chartRoot(sym); return r ? L.ROOTS[
 // ------------------------------------------------------------------------------------------ confirm sheet
 let cf = null;
 function closeConfirm(v) { if (cf) { const r = cf.resolve; cf.el.remove(); document.removeEventListener('keydown', cf.key, true); cf = null; r(v === true); } }
-// d: { title, lines:[...], code, go, side, noSkip, marketable }
+// one tap, used only by flatten and drag moves (new orders send on the click). d: { title, lines:[...], code, go, side }
 function confirmSheet(d) {
   closeConfirm(false);
   return new Promise((resolve) => {
-    const key = S.acct.id + '|' + d.code, needType = !S.typed.has(key), canSkip = !d.noSkip;
-    if (!needType && canSkip && S.skip) { resolve(true); return; }
     const el = document.createElement('div'); el.id = 'stklv-cf';
     el.innerHTML = '<div class="stklv-cf-box" role="alertdialog" aria-modal="true" aria-labelledby="stklv-cf-h" aria-describedby="stklv-cf-d">' +
       '<div class="stklv-grab" aria-hidden="true"></div>' +
       '<div class="stklv-cf-head"><span class="stklv-badge">' + esc(envWord() + ' ' + S.acct.label) + '</span><button type="button" class="stklv-x" data-k="no" aria-label="Cancel">×</button></div>' +
       '<h2 id="stklv-cf-h">' + esc(d.title) + '</h2>' +
       '<div id="stklv-cf-d" class="stklv-cf-lines">' + d.lines.map((x) => '<p>' + x + '</p>').join('') + '</div>' +
-      (needType ? '<label class="stklv-cf-type"><span>First live order for ' + esc(d.code) + ' in this session. Type <b>' + esc(d.code) + '</b> to confirm.</span><input type="text" autocomplete="off" autocapitalize="characters" spellcheck="false" aria-label="Type the contract code to confirm"></label>' : '') +
-      (canSkip && !needType ? '<label class="stklv-chk"><input type="checkbox" data-k="skip"> Skip this tap for the rest of this session</label>' : '') +
-      '<div class="stklv-cf-btns"><button type="button" class="stklv-btn" data-k="no">Cancel</button><button type="button" class="stklv-btn stklv-go ' + (d.side === 'sell' ? 'sell' : 'buy') + '" data-k="yes"' + (needType ? ' disabled' : '') + '>' + esc(d.go) + '</button></div>' +
+      '<div class="stklv-cf-btns"><button type="button" class="stklv-btn" data-k="no">Cancel</button><button type="button" class="stklv-btn stklv-go ' + (d.side === 'sell' ? 'sell' : 'buy') + '" data-k="yes">' + esc(d.go) + '</button></div>' +
       '<p class="stklv-fine">Real order at your broker. Max 2 contracts. Every attempt is logged. ' + DISCLAIMER + '</p></div>';
     document.body.appendChild(el);
-    const yes = el.querySelector('[data-k=yes]'), inp = el.querySelector('.stklv-cf-type input');
-    if (inp) { inp.addEventListener('input', () => { const ok = inp.value.trim().toUpperCase() === d.code; yes.disabled = !ok; inp.setAttribute('aria-invalid', inp.value && !ok ? 'true' : 'false'); }); setTimeout(() => inp.focus(), 30); }
-    else setTimeout(() => el.querySelector('[data-k=no]').focus(), 30);
+    const yes = el.querySelector('[data-k=yes]');
+    setTimeout(() => el.querySelector('[data-k=no]').focus(), 30);
     const k = (e) => { if (e.key === 'Escape') { e.stopPropagation(); closeConfirm(false); } else if (e.key === 'Enter' && !yes.disabled && document.activeElement !== el.querySelector('[data-k=no]')) { e.preventDefault(); e.stopPropagation(); yes.click(); } else e.stopPropagation(); };
     document.addEventListener('keydown', k, true);
     el.addEventListener('mousedown', (e) => { if (e.target === el) closeConfirm(false); });
     el.querySelectorAll('[data-k=no]').forEach((b) => b.addEventListener('click', () => closeConfirm(false)));
-    yes.addEventListener('click', () => { if (yes.disabled) return; S.typed.add(key); const sk = el.querySelector('[data-k=skip]'); if (sk && sk.checked) S.skip = true; closeConfirm(true); });
+    yes.addEventListener('click', () => { if (yes.disabled) return; closeConfirm(true); });
     cf = { el, resolve, key: k };
   });
 }
@@ -428,7 +433,6 @@ async function write(body, what, pending) {
   const tm = { op: body.op, t0: performance.now() };
   try { const r = await order(body, tm); tm.ok = true; toast(what + ' sent. ' + (r.status ? 'Broker status: ' + r.status + '.' : ''), 'success'); return r; }
   catch (e) {
-    S.skip = false;
     if (e.code === 'unknown' || e.network) { S.unknown = true; toast('No clear answer from the broker. The order may or may not be live. Check the working orders before sending again.', 'error'); }
     else toast(what + ' refused: ' + e.message, 'error');
     return null;
@@ -457,18 +461,11 @@ async function place(sym, o, src) {
   if (br && groupOpen(i.code)) { toast('A stop loss / take profit is already open on ' + i.code + '. Flatten or wait for it to finish first.', 'error'); return null; }
   const b = L.buildPlace({ code: i.code, side: o.side, qty, type: o.type, price: o.price, sl: o.sl, tp: o.tp, last: i.last }, now()); if (b.error) { toast(b.error, 'error'); return null; }
   const desc = sideWord(o.side) + ' ' + qty + ' ' + i.code + ' ' + (o.type === 'market' ? 'MARKET' : o.type === 'stop' ? 'STOP @ ' + px(b.body.stopPrice) : 'LIMIT @ ' + px(b.body.limitPrice));
-  const risk = (p) => money(Math.abs((i.last || 0) - p) * qty * i.pv);
-  const bl = br ? [
-    b.body.bracket.sl != null ? 'Stop loss <b>' + px(b.body.bracket.sl) + '</b>' + (i.last > 0 ? ' (about ' + risk(b.body.bracket.sl) + ' from the last price)' : '') : 'No stop loss',
-    b.body.bracket.tp != null ? 'Take profit <b>' + px(b.body.bracket.tp) + '</b>' + (i.last > 0 ? ' (about ' + risk(b.body.bracket.tp) + ')' : '') : 'No take profit',
-    '<span class="stklv-warn">Sent to your broker after the entry fills. When one fills, TradeZoro cancels the other. Keep this tab open until it finishes; a stop can fill at a worse price in a fast market.</span>'] : [];
-  const ok = await confirmSheet({ title: desc, code: i.code, side: o.side, go: 'Send ' + sideWord(o.side) + ' ' + qty, noSkip: br,
-    lines: [contractLine(i), 'Account <b>' + esc(S.acct.label) + '</b>', o.marketable ? '<span class="stklv-warn">This limit is at or through the market: it fills now at ' + esc(px(b.body.limitPrice)) + ' or better.</span>' : (o.type === 'market' ? '<span class="stklv-warn">Market order: fills at the next available price.</span>' : o.type === 'stop' ? '<span class="stklv-warn">Stop order: becomes a market order when the price trades at ' + esc(px(b.body.stopPrice)) + '.</span>' : '')].concat(bl, ['Position now: ' + posText(i)]).filter(Boolean) });
-  if (!ok) return null;
+  // no confirm (Owner order 19 Nov): the order goes out on the click, like paper; every guard above and on the server still applies
   S.sentAt.push(now());
   const body = Object.assign(b.body, { idemKey: uuid() });
   const r = await write(body, desc + (src ? ' (' + src + ')' : ''), L.pendingLine(body, i.last));
-  if (r && br) { setGroup(r.bracket || null, i.code); if (r.bracket && r.bracket.state === 'unrecorded') toast(r.bracket.why, 'error'); }
+  if (r && br) { setGroup(r.bracket || null, i.code); if (r.bracket && r.bracket.state === 'unrecorded') toast(r.bracket.why, 'error'); else toast('Stop loss and take profit go to your broker after the entry fills. Keep this tab open until they are placed.', 'info'); }
   return r;
 }
 // ---- stop loss / take profit: after every positions read, ask the server to move the group on (place the children after the fill,
@@ -504,7 +501,7 @@ export async function flatten(sym) {
   if (!S.lastOkStart) { toast('Positions are still loading.', 'error'); return null; }
   const i = info(sym); if (!i) { toast('Open the NQ, ES, MNQ or MES chart of the position to flatten it.', 'error'); return null; }
   if (!i.pos.qty && !i.working.length) { toast('Nothing to flatten on ' + i.code + '.', 'info'); return null; }
-  const ok = await confirmSheet({ title: 'Flatten ' + i.code, code: i.code, side: i.pos.qty > 0 ? 'sell' : 'buy', go: 'Flatten ' + i.code, noSkip: true,
+  const ok = await confirmSheet({ title: 'Flatten ' + i.code, code: i.code, side: i.pos.qty > 0 ? 'sell' : 'buy', go: 'Flatten ' + i.code,
     lines: [contractLine(i), 'Cancels ' + i.working.length + ' working order' + (i.working.length === 1 ? '' : 's') + (groupOpen(i.code) ? ' (including the stop loss and take profit)' : '') + ', then closes the position at market (' + posText(i) + ').', 'The server re-reads the position first and closes what it finds there.'] });
   if (!ok) return null;
   if (groupOpen(i.code)) { S.group = null; S.groupCode = ''; }   // the server cancels the children and drops the record; re-read after
@@ -558,7 +555,7 @@ export async function drag(sym, d) {
     const c = L.bracketCheck({ side: g.side, ref: i.last, sl: role === 'sl' ? np : g.sl, tp: role === 'tp' ? np : g.tp, code: i.code, pct: 0.05 }); if (c.error) { toast(c.error, 'error'); return; }
   }
   const what = role === 'sl' ? 'stop loss' : role === 'tp' ? 'take profit' : sideWord(o.side) + ' ' + o.qty + ' ' + i.code;
-  const ok = await confirmSheet({ title: 'Move ' + what + ' to ' + px(np), code: i.code, side: o.side, go: native ? 'Move order' : 'Cancel and send new', noSkip: true,
+  const ok = await confirmSheet({ title: 'Move ' + what + ' to ' + px(np), code: i.code, side: o.side, go: native ? 'Move order' : 'Cancel and send new',
     lines: [contractLine(i), 'From ' + px(o.price) + ' to <b>' + px(np) + '</b>', native ? '' : '<span class="stklv-warn">This broker can’t change an order in place. The order is cancelled first; the new one is sent only after the cancel is confirmed.</span>'].filter(Boolean) });
   if (!ok) return;
   if (role) { const r = await write(Object.assign(m.body, { idemKey: uuid() }), 'Move ' + what); if (r && r.bracket) setGroup(r.bracket, i.code); return; }
@@ -613,7 +610,7 @@ export function opInfo(sym) {
   return { code: i.code, root: i.root, tick: i.tick || L.ROOTS[i.root].tick, pv: i.pv, last: i.last, pos: i.pos, working: i.working, pnl: i.pnl, held: i.held, env: envWord(), killed: !!S.killed, block: blockReason(), busy: S.busy, rtt: L.rttText(S.rtt),
     retry: !S.env && !!S.envErr && !S.envBusy, group: g, alarm: g && g.state === 'unprotected' ? g.why : '' };
 }
-// one entry point for the panel's Buy / Sell / Join / Confirm: place() keeps every guard (typed confirm, tap, cap, exposure, band, gate)
+// one entry point for the panel's Buy / Sell / Join / Confirm: place() keeps every guard (cap, exposure, band, gate); no confirm sheet
 export function placeTicket(sym, o, src) {
   if (o.type !== 'market' && o.type !== 'limit' && !(o.type === 'stop' && caps().stop)) { toast(o.type === 'stop' ? caps().why : 'Market, limit or stop only from the chart.', 'error'); return Promise.resolve(null); }
   return place(sym, { side: o.side, type: o.type, qty: o.qty, price: o.type !== 'market' ? Number(o.price) : undefined, marketable: !!o.marketable, sl: o.sl, tp: o.tp }, src || 'panel');
@@ -629,7 +626,7 @@ export function renderHead(slot) {
     slot.dataset.sig = sig;
     const opts = '<option value="">Paper</option>' + S.accounts.map((a) => '<option value="' + esc(a.id) + '"' + (S.acct && S.acct.id === a.id ? ' selected' : '') + '>' + esc(a.label) + '</option>').join('') + '<option value="__connect">' + (S.accounts.length ? 'Connect another broker…' : 'Connect a broker…') + '</option>';
     slot.innerHTML = '<label class="stklv-pick"><span class="stklv-vh">Trading account</span><select aria-label="Trading account">' + opts + '</select><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></label>' +
-      (S.acct ? '<span class="stklv-badge" role="status" aria-label="' + esc(envWord() + ' ' + S.acct.label) + '"><span class="stklv-full">' + esc(envWord() + ' ' + S.acct.label) + '</span><span class="stklv-short" aria-hidden="true">' + esc(envWord() + ' …' + S.acct.last4) + '</span></span>' : '');
+      (S.acct ? '<span class="stklv-badge" role="status" aria-label="' + esc(envWord() + ' ' + S.acct.label) + '"><span class="stklv-full">' + esc(envWord() + ' ' + S.acct.label) + '</span><span class="stklv-short" aria-hidden="true">' + esc(envWord() + ' ' + S.acct.short) + '</span></span>' : '');
     const sel = slot.querySelector('select');
     sel.addEventListener('change', () => { const v = sel.value; if (v === '__connect') { sel.value = S.acct ? S.acct.id : ''; connect(); return; } pick(v); });
     for (const ev of ['pointerdown', 'keydown']) slot.addEventListener(ev, (e) => e.stopPropagation());
@@ -689,13 +686,13 @@ const CSS = `
 .stkpt-acctslot:empty{ display:none; }
 .stkpt.is-live .stkpt-badge{ display:none; }
 .stkpt.is-live .stkpt-trade,.stkpt-trade[hidden]{ display:none !important; }
-.stklv-short{ display:none; }
+.stklv-short{ display:none; } .stklv-full{ overflow:hidden; text-overflow:ellipsis; }
 .stklv-vh{ position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0); }
 .stklv-pick{ position:relative; display:inline-flex; align-items:center; height:28px; }
 .stklv-pick select{ appearance:none; -webkit-appearance:none; height:28px; padding:0 28px 0 12px; border:1px solid var(--line); border-radius:8px; background:var(--bg-1); color:var(--ink-0); font:600 12px/16px var(--font-body, sans-serif); cursor:pointer; max-width:220px; text-overflow:ellipsis; }
 .stklv-pick select:focus-visible{ outline:2px solid #03c988; outline-offset:2px; }
 .stklv-pick svg{ position:absolute; right:10px; pointer-events:none; color:var(--ink-2); }
-.stklv-badge{ display:inline-flex; align-items:center; height:28px; padding:0 12px; border-radius:999px; background:#d92d20; color:#fff; font:700 12px/16px var(--font-body, sans-serif); letter-spacing:.04em; white-space:nowrap; box-shadow:0 0 0 2px rgba(217,45,32,.28); }
+.stklv-badge{ display:inline-flex; align-items:center; min-width:0; max-width:100%; overflow:hidden; height:28px; padding:0 12px; border-radius:999px; background:#d92d20; color:#fff; font:700 12px/16px var(--font-body, sans-serif); letter-spacing:.04em; white-space:nowrap; box-shadow:0 0 0 2px rgba(217,45,32,.28); }
 .stklv-cbadge{ position:absolute; right:80px; top:8px; z-index:6; height:28px; padding:0 16px; display:flex; align-items:center; border-radius:999px; background:#d92d20; color:#fff; font:700 12px/16px -apple-system,BlinkMacSystemFont,Roboto,sans-serif; letter-spacing:.04em; white-space:nowrap; pointer-events:none; box-shadow:0 2px 8px rgba(0,0,0,.35); max-width:calc(100% - 96px); overflow:hidden; text-overflow:ellipsis; }
 .stkpt-chip[data-live]{ border-width:2px; }
 .stkpt-chip[data-live] .stkpt-chip-a{ font-weight:700; }
@@ -738,10 +735,6 @@ const CSS = `
 .stklv-cf-box h2{ margin:0; font:700 17px/22px var(--font-body, sans-serif); color:var(--ink-0); font-variant-numeric:tabular-nums; }
 .stklv-cf-lines{ display:flex; flex-direction:column; gap:4px; }
 .stklv-cf-lines p{ margin:0; font-size:14px; line-height:20px; } .stklv-cf-lines b{ color:var(--ink-0); }
-.stklv-cf-type{ display:flex; flex-direction:column; gap:8px; font-size:13px; line-height:18px; color:var(--ink-1); }
-.stklv-cf-type input{ height:48px; padding:0 12px; border:1px solid var(--line); border-radius:12px; background:var(--bg-0); color:var(--ink-0); font:600 16px/20px var(--font-mono); letter-spacing:.08em; text-transform:uppercase; }
-.stklv-cf-type input[aria-invalid="true"]{ border-color:#f23645; }
-.stklv-chk{ display:flex; align-items:center; gap:8px; min-height:32px; font-size:13px; color:var(--ink-1); cursor:pointer; } .stklv-chk input{ width:16px; height:16px; margin:0; accent-color:#03c988; }
 .stklv-cf-btns{ display:grid; grid-template-columns:1fr 1.4fr; gap:8px; } .stklv-cf-btns .stklv-btn{ height:48px; font-size:15px; }
 .stklv-fine{ margin:0; font-size:12px; line-height:16px; color:var(--ink-3); }
 @media (max-width:980px){ .stklv-view{ grid-template-columns:1fr; } }
@@ -749,7 +742,7 @@ const CSS = `
   .stklv-pick select{ max-width:132px; height:32px; } .stklv-pick{ height:32px; }
   .stkpt.is-live .stkpt-hsum{ display:none; }
   .stkpt-head .stklv-badge{ height:32px; padding:0 12px; }
-  .stkpt-head .stklv-full{ display:none; } .stkpt-head .stklv-short{ display:inline; }
+  .stkpt-head .stklv-full{ display:none; } .stkpt-head .stklv-short{ display:block; max-width:144px; overflow:hidden; text-overflow:ellipsis; }
   .stklv-pick select{ max-width:128px; }
   .stklv-view{ padding:8px 0; gap:12px; }
   .stklv-seg button{ height:40px; } .stklv-btn{ height:44px; } .stklv-btn.sm{ height:36px; }
@@ -768,6 +761,6 @@ export function mountLive(paperApi, opts) {
   P.setLiveHook({ active, lines, chipText, badgeFor, tickOf, chipX, drag, flattenActive, openTicket, renderHead, renderSummary, renderView, foot, dock, dockTrades, ladder, domState, cancel, flatten, caps, opInfo, placeTicket, kill, killOn, retryEnv });
   loadMeta(); loadAccounts();
   window.addEventListener('storage', (e) => { if (e.key === lsUserKey()) loadAccounts(); });
-  Object.assign(window.__stkLive, { connect, pick, leave, read, loadAccounts, info, confirmSheet, balance, summary, metaOf, saveMeta, disconnect, L, envCheck, retryEnv, syncGroup });
+  Object.assign(window.__stkLive, { connect, reconnect, pick, leave, read, loadAccounts, info, confirmSheet, balance, summary, metaOf, saveMeta, disconnect, L, envCheck, retryEnv, syncGroup });
   Object.defineProperty(window.__stkLive, 'blockReason', { configurable: true, get: () => blockReason() });   // a getter (Object.assign would copy one frozen value)
 }

@@ -128,13 +128,18 @@ async function run(request, env, deps) {
   // independent checks in parallel; each verdict is applied below in the old order (rate limit, kill switch, session)
   const [limited, sw, s0] = await t.step('gate', Promise.all([
     op === 'bracket' ? syncLimited(g.uid) : op !== 'schema' ? orderRateLimited(env, g.uid, defer) : false,
-    op !== 'schema' && live ? liveSwitchOn(env, deps).then((v) => ({ v }), () => ({ err: true })) : { v: true },   // kill switch, fails closed
+    op !== 'schema' && live ? liveSwitchOn(env, deps).then((v) => ({ v }), (e) => ({ err: true, why: String((e && e.reason) || 'unknown error').slice(0, 160) })) : { v: true },   // kill switch, fails closed
     userId ? cachedSession(env, deps, userId) : null,
   ]));
   if (limited) return fail(429, op === 'bracket' ? 'Too many checks, try again in a moment' : 'Order limit: 10 a minute');
   // the bracket sync still runs with the switch off (or unreadable): it may only CANCEL then (the protective one-cancels-other),
   // never place a new order (syncBracket gets killed = true)
-  if (op !== 'bracket' && sw.err) return fail(503, 'Live trading switch could not be read, order not sent', 'switch_unreadable');
+  if (op !== 'bracket' && sw.err) {
+    // the real cause (status code, no secret) goes to the log, a best-effort audit row and the message the chart shows
+    try { console.warn('finatic order: live switch unreadable: ' + sw.why); } catch (e) {}
+    defer(openAudit(env, deps, { uid: g.uid, env: envMode(env), op, src: chart ? 'chart' : 'journal', account: b.accountId, symbol: String(b.symbol || '').toUpperCase().slice(0, 20), side: String(b.side || '').toLowerCase().slice(0, 4), qty: Number(b.qty) || 0, type: String(b.type || '').toLowerCase().slice(0, 12) }).then((a) => a.finish({ result: 'rejected', message: 'live switch unreadable: ' + sw.why })).catch(() => {}));
+    return fail(503, 'Live trading switch could not be read (' + sw.why + '), order not sent', 'switch_unreadable');
+  }
   if (op !== 'bracket' && !sw.v) return fail(403, 'Live trading is switched off', 'switched_off');
   if (!userId) return needsConnect();
   let s = s0;
@@ -170,7 +175,7 @@ async function run(request, env, deps) {
   const release = needRead ? await t.step('queue', acquire(b.accountId)) : () => {};
   try {
   const [au, st0] = await Promise.all([opened, needRead ? t.step('read', read()) : null]);
-  if (au.e) return au.e && au.e.duplicate ? json({ error: 'This order was already sent once. Nothing new was sent.', code: 'duplicate', duplicate: true }, 409) : fail(503, 'Audit log unavailable, order not sent');
+  if (au.e) { if (au.e && au.e.duplicate) return json({ error: 'This order was already sent once. Nothing new was sent.', code: 'duplicate', duplicate: true }, 409); try { console.warn('finatic order: audit unavailable: ' + (au.e.reason || 'error')); } catch (e) {} return fail(503, 'Audit log unavailable' + (au.e.reason ? ' (' + String(au.e.reason).slice(0, 160) + ')' : '') + ', order not sent', 'audit_unavailable'); }
   const audit = { id: au.a.id, finish: (res) => defer(au.a.finish(res)) };   // the result row goes out after the reply, never skipped
   if (renewFail) { audit.finish({ result: 'rejected', message: 'session renew failed' }); return needsConnect(); }
   if (chart && op === 'place') {   // fresh read, worst-case exposure

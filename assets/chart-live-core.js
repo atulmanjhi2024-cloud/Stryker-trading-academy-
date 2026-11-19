@@ -217,17 +217,19 @@ export function pendingLine(body, last) {
   return { id: 'P' + body.idemKey, kind: 'ord', live: true, pending: true, code: body.symbol, price, side: body.side, type: body.type, qty: body.qty };
 }
 
-// ---- account identity, balances, labels (Owner order 2026-11-16: "account number is wrong, add total money") ----------------
-// Finatic's v1 account record carries its own UUID (accountId / id) plus the broker's fields. Which broker field holds the number
-// the broker SHOWS differs by broker and API version, so we read the candidates in this order and never fall back to a UUID:
-//   accountNumber / account_number / brokerAccountNumber  (the number on the broker's statement, e.g. "APEX-123456-01")
-//   accountDisplayName / account_display_name / accountName / account_name / displayName / display_name / name / nickname
-// brokerAccountId / broker_account_id is NOT shown: for Tradovate it is the broker's INTERNAL numeric id, not the account name
-// the broker shows (showing its last 4 was the "…2029" bug). It is only used to match a grant and to skip an equal "number".
+// ---- account identity, balances, labels (Owner orders 2026-11-16 "account number is wrong", 2026-11-19 "show the account NAME") --
+// Finatic's v1 account record (LegacyBrokerAccount in its OpenAPI) carries its own UUID (accountId / id) plus the broker's fields
+// accountNumber and accountName. For Tradovate, accountNumber is the broker's internal numeric id ("71012029") and accountName is
+// the name Tradovate shows the trader ("FNFTFAGAURAVSINGH27021"). So the NAME is shown (Owner 19 Nov), read in this order:
+//   accountName / account_name / accountDisplayName / account_display_name / displayName / display_name / nickname / name
+// and the number (accountNumber / account_number / brokerAccountNumber) only as a small second line when it differs.
+// A generic name ("Individual", "Margin", ...) is not an identity: the number wins over it. No usable name -> the number, as before.
+// brokerAccountId / broker_account_id is never shown on its own (the "…2029" bug); it only matches a grant.
 const UUIDISH = /^[0-9a-f]{8}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{12}$/i;
 const NUM_KEYS = ['accountNumber', 'account_number', 'brokerAccountNumber', 'broker_account_number'];
-const NAME_KEYS = ['accountDisplayName', 'account_display_name', 'accountName', 'account_name', 'displayName', 'display_name', 'name', 'nickname'];
+const NAME_KEYS = ['accountName', 'account_name', 'accountDisplayName', 'account_display_name', 'displayName', 'display_name', 'nickname', 'name'];
 const ID_KEYS = ['brokerAccountId', 'broker_account_id'];
+const GENERIC = /^(individual|joint|ira|roth( ira)?|margin|cash|default|primary|main|account|trading|futures|brokerage|live|demo|sim|simulated|simulation|paper)$/i;
 const str = (v) => (v == null || typeof v === 'object' ? '' : String(v).trim());
 export function brokerNice(b) {
   const s = str(b) || 'Broker';
@@ -235,25 +237,42 @@ export function brokerNice(b) {
   const k = s.toLowerCase().replace(/[^a-z_]/g, '');
   return fix[k] || fix[k.replace(/_/g, '')] || s.replace(/[_-]+/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 }
-// the account number as the broker shows it ('' when Finatic gave none); never a UUID or our own id
+const okVal = (ownId) => (v) => v && v.length <= 64 && !UUIDISH.test(v) && v !== ownId;
+// -> { name, number }: the broker's account name ('' if none usable) and its account number ('' if none / same as the name)
+export function acctNames(x, ownId) {
+  if (!x) return { name: '', number: '' };
+  const ok = okVal(ownId);
+  const name = NAME_KEYS.map((k) => str(x[k])).find((v) => ok(v) && !GENERIC.test(v)) || '';
+  const number = NUM_KEYS.map((k) => str(x[k])).find(ok) || '';
+  return { name, number: number && number !== name ? number : '' };
+}
+// the account identity to show: the broker's account NAME, else its number ('' when Finatic gave neither); never a UUID or our id
 export function acctNumber(x, ownId) {
   if (!x) return '';
-  const ok = (v) => v && v.length <= 64 && !UUIDISH.test(v) && v !== ownId;
-  const internal = ID_KEYS.map((k) => str(x[k])).find(Boolean) || '';
+  const n = acctNames(x, ownId);
+  if (n.name) return n.name;
+  const ok = okVal(ownId), internal = ID_KEYS.map((k) => str(x[k])).find(Boolean) || '';
   const cands = [...NUM_KEYS, ...NAME_KEYS].map((k) => str(x[k])).filter(ok);
-  // a "number" that is just the broker's internal id again (Tradovate: accountNumber == brokerAccountId) loses to a real name
-  const best = cands.find((v) => v !== internal) || cands[0];
-  return best || '';   // never the internal id alone: it is not a number the broker shows (that was the "…2029" bug)
+  return cands.find((v) => v !== internal) || cands[0] || '';   // never the internal id alone (the "…2029" bug)
 }
-// one Finatic account record -> what the menu needs
+// one Finatic account record -> what the menu needs. number = the identity shown (the NAME); alt = the account number when it
+// differs (small second line); text = "Tradovate FNFTFAGAURAVSINGH27021"
 export function acctInfo(x) {
   const id = str(x && (x.accountId || x.id));
   const broker = brokerNice(x && (x.brokerName || x.broker_name || x.brokerDisplayName || x.brokerId || x.broker_id || x.institutionName || x.broker));
   const number = acctNumber(x, id);
+  const nn = acctNames(x, id), alt = nn.name && nn.number && nn.number !== number ? nn.number : '';
   const alnum = number.replace(/[^A-Za-z0-9]/g, '');
-  return { id, broker, number, last4: alnum.slice(-4), text: number ? broker + ' ' + number : broker,
+  return { id, broker, number, alt, last4: alnum.slice(-4), text: number ? broker + ' ' + number : broker,
     brokerId: str(x && (x.brokerId || x.broker_id)).toLowerCase(), brokerAccountId: str(x && (x.brokerAccountId || x.broker_account_id)),
     grantId: str(x && (x.grantId || x.grant_id || x.accountGrantId || x.account_grant_id)), currency: str(x && (x.currencyCode || x.currency_code || x.currency)).toUpperCase() };
+}
+// what every live surface shows for an account: the Owner's own label (Edit details) wins, else the broker's account name.
+// short = tight spots (phone badge, chip, order panel): "Apex eval 1" | "FNFTFAGAURAVSINGH27021"; badge = the LIVE badge, header
+// and toasts: "Apex eval 1" | "Tradovate FNFTFAGAURAVSINGH27021"; full = titles / aria: "Apex eval 1 · Tradovate FNFT…"
+export function acctShow(a, meta) {
+  const m = cleanMeta(meta);
+  return { short: m.label || a.number || a.broker, badge: m.label || a.text, full: m.label ? m.label + ' · ' + a.text : a.text };
 }
 // back-compat wrapper (old callers pass { broker, number|name, id })
 export function acctLabel(a) {
@@ -429,7 +448,7 @@ export const typeName = (k) => { const t = TYPES.find(([x]) => x === k); return 
 // row / button wording: name = label or broker; full = "Apex eval 1 · Apex · Tradovate APEX-123456-01"
 export function acctTitle(a, meta) {
   const m = cleanMeta(meta);
-  const name = m.label || a.broker;
+  const name = m.label || a.number || a.broker;   // the Owner's label, else the broker's account NAME (19 Nov), else the broker
   const full = [m.label, m.firm, a.text].filter(Boolean).join(' · ');
   return { name, full, firm: m.firm, type: typeName(m.type) };
 }

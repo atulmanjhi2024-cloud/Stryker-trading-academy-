@@ -41,7 +41,11 @@ async function call(url, body, sample) {
 
 // onConnected (ZoroCharts live trading, assets/chart-live.js): called once accounts load after connecting; the sheet then closes
 // (the chart picks the account itself; the journal import steps need the journal page).
-export function openBrokerSync({ uid, onConnected } = {}) {
+// portal (Owner 19 Nov, "always open the connect page when connecting brokers, not just auto connect"): true = never auto-load the
+// saved accounts and close; always show the Connect step, whose button opens the broker portal (the page where you pick a broker and
+// sign in), started for the saved Finatic user so the accounts already linked stay linked. false/omitted = the quiet Reconnect path:
+// a saved connection is reloaded (and the sheet closes in chart mode) without the portal.
+export function openBrokerSync({ uid, onConnected, portal } = {}) {
   if (!document.getElementById('rjs-css')) { const s = document.createElement('style'); s.id = 'rjs-css'; s.textContent = CSS; document.head.appendChild(s); }
   if (!document.getElementById('fjs-css')) { const s = document.createElement('style'); s.id = 'fjs-css'; s.textContent = EXTRA_CSS; document.head.appendChild(s); }
   const LS = 'stryker_broker_sync_user_' + uid;
@@ -76,15 +80,16 @@ export function openBrokerSync({ uid, onConnected } = {}) {
     sheet.innerHTML = head('Broker sync') + err(error) +
       '<p class="rjs-lead">Pull your fills from a connected broker (for example Tradovate, NinjaTrader, Rithmic) into the journal. Data only: we read accounts and fills and never place or change an order.</p>' +
       '<button type="button" class="rjs-go" id="fjs-connect">Connect a broker</button>' +
-      (S.userId ? '<button type="button" class="rjs-ghost" id="fjs-have">I already connected</button>' : '') +
+      (S.userId ? '<button type="button" class="rjs-ghost" id="fjs-have">' + (portal ? 'Use the brokers already linked' : 'I already connected') + '</button>' : '') +
       '<p class="rjs-fine">You sign in at your broker in a new tab. Your broker password is never typed into TradeZoro.</p>';
     wireX();
     q('#fjs-connect').addEventListener('click', async (e) => {
       const btn = e.currentTarget; busy(btn, 'Opening');
       const win = window.open('', '_blank');           // opened on the tap so pop-up blockers allow it
       try {
-        const r = await call('/connect/finatic/session', { mode: 'dark' });
+        const r = await call('/connect/finatic/session', Object.assign({ mode: 'dark' }, S.userId ? { userId: S.userId } : {}));
         S.sessionId = r.sessionId || '';
+        if (S.userId && !r.userId) { S.userId = ''; lsSet(''); }   // the saved user was gone: the new connection starts a new one
         if (win && r.portalUrl) { win.opener = null; win.location.href = r.portalUrl; } else if (r.portalUrl) { location.href = r.portalUrl; return; }
         S.step = 'wait'; draw();
       } catch (e2) { if (win) win.close(); const notSet = e2.status === 503 && (!e2.code || e2.code === 'not_set_up'); drawStart(notSet ? '' : (e2.message || 'Could not start.')); if (notSet) drawNotSetUp(); }
@@ -247,6 +252,6 @@ export function openBrokerSync({ uid, onConnected } = {}) {
   function draw() { sheet.classList.toggle('rjs-wide', S.step === 'preview'); if (S.step === 'start') drawStart(); else if (S.step === 'wait') drawWait(); else if (S.step === 'pick') drawPick(); else if (S.step === 'preview') drawPreview(); else if (S.step === 'order') openOrderStep(); else drawDone(); sheet.scrollTop = 0; }
 
   // Probe first: "Not set up yet" when the server key is missing.
-  fetch('/connect/finatic/session?probe=1', { cache: 'no-store' }).then((r) => r.json().catch(() => ({}))).then((j) => { if (!(j && j.configured)) return drawNotSetUp(); draw(); if (S.userId) loadAccounts(); }).catch(() => drawStart(NET_MSG));
+  fetch('/connect/finatic/session?probe=1', { cache: 'no-store' }).then((r) => r.json().catch(() => ({}))).then((j) => { if (!(j && j.configured)) return drawNotSetUp(); draw(); if (S.userId && !portal) loadAccounts(); }).catch(() => drawStart(NET_MSG));
   sheet.innerHTML = head('Broker sync') + '<p class="rjs-lead">Checking…</p>'; wireX();
 }

@@ -45,7 +45,7 @@ function status(a, live) {
 }
 const API = () => (window.__stkLive && window.__stkLive.L ? window.__stkLive : null);
 const metaOf = (id) => { const A = API(); return A && A.metaOf ? A.metaOf(id) : { label: '', firm: '', type: '' }; };
-// name = label or broker; short = "Apex eval 1 · Apex" for the button; full = "Apex eval 1 · Apex · Tradovate APEX-123456-01"
+// name = label, else the broker's account name (19 Nov); short = "Apex eval 1 · Apex" for the button; full = "Apex eval 1 · Apex · Tradovate APEX-123456-01"
 export function titleOf(a) {
   const A = API(); if (!A) return { name: a.broker, short: a.broker, full: a.text || a.broker, firm: '', type: '' };
   const t = A.L.acctTitle(a, metaOf(a.id));
@@ -76,9 +76,11 @@ function paperRow(paper, on, admin) {
 // mode 'sheet' = Manage accounts sheet: no pick / tick, Disconnect shown instead of the gear
 function liveRow(a, live, on, mode) {
   const s = status(a, live), t = titleOf(a), sheet = mode === 'sheet';
-  const bits = [a.broker, t.firm && t.firm !== t.name ? t.firm : '', t.type, s.c === 'ok' && s.t === 'Connected' ? '' : s.t].filter(Boolean);   // plain "Connected" = the green dot (title)
-  const info = logo(a.broker, 40) + '<span class="stktm-tx"><span class="stktm-l1"><span class="stktm-nm">' + esc(t.name) + '</span>' +
-    (a.number ? '<span class="stktm-num" data-copy="' + esc(a.number) + '" title="Copy account number">' + esc(a.number) + '</span>' : '') + '</span>' +
+  // line 1: the Owner's label + the account name, or just the broker's account NAME (19 Nov); line 2: broker · firm · type · the
+  // account number in small type, only when the broker's number differs from the name
+  const bits = [a.broker, t.firm && t.firm !== t.name ? t.firm : '', t.type, a.alt && s.c === 'ok' ? '#' + a.alt : '', s.c === 'ok' && s.t === 'Connected' ? '' : s.t]   /* a problem status wins over the number */.filter(Boolean);   // plain "Connected" = the green dot (title)
+  const info = logo(a.broker, 40) + '<span class="stktm-tx"><span class="stktm-l1"><span class="stktm-nm" title="' + esc(t.name) + '">' + esc(t.name) + '</span>' +
+    (a.number && t.name !== a.number ? '<span class="stktm-num" data-copy="' + esc(a.number) + '" title="Copy account name">' + esc(a.number) + '</span>' : '') + '</span>' +
     '<span class="stktm-l2"><i class="stktm-dot ' + s.c + '" title="' + esc(s.t) + '" aria-hidden="true"></i><span class="stktm-meta">' + esc(bits.join(' · ')) + '</span></span></span>' + VD + balHtml(a.id);
   const pen = iconBtn('edit', a.id, 'Edit ' + t.full, PEN);
   return '<div class="stktm-row" data-row="' + esc(a.id) + '">' +
@@ -100,6 +102,8 @@ export function draw(pop, live, paper) {
     if (!live.accounts.length) h += '<div class="stktm-empty">' + (live.loaded ? 'No broker connected yet.' : 'Loading accounts…') + '</div>';
     h += live.accounts.map((a) => liveRow(a, live, act && act.id === a.id)).join('') + '</div>';
     h += '<div class="stktm-foot"><button type="button" role="menuitem" class="stktm-pill stktm-add" data-a="connect" tabindex="-1">' + SV(16, '<path d="M12 5v14M5 12h14"/>', 2.2) + 'Connect a broker</button><button type="button" role="menuitem" class="stktm-pill stktm-manage" data-x="manage" tabindex="-1">' + SLIDERS + 'Manage</button></div>';
+    // the saved connection expired: a quiet Reconnect (reloads it, no broker portal); "Connect a broker" always opens the portal
+    if (act && live.readErr && /renew/i.test(live.readErr)) h += '<button type="button" role="menuitem" class="stktm-pill stktm-recon" data-a="reconnect" tabindex="-1">' + SV(16, '<path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/>', 2.2) + 'Reconnect</button>';
     if (window.__stkHl) h += '<button type="button" role="menuitem" class="stktm-pill stktm-hl" data-a="hl" tabindex="-1">Hyperliquid wallet</button>';   // admin only: hl-trade.js sets window.__stkHl after its admin check
   }
   pop.innerHTML = h;
@@ -146,7 +150,7 @@ function onClick(e, root, pop) {
 }
 export const ownsClick = (t) => !!(t && t.closest && t.closest('[data-copy],[data-x],.stktm-ed,.stktm-gm'));
 function copy(text) {
-  const done = () => toast('Account number copied.', 'success');
+  const done = () => toast('Copied.', 'success');
   try { if (navigator.clipboard && navigator.clipboard.writeText) { navigator.clipboard.writeText(text).then(done, () => fallbackCopy(text, done)); return; } } catch (e) {}
   fallbackCopy(text, done);
 }
@@ -167,7 +171,7 @@ function openEditor(pop, id) {   // pop = the menu or the Manage sheet
   row.classList.add('editing');
   const ed = document.createElement('form'); ed.className = 'stktm-ed'; ed.setAttribute('aria-label', 'Edit ' + a.text); ed.noValidate = true;
   ed.innerHTML =
-    '<div class="stktm-ed-id"><span class="stktm-ed-k">' + esc(a.broker) + '</span>' + (a.number ? '<button type="button" class="stktm-ed-num" data-copy="' + esc(a.number) + '" title="Copy account number"><span>' + esc(a.number) + '</span>' + COPY + '</button>' : '<span class="stktm-ed-k">No account number from the broker</span>') + '</div>' +
+    '<div class="stktm-ed-id"><span class="stktm-ed-k">' + esc(a.broker) + '</span>' + (a.number ? '<button type="button" class="stktm-ed-num" data-copy="' + esc(a.number) + '" title="Copy account name"><span>' + esc(a.number) + '</span>' + COPY + '</button>' : '<span class="stktm-ed-k">No account name from the broker</span>') + '</div>' +
     '<label class="stktm-f"><span>Label</span><input name="label" type="text" maxlength="40" autocomplete="off" placeholder="e.g. Apex eval 1" value="' + esc(m.label) + '"></label>' +
     '<label class="stktm-f"><span>Prop firm</span><span class="stktm-sel"><select name="firm"><option value="">None</option>' + firms.map((f) => '<option' + (f === m.firm ? ' selected' : '') + '>' + esc(f) + '</option>').join('') + '<option value="__other"' + (other ? ' selected' : '') + '>Other…</option></select>' + SV(12, '<path d="m6 9 6 6 6-6"/>', 2.2) + '</span></label>' +
     '<label class="stktm-f stktm-f-other"' + (other ? '' : ' hidden') + '><span>Firm name</span><input name="other" type="text" maxlength="40" autocomplete="off" placeholder="Firm name" value="' + esc(other ? m.firm : '') + '"></label>' +

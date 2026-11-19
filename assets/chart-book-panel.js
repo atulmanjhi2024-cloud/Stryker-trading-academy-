@@ -5,8 +5,8 @@
 // Paper trading from the DOM: bid cell = paper BUY, ask cell = paper SELL (limit; market at / through the touch), simulated only,
 // through chart-paper.js (same switch, same rules as the chart's ticket). Right-click / long-press a row: draw a level or a zone.
 // LIVE (admins, assets/chart-live.js, 2026-11-15): while a live broker account is picked in the Paper trading panel, the same DOM cells
-// send LIVE LIMIT orders at the clicked price (never market; at/through the touch = marketable limit) through the live module's confirm
-// sheet; the chips show the live working orders (× cancels, drag = move with a confirm) and the header line the live position.
+// send LIVE LIMIT orders at the clicked price (never market; at/through the touch = marketable limit) through the live module (no confirm
+// since 19 Nov); the chips show the live working orders (× cancels, drag = move with a confirm) and the header line the live position.
 // Hyperliquid charts: tap a Book row (DOM: the price cell) or pick "Wallets at this price" -> tracked wallets with orders there (chart-wallet-intel.js).
 // Logic lives in book-panel-core.js (unit-tested), streams in book-panel-sources.js. Phones <= 700 px: bottom sheet.
 // Wording: "updated Xs ago" only; no real-time claims. Education only. Not financial advice.
@@ -364,7 +364,7 @@ export function mountBookPanel(ws, opts) {
     else if (S.tab === 'dom') { bar.hidden = true; paintDom(M); }
     else paintTrades();
     const gs = $('.stkbp-grp'); if (feed && feed.step) { [...gs.options].forEach((o, i) => { const t = C.fmtPrice(feed.step * MULT[i], feed.step).replace(/\.0+$/, ''); if (o.textContent !== t) o.textContent = 'Group ' + t; }); gs.value = String(S.g); }
-    foot.textContent = S.tab === 'dom' && LV() ? 'LIVE: tap a Bid cell to send a live BUY limit, an Ask cell a live SELL limit, at that price (you confirm each one). Real orders at your broker. Education only. Not financial advice.' : S.tab === 'dom' ? (paperOn() ? 'Tap a Bid cell to paper-buy, an Ask cell to paper-sell. ' : '') + 'Paper trading is simulated. Education only. Not financial advice.' : 'Order book depth and prints for learning. Education only. Not financial advice.';
+    foot.textContent = S.tab === 'dom' && LV() ? 'LIVE: tap a Bid cell to send a live BUY limit, an Ask cell a live SELL limit, at that price, sent on the tap. Real orders at your broker. Education only. Not financial advice.' : S.tab === 'dom' ? (paperOn() ? 'Tap a Bid cell to paper-buy, an Ask cell to paper-sell. ' : '') + 'Paper trading is simulated. Education only. Not financial advice.' : 'Order book depth and prints for learning. Education only. Not financial advice.';
     cols.style.display = list.dataset.t ? '' : 'none';
   }
   function paintTradesBar() { const sp = feed.store.split(60000); bar.innerHTML = '<span class="l">1m</span><span class="trk"><i style="width:' + sp.pct.toFixed(1) + '%"></i></span><span class="v"><b class="up">–</b> buy · <b class="dn">–</b> sell</span>'; }

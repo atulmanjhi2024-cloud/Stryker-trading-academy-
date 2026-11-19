@@ -68,6 +68,19 @@ assert.equal(r.status, 409); assert.equal((await body(r)).needsConnect, true);
 // a fresh connect still works after that (session -> portal)
 r = await S.handle(req({ mode: 'dark' }, 'https://tradezoro.com/connect/finatic/session'), env, deps);
 assert.equal(r.status, 200); assert.ok((await body(r)).portalUrl.startsWith('https://portal.finatic.dev/'));
+// Owner 19 Nov "always open the connect page, I want to add a new broker": the portal is started FOR the saved Finatic user (so a new
+// broker joins the accounts already linked); a stale saved user falls back to a clean portal session and userId '' in the reply.
+{ const starts = []; const d2 = { ...deps, finFetch: async (url, init) => { if (new URL(url).pathname === '/api/v1/session/start') starts.push(JSON.parse(init.body || '{}').user_id || ''); return finFetch(url, init); } };
+  mode = 'ok';
+  const KNOWN = '0bbb1111-2222-3333-4444-555566667777';
+  r = await S.handle(req({ mode: 'dark', userId: KNOWN }, 'https://tradezoro.com/connect/finatic/session'), env, d2);
+  let jj = await body(r); assert.equal(r.status, 200); assert.ok(jj.portalUrl.startsWith('https://portal.finatic.dev/')); assert.equal(jj.userId, KNOWN); assert.deepEqual(starts, [KNOWN]);
+  mode = 'stale'; starts.length = 0;
+  r = await S.handle(req({ mode: 'dark', userId: STALE }, 'https://tradezoro.com/connect/finatic/session'), env, d2);
+  jj = await body(r); assert.equal(r.status, 200); assert.ok(jj.portalUrl); assert.equal(jj.userId, ''); assert.deepEqual(starts, [STALE, ''], 'stale user -> one clean retry');
+  r = await S.handle(req({ mode: 'dark', userId: 'not-a-uuid!' }, 'https://tradezoro.com/connect/finatic/session'), env, d2);
+  assert.equal(r.status, 200); assert.equal((await body(r)).userId, '', 'junk user id ignored');
+  mode = 'stale'; }
 
 // 2. upstream answers HTML / garbage / a redirect -> JSON 503 {code:'upstream'} with a message (session, data, order).
 //    Never 502/504: Cloudflare's edge replaces a 502 body from a Pages function with its own HTML page.

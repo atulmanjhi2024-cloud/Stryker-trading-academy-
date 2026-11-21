@@ -466,6 +466,29 @@ export function chipText(sym, l) {
   if (l.role) return ['LIVE ' + (l.role === 'sl' ? 'SL ' : 'TP ') + l.qty, px(l.price)];
   return ['LIVE ' + (l.side === 'buy' ? 'BUY ' : 'SELL ') + (/stop/.test(l.type) ? 'STP ' : 'LMT ') + l.qty, px(l.price)];
 }
+// label parts for the Trade display toggles (all on = chipText above, word for word)
+export function chipParts(sym, l) {
+  const i = info(sym), t = chipText(sym, l);
+  const sd = (w) => ({ name: w, pa: 'a' });
+  if (l.kind === 'pos') { const mt = i && i.mt; return { name: 'LIVE ' + (l.side === 'buy' ? 'LONG' : 'SHORT'), size: mt ? lotTxt(l.qty) : String(l.qty), price: '@ ' + px(l.price), pnl: t[1], pa: 'a' }; }
+  if (l.pending) return { name: 'SENDING ' + (l.side === 'buy' ? 'BUY' : 'SELL'), size: String(l.qty), price: px(l.price), pnl: '', pa: 'b' };
+  if (l.role) return { name: 'LIVE ' + (l.role === 'sl' ? 'SL' : 'TP'), size: String(l.qty), price: px(l.price), pnl: '', pa: 'a' };
+  return { name: 'LIVE ' + (l.side === 'buy' ? 'BUY' : 'SELL') + (/stop/.test(l.type) ? ' STP' : ' LMT'), size: String(l.qty), price: px(l.price), pnl: '', pa: 'b' };
+}
+// the active account's fills on this chart's instrument, for Trade display > Executions: today's fills, plus the Trade history tab's when loaded
+export function execs(sym) {
+  const i = info(sym); if (!i || !S.acct) return [];
+  dockTrades();   // throttled to one read per 30 s
+  const out = [], seen = new Set();
+  for (const f of [].concat(S.day.fills || [], S.fills.rows || [])) {
+    if (L.contractOf(f) !== i.code) continue;
+    const t = Date.parse(first(f, ['filledAt', 'timestamp', 'createdAt', 'executedAt', 'time'])), p = Number(first(f, ['price', 'fillPrice', 'executionPrice'])), s = String(first(f, ['side', 'action'])).toLowerCase();
+    if (!Number.isFinite(t) || !(p > 0) || (s !== 'buy' && s !== 'sell')) continue;
+    const k = t + '|' + p + '|' + s; if (seen.has(k)) continue; seen.add(k);
+    out.push({ t, price: p, side: s, qty: first(f, ['quantity', 'qty', 'units']) || '' });
+  }
+  return out.sort((x, y) => x.t - y.t);
+}
 const lotTxt = (q) => Number(q).toFixed(2) + ' lot' + (Number(q) === 1 ? '' : 's');
 export const tickOf = (sym) => { const i = L.instrumentOf(sym); return i && i.asset === 'future' ? (L.ROOTS[i.root] || {}).tick || 0.01 : 0.01; };
 

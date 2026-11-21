@@ -93,7 +93,8 @@
     ['stryker_paper_hotkeys_{uid}', 'paperHotkeys', 'trade'],  // mirror of the paper account's hotkeys (chart-paper.js)
     ['stryker_op_{uid}', 'orderPanel', 'trade', { omit: ['x', 'y', 'w', 'h', 'min', 'max', 'open', 'mode', 'dw', 'dh'] }],
     ['stryker_paper_ui', 'paperPanel', 'trade', { omit: ['open', 'h'] }],
-    ['stryker_posorders_ui', 'posOrders', 'trade', { omit: ['h'] }]
+    ['stryker_posorders_ui', 'posOrders', 'trade', { omit: ['h'] }],
+    ['stryker_tradeview_ui', 'tradeView', 'trade']        // Trade display (assets/chart-tradeview.js): what the chart shows of the account
   ];
   var GROUPS = ['app', 'chart', 'trade'];
   var VALUE_MAX = 60000;          // chars per value (doc stays well under 200 KB)

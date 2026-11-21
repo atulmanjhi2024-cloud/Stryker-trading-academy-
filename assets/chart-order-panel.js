@@ -647,6 +647,7 @@ export function update() {
   const c = ctx();
   renderChip(c);
   if (!open) { stopQuote(); return; }
+  if (shownTab() !== 'order' && P.setPreview) P.setPreview('panel', '', []);
   wantQuote(c);
   const ph = isPhone(), tab = shownTab(), paperOff = !c.live && !P.enabled;
   const dk = docked(), sig = [tab, c.live, ph, paperOff, c.fut, prefs.min && !dk, dk, tab === 'dom' ? c.sym : ''].join('|');
@@ -721,6 +722,14 @@ export function update() {
       setVal(lg + '.price', F[lg].price); setVal(lg + '.ticks', F[lg].ticks);
     }
     // TP1 size / unit / break-even, and the TP leg's name (TP2 = the rest while TP1 is on)
+    { const pl = [], sd = F.side;   // Trade display > Order preview: dashed lines of what the panel is about to send (never sent)
+      if (open && ref > 0 && P.setPreview) {
+        if (F.type !== 'market') pl.push({ id: 'pv-e', price: ref, side: sd, type: F.type, qty: cleanQty(c, F.qty) });
+        if (sl > 0) pl.push({ id: 'pv-sl', price: sl, side: sd, role: 'sl', ref, qty: cleanQty(c, F.qty) });
+        if (tp > 0) pl.push({ id: 'pv-tp', price: tp, side: sd, role: 'tp', ref, qty: cleanQty(c, F.qty) });
+        if (tp1 > 0) pl.push({ id: 'pv-tp1', price: tp1, side: sd, role: 'tp', ref, qty: '' });
+      }
+      if (P.setPreview) P.setPreview('panel', c.sym, pl); }
     const t1on = two && F.tp1.on;
     { const tl = form.querySelector('[data-leg=tp] .stkop-chk'); const want = t1on ? ' Take profit 2 · rest' : ' Take profit'; if (tl && tl.lastChild.textContent !== want) tl.lastChild.textContent = want; }
     if (k.two) {
@@ -854,7 +863,7 @@ function close() {
   if (!el) return;
   open = false; prefs.open = false; savePrefs();
   const b = window.__stkBookPanel; if (b && b.embedded) b.unembed();
-  el.hidden = true; viewSig = ''; stopQuote();
+  el.hidden = true; viewSig = ''; stopQuote(); if (P && P.setPreview) P.setPreview('panel', '', []);
   document.documentElement.classList.remove('stkop-sheet');
   applyDock();
   if (tmr) { clearInterval(tmr); tmr = 0; }

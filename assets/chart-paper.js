@@ -1,5 +1,6 @@
 // TradeZoro — Charts PAPER TRADING (ES module, charts.html only)
 import * as TM from './chart-trade-menu.js?v=1196';
+import * as TV from './chart-tradeview.js?v=1196';   // Trade display: what the chart shows of the account (Owner 17 Nov)
 import { normFutures } from './chart-sym.js?v=1196';   // one futures test for every symbol form (CME_MINI:MNQ1!, MNQZ6 ...)
 // Owner order 2026-10-12: "Add complete full demo/paper trading feature inside the charts, like
 // tradingview". Modelled on TradingView's Paper Trading, in our own look.
@@ -261,7 +262,7 @@ function isOpen(sym, t){
 }
 function dayStart(){ const d = new Date(clockNow()); d.setHours(0, 0, 0, 0); return d.getTime(); }
 function sound(kind){
-  if (!acct || !acct.settings.sounds || !paperOn()) return;
+  if (!acct || !acct.settings.sounds || !TV.get().sound || !paperOn()) return;
   try { window.StrykerChartSounds && window.StrykerChartSounds.simEvent(kind, { source: 'paper', replay: !!replay }); } catch (e) {}
 }
 
@@ -685,13 +686,14 @@ function linesFor(sym){
 }
 function ownLines(sym){
   const dragOn = drag.on && canonSym(drag.sym) === canonSym(sym);
-  if (liveOn()) { const out = LIVE.lines(sym) || []; if (dragOn) for (const l of out) if (l.id === drag.id) l.price = drag.price; return out; }
+  if (liveOn()) { const out = LIVE.lines(sym) || []; if (dragOn) for (const l of out) if (l.id === drag.id) l.price = drag.price; previewLines(sym, out); return out; }
   if (!acct || !acct.settings.lines || !paperOn()) return [];
   const out = [];
   const p = acct.position(sym);
   if (p) {
     const two = p.tp1 != null && p.tp1Qty > 0;
     out.push({ id: 'pos', kind: 'pos', price: p.avg, side: p.side });
+    if (TV.get().be) { const dir = p.side === 'buy' ? 1 : -1, c = (p.fees + acct.state.settings.commission * p.qty) / (p.qty * acct.spec(sym).pointValue); out.push({ id: 'be', kind: 'be', price: PE.roundTick(p.avg + dir * c, acct.spec(sym).tick / 100), side: p.side }); }
     if (two) out.push({ id: 'ptp1', kind: 'tp', price: p.tp1, side: p.side, ref: p.avg, qty: p.tp1Qty, tag: 'TP1' });
     if (p.tp != null) out.push({ id: 'ptp', kind: 'tp', price: p.tp, side: p.side, ref: p.avg, qty: two ? Number((p.qty - p.tp1Qty).toFixed(6)) : p.qty, tag: two ? 'TP2' : 'TP' });
     if (p.sl != null) out.push({ id: 'psl', kind: 'sl', price: p.sl, side: p.side, ref: p.avg, qty: p.qty, tag: p.beMoved ? 'SL BE' : 'SL' });
@@ -707,26 +709,79 @@ function ownLines(sym){
   }
   if (dragOn) for (const l of out) if (l.id === drag.id) l.price = drag.price;
   if (dragOn && drag.kind === 'new') out.push({ id: 'new', kind: drag.newKind, price: drag.price, side: drag.side, ref: drag.ref, qty: drag.qty });
+  previewLines(sym, out);
   return out;
 }
-function lineColor(l){
-  if (l.kind === 'tp' || l.kind === 'otp') return COL.tp;
-  if (l.kind === 'sl' || l.kind === 'osl') return COL.sl;
-  if (l.kind === 'pos') return l.side === 'buy' ? COL.buy : COL.sell;
-  return l.side === 'buy' ? COL.buy : COL.sell;
+// Order preview (Trade display): the ticket and the order panel say what they are about to send; it is drawn as dashed lines, never sent.
+const previews = {};
+function setPreview(src, sym, lines){
+  const sig = JSON.stringify([sym, lines]), had = previews[src] && previews[src].sig;
+  if (!lines || !lines.length) { if (previews[src]) { delete previews[src]; pushLines(); } return; }
+  if (had === sig) return;
+  previews[src] = { sym, lines, sig }; pushLines();
 }
-function chipText(cellSym, l){
+function previewLines(sym, out){
+  if (!TV.previewOn()) return;
+  for (const k of Object.keys(previews)) { const pv = previews[k]; if (canonSym(pv.sym) === canonSym(sym)) for (const l of pv.lines) out.push(Object.assign({ kind: 'pv' }, l)); }
+}
+const lineColor = (l) => TV.lineColor(l);
+// label parts of a chip; chipText() joins them the way the Trade display > Labels toggles ask (all on = the original text)
+function chipParts(cellSym, l){
   const sym = l.sym || cellSym, pre = l.sym ? showSym(sym).replace(/[12]!$/, '') + ' ' : '';   // the partner's chips carry its name
-  if (l.live) { const t = LIVE.chipText(sym, l); return pre ? [pre + t[0], t[1]] : t; }
-  const name = (l.side === 'buy' ? 'BUY' : 'SELL');
-  if (l.kind === 'pos') {
-    const p = acct.position(sym); if (!p) return ['', ''];
-    return [pre + (p.side === 'buy' ? 'LONG ' : 'SHORT ') + p.qty + ' @ ' + fmtP(sym, p.avg), money(acct.openPnl(p), true)];
+  if (l.live) { const t = LIVE.chipParts ? LIVE.chipParts(sym, l) : { name: LIVE.chipText(sym, l)[0], pa: 'a', pnl: LIVE.chipText(sym, l)[1] }; t.name = pre + t.name; return t; }
+  const name = (l.side === 'buy' ? 'BUY' : 'SELL'), sp = acct ? acct.spec(sym) : specOf(sym), tick = sp.tick;
+  const u = (usd, sgn, dist, ref) => TV.pnlText(money(usd, true), sgn, dist, tick, ref);
+  if (l.kind === 'pv') {
+    const t = l.role === 'tp' ? 'TP' : l.role === 'sl' ? 'SL' : name + ' ' + (l.type === 'limit' ? 'LMT' : l.type === 'stop' ? 'STP' : 'MKT');
+    return { name: pre + (l.role ? t : t), size: l.qty ? String(l.qty) : '', price: fmtP(sym, l.price), pnl: '', pa: l.role ? 'a' : 'b' };
   }
-  if (l.kind === 'ord') return [pre + name + ' ' + (l.type === 'limit' ? 'LMT' : 'STP') + ' ' + l.qty, fmtP(sym, l.price)];
+  if (l.kind === 'be') return { name: pre + 'BREAK-EVEN', size: '', price: fmtP(sym, l.price), pnl: '', pa: 'a' };
+  if (l.kind === 'pos') {
+    const p = acct.position(sym); if (!p) return { name: '', pa: 'a' };
+    const last = chartLast(sym), pnl = acct.openPnl(p);
+    return { name: pre + (p.side === 'buy' ? 'LONG' : 'SHORT'), size: String(p.qty), price: '@ ' + fmtP(sym, p.avg), pnl: u(pnl, Math.sign(pnl), Math.abs((Number.isFinite(last) ? last : p.avg) - p.avg), p.avg), pa: 'a' };
+  }
+  if (l.kind === 'ord') return { name: pre + name + ' ' + (l.type === 'limit' ? 'LMT' : 'STP'), size: String(l.qty), price: fmtP(sym, l.price), pnl: '', pa: 'b' };
   const v = acct.bracketValue(sym, l.side, l.qty, l.ref, l.price);
   const tag = l.tag || ((l.kind === 'tp' || l.kind === 'otp') ? 'TP' : 'SL');
-  return [pre + tag + (l.tag === 'TP1' || l.tag === 'TP2' ? ' ' + l.qty : '') + ' ' + fmtP(sym, l.price), money(v, true)];
+  return { name: pre + tag, size: l.tag === 'TP1' || l.tag === 'TP2' ? String(l.qty) : '', price: fmtP(sym, l.price), pnl: u(v, Math.sign(v), Math.abs(l.price - l.ref), l.ref), pa: 'a' };
+}
+function chipText(cellSym, l){ return TV.compose(chipParts(cellSym, l)); }
+// ---- Trade display: executions (arrows on the bars where fills happened) + the risk-reward box
+function execsFor(sym){
+  const key = canonSym(sym);
+  if (liveOn()) return (LIVE.execs ? LIVE.execs(sym) : []).slice(-200);
+  if (!acct || !paperOn()) return [];
+  const out = [];
+  for (const h of acct.state.history) if (h.kind === 'fill' && h.symbol === key) out.push({ t: h.at, price: h.price, side: h.side, qty: h.qty });
+  return out.slice(-200);
+}
+function rrFor(sym){
+  if (liveOn() || !acct || !paperOn()) return null;
+  const p = acct.position(sym); if (!p || p.tp == null || p.sl == null) return null;
+  return { t: p.openedAt, avg: p.avg, tp: p.tp, sl: p.sl };
+}
+function drawTrades(g, co, a, d, W, top, bot){
+  if (!d) return;
+  const c = d.col || {};
+  if (d.rr && d.rr.t != null) {
+    const r = d.rr, x0 = Math.max(0, Math.min(W, co.timeToX(r.t))), yA = co.priceToY(r.avg, a.scale, a.bounds), yT = co.priceToY(r.tp, a.scale, a.bounds), yS = co.priceToY(r.sl, a.scale, a.bounds);
+    const box = (y1, y2, col) => { const t = Math.max(top, Math.min(y1, y2)), b = Math.min(bot, Math.max(y1, y2)); if (b > t) { g.globalAlpha = 0.14; g.fillStyle = col; g.fillRect(x0, t, W - x0, b - t); } };
+    box(yA, yT, c.profit || '#089981'); box(yA, yS, c.loss || '#f23645'); g.globalAlpha = 1;
+  }
+  if (d.exec && d.exec.length) {
+    g.save(); g.font = '600 10.5px -apple-system,BlinkMacSystemFont,Roboto,sans-serif'; g.textAlign = 'center';
+    for (const e of d.exec) {
+      const x = co.timeToX(e.t); if (!(x >= 0 && x <= W)) continue;
+      const y = co.priceToY(e.price, a.scale, a.bounds); if (y < top || y > bot) continue;
+      const up = e.side === 'buy'; g.fillStyle = up ? (c.buy || '#2962ff') : (c.sell || '#f23645'); g.globalAlpha = 1;
+      g.beginPath();
+      if (up) { g.moveTo(x, y + 2); g.lineTo(x - 5, y + 10); g.lineTo(x + 5, y + 10); } else { g.moveTo(x, y - 2); g.lineTo(x - 5, y - 10); g.lineTo(x + 5, y - 10); }
+      g.closePath(); g.fill();
+      if (d.exeSize && e.qty) { g.textBaseline = up ? 'top' : 'bottom'; g.fillText(String(e.qty), x, up ? y + 12 : y - 12); }
+    }
+    g.restore();
+  }
 }
 function layerFactory(){
   let canvas = null, overlay = null, last = null, lastYs = {};
@@ -747,6 +802,7 @@ function layerFactory(){
       const g = canvas.getContext('2d');
       g.setTransform(1, 0, 0, 1, 0, 0); g.clearRect(0, 0, canvas.width, canvas.height); g.setTransform(dpr, 0, 0, dpr, 0, 0);
       const d = a.data; const lines = (d && d.lines) || [];
+      const tvS = TV.get(), fullLines = tvS.full;
       if (overlay) { let b = overlay.querySelector('.stklv-cbadge'); if (d && d.live) { if (!b) { b = h('div', { class: 'stklv-cbadge', role: 'status' }); overlay.appendChild(b); } if (b.textContent !== d.live) b.textContent = d.live; } else if (b) b.remove(); }
       const top = a.bounds.top, bot = top + a.bounds.height;
       const fullW = canvas.width / dpr;
@@ -756,9 +812,11 @@ function layerFactory(){
         const y = Math.round(co.priceToY(l.price, a.scale, a.bounds)) + 0.5;
         ys[l.id] = y; lastYs = ys;
         if (y < top || y > bot) continue;
-        g.strokeStyle = l.color; g.lineWidth = 1; g.globalAlpha = l.kind === 'pos' ? 1 : 0.9;
-        g.setLineDash(l.kind === 'pos' ? [] : l.kind === 'ord' ? [6, 3] : [3, 3]);
-        g.beginPath(); g.moveTo(0, y); g.lineTo(W, y); g.stroke();
+        g.strokeStyle = l.color; g.lineWidth = l.w || 1; g.globalAlpha = l.kind === 'pos' ? 1 : 0.9;
+        g.setLineDash(l.dash || (l.kind === 'pos' ? [] : l.kind === 'ord' ? [6, 3] : [3, 3]));
+        let x0 = 0;
+        if (!fullLines && overlay) { const ch = overlay.querySelector('.stkpt-chip[data-id="' + l.id + '"]'); if (ch && ch.style.visibility !== 'hidden') { const cr = ch.getBoundingClientRect(), orr = overlay.getBoundingClientRect(); x0 = Math.max(0, Math.min(W, cr.left - orr.left)); } }
+        g.beginPath(); g.moveTo(x0, y); g.lineTo(W, y); g.stroke();
         g.setLineDash([]);
         // price tag on the axis
         if (fullW > W + 4) {
@@ -769,6 +827,7 @@ function layerFactory(){
         }
       }
       g.restore();
+      drawTrades(g, co, a, d, W, top, bot);
       // DOM chips follow the lines
       if (overlay) {
         // A line outside the visible price range keeps its chip, pinned to the top or bottom
@@ -782,17 +841,18 @@ function layerFactory(){
         const chips = [...overlay.querySelectorAll('.stkpt-chip')];
         const widths = chips.map((c) => c.offsetWidth);
         const placed = [];
-        const baseRight = Math.round(fullW - W + 56);
+        const al = tvS.align, baseRight0 = Math.round(fullW - W + 56);
         chips.forEach((chip, i) => {
           const y = ys[chip.dataset.id];
           if (y == null) { chip.style.visibility = 'hidden'; return; }
           let cy = y - 11, pin = '';
           if (y < top + 12) { pin = 'up'; cy = top + pinTop + 26 * nUp++; }
           else if (y > bot - 12) { pin = 'down'; cy = bot - 26 - 26 * nDn++; }
+          const baseRight = al === 'right' ? baseRight0 : al === 'left' ? Math.round(fullW - 8 - widths[i]) : Math.round(fullW - (W + widths[i]) / 2);
           let right = baseRight;
           const clash = () => placed.some((p) => Math.abs(p.cy - cy) < 24 && right < p.right + p.w + 4 && p.right < right + widths[i] + 4);
-          for (const p of placed) if (Math.abs(p.cy - cy) < 24 && right < p.right + p.w + 4) right = p.right + p.w + 4;
-          if (right + widths[i] > fullW - 6) {
+          if (al === 'right') for (const p of placed) if (Math.abs(p.cy - cy) < 24 && right < p.right + p.w + 4) right = p.right + p.w + 4;
+          if (al !== 'right' || right + widths[i] > fullW - 6) {
             // no room side by side (phone): stack it just above/below instead, at the base column
             right = baseRight;
             const dir = y > (top + bot) / 2 ? -1 : 1;
@@ -820,15 +880,17 @@ function pushLines(force){
     const sym = cell.symbol;
     const sp = specOf(sym);
     const lv = liveOn();
-    const lines = lv ? linesFor(sym) : sp.ok ? linesFor(sym) : [];
-    const data = lines.map((l) => ({ id: l.id, kind: l.kind, price: l.price, color: lineColor(l), label: fmtP(sym, l.price) }));
+    const tv = TV.get();
+    const lines = (lv ? linesFor(sym) : sp.ok ? linesFor(sym) : []).filter((l) => TV.visible(l));
+    const data = lines.map((l) => Object.assign({ id: l.id, kind: l.kind, price: l.price, color: lineColor(l), label: fmtP(sym, l.price) }, (() => { const s = TV.lineStyle(l); return { dash: s.dash, w: s.w }; })()));
     syncChips(cell, inst, lines);
     try { if (window.__stkAxisTags) window.__stkAxisTags.setTags(R, 'trade', data.map((l) => ({ price: l.price, color: l.color, text: l.label }))); } catch (e) {}   // price tags on the scale (chart-axis-tags.js)
     const badge = lv ? LIVE.badgeFor(sym) : '';
-    const sig = JSON.stringify(data) + badge;
+    const ex = TV.execOn() ? execsFor(sym) : [], rr = TV.rrOn() ? rrFor(sym) : null;
+    const sig = JSON.stringify(data) + badge + JSON.stringify([ex, rr, tv.exeSize, tv.col.buy, tv.col.sell, tv.col.profit, tv.col.loss]);
     if (!force && lineSig.get(R) === sig) continue;
     lineSig.set(R, sig);
-    try { R.setNativeData(LAYER, { lines: data, live: badge }); } catch (e) {}
+    try { R.setNativeData(LAYER, { lines: data, live: badge, exec: ex, rr, exeSize: tv.exeSize, col: { profit: tv.col.profit, loss: tv.col.loss, buy: tv.col.buy, sell: tv.col.sell } }); } catch (e) {}
   }
   oneClickAll();
 }
@@ -855,6 +917,7 @@ function syncChips(cell, inst, lines){
     if (l.live) chip.dataset.live = '1'; else delete chip.dataset.live;
     const xb = chip.querySelector('.stkpt-chip-x'); if (xb && l.live) { const t = l.kind === 'pos' ? 'Flatten (live)' : 'Cancel live order'; xb.title = t; xb.setAttribute('aria-label', t); }
     chip.style.setProperty('--c', lineColor(l));
+    chip.classList.toggle('nobtn', !TV.get().lab.btn);
     const [a, b] = chipText(cell.symbol, l);
     const A = chip.querySelector('.stkpt-chip-a'), B = chip.querySelector('.stkpt-chip-b');
     if (A.textContent !== a) A.textContent = a;
@@ -945,7 +1008,7 @@ function livePnl(){
     for (const chip of inst.overlay.querySelectorAll('.stkpt-chip[data-kind="pos"]')) {
       const p = liveOn() || chip.dataset.live ? null : acct.position(chip.dataset.sym || cell.symbol);
       if (!p) continue;
-      const v = money(acct.openPnl(p), true), B = chip.querySelector('.stkpt-chip-b');
+      const v = chipText(cell.symbol, { kind: 'pos', sym: chip.dataset.sym || undefined, side: p.side })[1], B = chip.querySelector('.stkpt-chip-b');   // same text pushLines writes (Trade display P&L unit / label toggles)
       if (B.textContent !== v) B.textContent = v;
       chip.classList.toggle('neg', acct.openPnl(p) < 0);
     }
@@ -1008,6 +1071,7 @@ function onChipDown(e, cell, inst, chip){
     if (raf) cancelAnimationFrame(raf);
     if (!d.moved) { pushLines(true); return; }
     if (d.live) { if (d.price !== d.start) LIVE.drag(sym, d); pushLines(true); return; }
+    if (TV.get().confirm && TV.get().master) { TV.confirm('Move ' + (d.kind === 'new' ? 'take profit / stop' : 'order') + ' to ' + fmtP(sym, d.price) + '?').then((ok) => { if (ok) commitDrag(sym, d); else pushLines(true); }); return; }
     commitDrag(sym, d);
   };
   chip.addEventListener('pointermove', move); chip.addEventListener('pointerup', up); chip.addEventListener('pointercancel', () => { drag.on = false; cleanup(); pushLines(true); });
@@ -1127,7 +1191,7 @@ export function openTicket(pre){
   renderTicket();
   setTimeout(() => { try { f.qty.focus({ preventScroll: true }); f.qty.select(); } catch (e) {} }, 30);
 }
-function closeTicket(){ if (ticket) ticket.hidden = true; }
+function closeTicket(){ if (ticket) ticket.hidden = true; setPreview('ticket', '', []); }
 function buildTicket(){
   ticket = h('div', { id: 'stkpt-tk', hidden: true });
   ticket.innerHTML = `
@@ -1238,6 +1302,13 @@ function renderTicket(retarget){
   const mk = ticket.querySelector('.stkpt-mk');
   mk.textContent = !Number.isFinite(last) ? 'Waiting for a price for ' + showSym(sym) + '…' : !open ? 'Market closed: market orders are rejected until it reopens; limit and stop orders wait and fill after the open.' : '';
   mk.hidden = !mk.textContent;
+  { const pl = [], ref = entryRef(f), tp2 = bracketPrice(f, 'tp'), sl2 = bracketPrice(f, 'sl'), q = parseFloat(f.qty.value) || 0;   // order preview lines (Trade display)
+    if (!tk.modify && Number.isFinite(ref)) {
+      if (tk.type !== 'market') pl.push({ id: 'pv-e', price: ref, side: tk.side, type: tk.type, qty: q });
+      if (Number.isFinite(sl2) && sl2 != null) pl.push({ id: 'pv-sl', price: sl2, side: tk.side, role: 'sl', ref, qty: q });
+      if (Number.isFinite(tp2) && tp2 != null) pl.push({ id: 'pv-tp', price: tp2, side: tk.side, role: 'tp', ref, qty: q });
+    }
+    setPreview('ticket', ticket.hidden ? '' : sym, pl); }
   const go = ticket.querySelector('.stkpt-go');
   go.className = 'stkpt-go ' + (tk.side === 'buy' ? 'buy' : 'sell');
   go.textContent = tk.modify ? 'Modify order' : (tk.side === 'buy' ? 'Buy ' : 'Sell ') + (qty || '') + ' ' + showSym(sym) + ' ' + (tk.type === 'market' ? 'Market' : (tk.type === 'limit' ? 'Limit' : 'Stop') + (Number.isFinite(parseFloat(f.price.value)) ? ' @ ' + fmtP(sym, parseFloat(f.price.value)) : ''));
@@ -2099,10 +2170,12 @@ html.stklv-on .stkpt-badge{ display:none; }
 .stkpt-chip{ position:absolute; top:0; right:64px; height:22px; display:flex; align-items:stretch; pointer-events:auto; cursor:ns-resize; user-select:none; touch-action:none;
   font:600 11px/22px -apple-system,BlinkMacSystemFont,"Trebuchet MS",Roboto,sans-serif; border:1px solid var(--c); border-radius:4px; overflow:hidden; background:#131722; color:#d1d4dc; box-shadow:0 1px 4px rgba(0,0,0,.35); will-change:transform; }
 :root[data-theme="light"] .stkpt-chip{ background:#fff; color:#131722; }
+.stkpt-chip-a:empty,.stkpt-chip-b:empty{ display:none; }
+.stkpt-chip.nobtn .stkpt-chip-x{ display:none; }
 .stkpt-chip-a{ background:var(--c); color:#fff; padding:0 7px; white-space:nowrap; }
 .stkpt-chip-b{ padding:0 7px; white-space:nowrap; font-family:var(--font-mono); font-weight:500; }
-.stkpt-chip[data-kind="pos"] .stkpt-chip-b{ color:#089981; }
-.stkpt-chip[data-kind="pos"].neg .stkpt-chip-b{ color:#f23645; }
+.stkpt-chip[data-kind="pos"] .stkpt-chip-b{ color:var(--stk-profit,#089981); }
+.stkpt-chip[data-kind="pos"].neg .stkpt-chip-b{ color:var(--stk-loss,#f23645); }
 .stkpt-chip-x{ border:0; border-left:1px solid var(--c); background:none; color:inherit; width:22px; padding:0; cursor:pointer; font-size:14px; line-height:20px; }
 .stkpt-chip-x:hover{ background:var(--c); color:#fff; }
 .stkpt-chip[data-pin=up] .stkpt-chip-a::before{ content:"↑ "; }
@@ -2284,6 +2357,7 @@ export function mountPaper(ws, opts){
   mountToolbar(opts && opts.bar);
   mountRailBtn();
   { const b = (document.querySelector('meta[name="stryker-build"]') || {}).content || '0'; import('./chart-posorders.js?v=' + b).then((m) => m.mountPosOrders(window.__stkPaper)).catch((e) => console.warn('TradeZoro: positions dock', e)); }
+  TV.mount(window.__stkPaper); TV.on(() => { pushLines(true); renderAll(); });
   renderPanel();
   applyEnabled();                             // hidden until the account says the switch is on
   try { watchSettings(); } catch (e) { console.warn('TradeZoro paper: settings tab', e); }
@@ -2304,6 +2378,6 @@ export function mountPaper(ws, opts){
   window.__stkPaper = {
     get account(){ return acct; }, get liveAccount(){ return replay ? liveAcct : acct; }, get replay(){ return !!replay; }, get leader(){ return leader; }, get uid(){ return uid; }, setReplay, replayFeed, resetReplayAccount,
     openTicket, openPanel, placeOrder, orderPanel, flattenSym, setTrailing, copyRun, toast, closePos, reversePos, flattenAll, cancelOrder, poll, pushLines, sendToJournal,
-    ctxAt, ctxOrder, commitDrag, runHotkey, hotkeys: { get: hkMap, set: hkSave }, setLiveHook, get live(){ return liveOn() ? LIVE : null; }, lastPrice: chartLast, renderAll, activeSymbol: () => { const c = activeCell(); return c ? c.symbol : ''; }, tradeSym, setTradeSym, acctSummary, setEnabled: setPaperEnabled, get enabled(){ return paperOn(); }, tradeUi, get tradeUiOn(){ return tradeUiOn(); }, paperOff, symMeta, openTradeMenu: () => openTradeMenu && openTradeMenu(), label: LABEL, toasts: toastLog, get saves(){ return { saves: saveCount, pushes: cloudPushes, busy: cloudBusy, pending: cloudFirstPending }; }
+    ctxAt, ctxOrder, commitDrag, setPreview, runHotkey, hotkeys: { get: hkMap, set: hkSave }, setLiveHook, get live(){ return liveOn() ? LIVE : null; }, lastPrice: chartLast, renderAll, activeSymbol: () => { const c = activeCell(); return c ? c.symbol : ''; }, tradeSym, setTradeSym, acctSummary, setEnabled: setPaperEnabled, get enabled(){ return paperOn(); }, tradeUi, get tradeUiOn(){ return tradeUiOn(); }, paperOff, symMeta, openTradeMenu: () => openTradeMenu && openTradeMenu(), label: LABEL, toasts: toastLog, get saves(){ return { saves: saveCount, pushes: cloudPushes, busy: cloudBusy, pending: cloudFirstPending }; }
   };
 }

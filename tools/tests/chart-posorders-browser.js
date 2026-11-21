@@ -45,7 +45,7 @@ const measure = (p) => p.evaluate(() => {
       const { ctx, p, errs } = await open(b, w, theme), L = w + ' ' + theme + ': ', tn = theme === 'night' ? 'dark' : 'light';
       const bt = await p.evaluate(() => { const e = document.getElementById('stkpo-btn'); return e && { vis: e.offsetWidth > 0, label: e.textContent.trim(), aria: e.getAttribute('aria-label'), parent: e.parentElement.className, next: e.nextElementSibling && e.nextElementSibling.className.toString().split(' ')[0] }; });
       check(bt && bt.vis && /Positions & Orders/.test(bt.label) && /vela-widget-bottombar/.test(bt.parent), L + 'button in the bottom bar with its label', bt);
-      check(bt && /stklat-chip/.test(bt.next), L + 'button sits right before the latency pill', bt);
+      check(bt && /stktv-btn|stklat-chip/.test(bt.next), L + 'button sits right before the Trade display eye / latency pill', bt);
       const m0 = await measure(p), cys = m0.items.map((i) => i.cy), spread = Math.max(...cys) - Math.min(...cys);
       check(spread <= 1, L + 'bar items one centre line (spread ' + spread.toFixed(2) + ')');
       check(m0.sw <= m0.cw + 1, L + 'bar no overflow (' + m0.sw + '/' + m0.cw + ')');

@@ -104,7 +104,58 @@ BROKERS = {
   faq=[('Webull asks me to verify.','That is Webull\u2019s own check. Finish it, then continue.'),
        ('Do I need an API application at Webull?','Our connection handles the sign-in. If Webull asks for something extra on its page, follow Webull\u2019s steps.')]),
 }
-ORDER = ['ibkr','ninjatrader','rithmic','tastytrade','tradovate','webull']
+def mt(v):
+    o = 'MT4' if v == '4' else 'MT5'; app = 'MetaTrader %s' % v; ex = 'MQL4/Experts' if v == '4' else 'MQL5/Experts'
+    algo = 'AutoTrading' if v == '4' else 'Algo Trading'
+    extra = """<div class="bh-card bh-warn"><strong>Keep %(o)s running.</strong> MetaTrader has no cloud login for us to use, so the connector add-on in <em>your</em> terminal is the link. When the terminal is closed, the computer sleeps, or %(algo)s is off, TradeZoro cannot read the account or send orders. An order sent while the terminal is offline waits up to 90 seconds and then fails; it is not kept for later. An always-on computer or a Windows VPS keeps it running.</div>
+<p><strong>Prop firm rules.</strong> Some firms limit EAs or third-party tools on their accounts. The connector does not trade on its own, it only carries what you send from TradeZoro, but your firm decides what is allowed. Read your firm\u2019s rules or ask its support before you connect.</p>"""
+    after = """<h2 id="symbols">Symbols: chart vs broker</h2>
+<p>MetaTrader brokers name their instruments their own way. The Nasdaq 100 is <code>NDX100</code> at one firm and <code>US100</code>, <code>NAS100</code>, <code>USTEC</code> or <code>US100.cash</code> at others. TradeZoro charts use exchange symbols (NQ, ES, the index itself, or the forex pair).</p>
+<ul><li>When a %(o)s account is picked, the order panel shows a <strong>%(o)s symbol</strong> box next to the chart name. If your account\u2019s symbol list says which one it is, it is filled in for you.</li>
+<li>If not, pick it once from the list, or choose <strong>Other\u2026</strong> and type the name <strong>exactly</strong> as MetaTrader\u2019s <strong>Market Watch</strong> shows it (including any ending like <code>.cash</code> or <code>.r</code>). TradeZoro remembers it for that chart instrument and that account on this device.</li>
+<li>One choice covers related charts: NQ, MNQ and Nasdaq 100 index charts all trade the Nasdaq 100 symbol you picked.</li></ul>
+<div class="bh-tblw"><table class="bh-tbl"><thead><tr><th>Chart</th><th>Usual MetaTrader names (check yours)</th></tr></thead><tbody>
+<tr><td>NQ, MNQ, Nasdaq 100</td><td><code>NDX100</code> <code>US100</code> <code>NAS100</code> <code>USTEC</code></td></tr>
+<tr><td>ES, MES, S&amp;P 500</td><td><code>US500</code> <code>SPX500</code> <code>SP500</code></td></tr>
+<tr><td>YM, MYM, Dow 30</td><td><code>US30</code> <code>DJ30</code> <code>WS30</code></td></tr>
+<tr><td>RTY, M2K, Russell 2000</td><td><code>US2000</code> <code>RUSS2000</code></td></tr>
+<tr><td>GC, MGC (gold)</td><td><code>XAUUSD</code> <code>GOLD</code></td></tr>
+<tr><td>CL, MCL (crude oil)</td><td><code>USOIL</code> <code>WTI</code> <code>XTIUSD</code></td></tr>
+<tr><td>Forex pairs (EURUSD and others)</td><td>The same pair, sometimes with an ending like <code>EURUSD.m</code></td></tr></tbody></table></div>
+<p><strong>Prices differ.</strong> A futures chart (NQ) is not your broker\u2019s CFD price (NDX100): the two move together but are not the same number. So from a futures or index chart only <strong>market</strong> orders go to MetaTrader, and no order lines are drawn on the chart. Limit and stop orders from the chart need a chart of the broker\u2019s own instrument, such as a forex pair or spot gold (XAUUSD).</p>
+<h2 id="lots">Size in lots</h2>
+<ul><li>MetaTrader trades in <strong>lots</strong>, not contracts. The size box shows lots and steps by the account\u2019s lot step (usually 0.01, the smallest lot).</li>
+<li>What one lot is worth is set by your broker for each symbol. Check the symbol\u2019s <strong>Specification</strong> in Market Watch before you size a trade.</li>
+<li>TradeZoro sets no size limit of its own. Your broker applies its own lot limits and its message is shown if it refuses an order.</li></ul>
+""" % dict(o=o, algo=algo)
+    return dict(name=app, short=o, slug='connect-broker-metatrader-%s' % v,
+  blurb='Connect %s: prop accounts, the connector, symbols, lots, what syncs.' % app,
+  login='%s on a computer, logged in to your trading account. Prop firm accounts log in with the <strong>MT login, password and server</strong> the firm gave you.' % app,
+  types=['<strong>%s</strong> accounts at a broker or prop firm: live, demo, evaluation and funded, logged in the same way as in MetaTrader.' % app,
+         '<strong>Prop firm accounts</strong> (FundingPips and other firms that give you a MetaTrader login): log in to %s with the login number, password and server name from the firm\u2019s dashboard or welcome email. That is the only login you need. The firm\u2019s website login is not used.' % app,
+         'Forex, indices, gold, oil and the other CFDs your account can trade, sized in <strong>lots</strong>.',
+         'Each MetaTrader account is one connection. With two prop accounts you connect twice, each with its own terminal running.'],
+  auth=['Pick <strong>%s</strong> in the list and finish the steps there.' % app,
+        'It shows <strong>connector details</strong> (an address, a connector ID and a connector secret). <strong>The secret is shown once</strong>: keep that tab open until you have pasted it.',
+        'Download the connector add-on (an Expert Advisor, \u201cEA\u201d) from the link there. In %s choose <strong>File \u203a Open Data Folder</strong> and copy it into <code>%s</code>. Restart %s (or refresh <strong>Navigator \u203a Expert Advisors</strong>).' % (app, ex, o),
+        'In <strong>Tools \u203a Options \u203a Expert Advisors</strong> tick <strong>Allow WebRequest for listed URL</strong> and add the address (only the <code>https://</code> part and the host name).',
+        'Drag the EA onto any chart. In its <strong>Inputs</strong> paste the address, connector ID, secret and secret version. Leave <strong>sign envelopes</strong> switched on.',
+        'Switch on <strong>%s</strong> in the %s toolbar. After about 15 seconds the connector shows as online. Choose the account and finish.' % (algo, o)],
+  extra=extra, after=after,
+  syncs='Accounts, balance, open positions and working orders, read through the EA. Orders from TradeZoro (market, limit, stop) go to the EA, which places them in your terminal, and MetaTrader gives each one a ticket number. In TradeZoro, orders work after you enable live trading once.',
+  limits=['Your terminal must be running with the EA attached and %s on.' % algo,
+          'Stop loss and take profit: set them in MetaTrader for now. TradeZoro does not attach them to MetaTrader orders yet.',
+          'Closing a position: close it in MetaTrader for now. Working orders can be cancelled from TradeZoro.',
+          'No order lines or DOM ladder on a chart whose prices are not the broker\u2019s instrument (see Symbols).',
+          'If you make a new connector secret, paste it into the EA, or connect again.'],
+  faq=[('I trade the NDX100 CFD on MT5 with a FundingPips account. How do I connect it?','Log in to MetaTrader 5 with the FundingPips MT login, password and server. Then follow the steps above: connect window, MetaTrader 5, copy the connector details, put the EA on a chart, paste the details, switch on Algo Trading. On an NQ or Nasdaq 100 chart pick <code>NDX100</code> as the MT5 symbol once, and size in lots.'),
+       ('Does TradeZoro see my MetaTrader password?','No. You type it into MetaTrader only. TradeZoro and the connect window never ask for it. The EA uses its own connector secret.'),
+       ('The connector does not show online.','Check that the terminal is open, the EA is on a chart, %s is on, and the WebRequest list has the address from the connect window. If you made a new secret, paste the new one.' % algo),
+       ('MetaTrader 4 or 5?','Use the one your broker or firm gave you a login for. The steps are the same; MT4 uses <code>MQL4/Experts</code>, MT5 uses <code>MQL5/Experts</code>.'),
+       ('My symbol is not in the list.','Choose <strong>Other\u2026</strong> and type it exactly as Market Watch shows it. If the name is wrong the broker rejects the order; pick the box again to change it.'),
+       ('Can I use a phone?','The EA needs desktop MetaTrader; the phone app cannot run it. Once the desktop terminal is running, you can trade from TradeZoro on any device.')])
+BROKERS['mt4'] = mt('4'); BROKERS['mt5'] = mt('5')
+ORDER = ['ibkr','mt4','mt5','ninjatrader','rithmic','tastytrade','tradovate','webull']
 HUB = 'connect-broker'
 
 def page(slug, title, desc, h1, body):
@@ -142,7 +193,7 @@ def hub():
 <ul><li>An account at the broker with its login working. Log in once at the broker yourself first.</li>
 <li>A computer or tablet browser is easiest. The broker page opens in a <strong>new tab</strong>, so allow pop-ups for TradeZoro.</li>
 <li>Your two-step login (2FA) device, if the broker uses one.</li>
-<li>For a prop firm account: the login type your firm gave you (Rithmic, Tradovate or NinjaTrader). The firm\u2019s website login is not the one to use.</li></ul>
+<li>For a prop firm account: the login type your firm gave you (Rithmic, Tradovate, NinjaTrader or MetaTrader 4 / 5). The firm\u2019s website login is not the one to use.</li></ul>
 <h2 id="how">How to connect</h2>
 %s
 <ol><li>Open a chart and click <strong>Trade</strong> in the toolbar. (In the order panel you can also open the account picker and choose <strong>Connect a broker\u2026</strong>.)</li>
@@ -164,6 +215,7 @@ def hub():
 <h2 id="privacy">Privacy</h2>
 <ul><li><strong>We never see your broker password.</strong> You log in on the broker\u2019s own page. For Rithmic, which uses a username and password, you type them in the secure connect window, and TradeZoro does not receive or store them.</li>
 <li>TradeZoro reads your accounts, balance, positions, orders and fills. It sends an order only when you click to trade, after you enabled live trading.</li>
+<li>MetaTrader: you log in only in MetaTrader. The connector add-on uses its own secret, not your MetaTrader password.</li>
 <li>Your account details stay in your own view. We do not show them to other members.</li></ul>
 <h2 id="fix">Troubleshooting</h2>
 <ul><li><strong>It asks me to log in again.</strong> The saved link expired. Open the Trade menu and click <strong>Reconnect</strong>. If that does not help, click <strong>Connect a broker</strong> and sign in again.</li>
@@ -193,13 +245,13 @@ def broker(k):
 %(auth)s
 <li>Go back to the TradeZoro tab and click <strong>Continue</strong>. Your %(n)s accounts show in the Trade menu.</li>
 <li>Journal only: pick the account and dates, click <strong>Load trades</strong>, check the preview, then <strong>Import</strong>.</li></ol>
-<h2 id="syncs">What syncs</h2><p>%(syncs)s</p>
+%(after)s<h2 id="syncs">What syncs</h2><p>%(syncs)s</p>
 <h2 id="limits">Known limits</h2><ul>%(lim)s</ul>
 <h2 id="disconnect">Disconnect</h2><p>Trade menu, gear on the account, <strong>Disconnect</strong>, confirm. Imported journal trades stay. You can also remove access in %(n)s\u2019s own settings.</p>
 <h2 id="faq">FAQ</h2>%(faq)s
 <h3>Something went wrong. Where do I look?</h3><p>See Troubleshooting in <a href="/help/%(hub)s#fix">Connect your broker</a>. If you get \u201cno clear answer from the broker\u201d, check your working orders at %(n)s before you send anything again.</p>
 <p class="bh-small">Other brokers: %(others)s</p>
-%(disc)s''' % dict(n=b['name'], hub=HUB, login=b['login'], types=types, extra=b['extra'], path=PATH, auth=auth, syncs=b['syncs'], lim=lim, faq=faq, others=others, disc=DISC)
+%(disc)s''' % dict(n=b['name'], hub=HUB, login=b['login'], types=types, extra=b['extra'], path=PATH, after=b.get('after', ''), auth=auth, syncs=b['syncs'], lim=lim, faq=faq, others=others, disc=DISC)
 
 COPY_PATH = '<ol class="bh-path" aria-label="The steps in TradeZoro"><li>Charts</li><li>Trade menu</li><li>Copy trading</li><li>Leader</li><li>Followers</li><li>Save</li></ol>'
 def copy_page():

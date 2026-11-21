@@ -30,22 +30,28 @@
 import { gate, readBody, cachedSession, finSession, ordersBlocked, envMode, json, fail, needsConnect, methodNotAllowed, safe, pagesEntry, deferOf, listAll, UPSTREAM_MSG, UUID, ID } from './_fin.js';
 import { resolveFinUser, ownsAccount, notYours, hasConsent, saveConsent, memberBlocked, LIVE_TERMS_VERSION } from './_owner.js';
 import { openAudit, liveSwitchOn, getBracket, putBracket, delBracket, logBracket } from './_audit.js';
-import { validContract, workingOrders, netPosition, flattenPlan, IDEM, groupId, bracketCheck, bracketPlan, contractOf, assetOf } from '../../../assets/chart-live-core.js';
+import { validContract, workingOrders, netPosition, flattenPlan, IDEM, groupId, bracketCheck, bracketPlan, contractOf, assetOf, matches, mtPlatform, MT_SYM } from '../../../assets/chart-live-core.js';
 
-const TYPES = ['market', 'limit', 'stop', 'stop_limit'], TIFS = ['day', 'gtc', 'ioc', 'fok'], ASSETS = ['future', 'equity'];
+const TYPES = ['market', 'limit', 'stop', 'stop_limit'], TIFS = ['day', 'gtc', 'ioc', 'fok'], ASSETS = ['future', 'equity'], MT_ASSETS = ['forex', 'cfd'];
 const SYMBOL = /^[A-Z0-9][A-Z0-9._\-]{0,19}$/;
 
 // -> { order } | { error }. Only whitelisted fields leave this function.
-export function cleanOrder(b, { partial } = {}) {
+// mt = a MetaTrader account (checked by the caller from the account record): forex / cfd, the broker's own symbol (case kept: MT
+// symbols are case-sensitive, "US100.cash"), size in lots (0.01 steps, no cap)
+export function cleanOrder(b, { partial, mt } = {}) {
   const o = {};
-  const asset = b.assetType === undefined && partial ? undefined : String(b.assetType || 'future').toLowerCase();
-  if (asset !== undefined) { if (!ASSETS.includes(asset)) return { error: 'assetType must be future or equity' }; o.assetType = asset; }
+  const asset = b.assetType === undefined && partial ? undefined : String(b.assetType || (mt ? 'forex' : 'future')).toLowerCase();
+  if (asset !== undefined) { if (mt ? !MT_ASSETS.includes(asset) : !ASSETS.includes(asset)) return { error: mt ? 'assetType must be forex or cfd' : 'assetType must be future or equity' }; o.assetType = asset; }
   if (!partial) {
-    const symbol = String(b.symbol || '').toUpperCase().trim(); if (!SYMBOL.test(symbol)) return { error: 'symbol invalid' }; o.symbol = symbol;
+    const symbol = mt ? String(b.symbol || '').trim() : String(b.symbol || '').toUpperCase().trim(); if (!(mt ? MT_SYM : SYMBOL).test(symbol)) return { error: 'symbol invalid' }; o.symbol = symbol;
     const side = String(b.side || '').toLowerCase(); if (side !== 'buy' && side !== 'sell') return { error: 'side must be buy or sell' }; o.action = side;
     const type = String(b.type || '').toLowerCase(); if (!TYPES.includes(type)) return { error: 'type must be market, limit, stop or stop_limit' }; o.orderType = type;
   } else if (b.type !== undefined) { const type = String(b.type).toLowerCase(); if (!TYPES.includes(type)) return { error: 'type must be market, limit, stop or stop_limit' }; o.orderType = type; }
-  if (!partial || b.qty !== undefined) {
+  if (mt && (!partial || b.qty !== undefined)) {
+    const q = Number(b.qty);   // lots; no size cap (21 Nov): the broker applies its own
+    if (!(q > 0) || Math.abs(Math.round(q * 100) - q * 100) > 1e-6) return { error: 'qty must be lots in steps of 0.01' };
+    o.orderQty = Number(q.toFixed(2));
+  } else if (!partial || b.qty !== undefined) {
     const q = Number(b.qty);   // no size cap (21 Nov): the broker applies its own limits
     if (!Number.isInteger(q) || q < 1 || q > 1e9) return { error: 'qty must be a positive whole number' };
     o.orderQty = q;
@@ -93,6 +99,7 @@ export async function exec(request, env, deps, g, b) {
   }
   const blocked = ordersBlocked(env); if (blocked) return blocked;
   const chart = b.src === 'chart';
+  const mt = chart && b.venue === 'mt';   // a MetaTrader account (AUTO-MTHELP): verified against the account record below
   // the journal's raw order test (no chart guards: fresh read, flatten, stop loss / take profit) stays admin only
   if (!chart && !g.admin) return fail(403, 'Admin only');
   if (op !== 'schema' && op !== 'place' && op !== 'cancel' && op !== 'modify' && !((op === 'flatten' || op === 'bracket') && chart)) return fail(400, 'Not allowed');
@@ -101,7 +108,13 @@ export async function exec(request, env, deps, g, b) {
   if (op === 'schema' && !['place', 'modify', 'cancel'].includes(b.action)) return fail(400, 'action invalid');
   const now = (deps.now || Date.now)();
   let bracket = null;
-  if (chart && op !== 'schema') {
+  if (mt && op !== 'schema') {   // MetaTrader: lots, the broker's symbol, market / limit / stop, no server stop loss / take profit or flatten
+    if (!(typeof b.idemKey === 'string' && IDEM.test(b.idemKey))) return fail(400, 'idemKey missing');
+    if (op === 'flatten' || op === 'bracket') return fail(400, 'Close MetaTrader positions in MetaTrader for now', 'mt_unsupported');
+    if (op === 'place' && !['market', 'limit', 'stop'].includes(String(b.type || '').toLowerCase())) return fail(400, 'Market, limit or stop only');
+    if (op === 'place' && b.bracket != null) return fail(400, 'Stop loss and take profit are set in MetaTrader for now', 'mt_unsupported');
+    if (op === 'modify' && (b.qty !== undefined || !['limit', 'stop'].includes(String(b.type || 'limit').toLowerCase()))) return fail(400, 'Only the order price can be changed');
+  } else if (chart && op !== 'schema') {
     if (op !== 'bracket' && !(typeof b.idemKey === 'string' && IDEM.test(b.idemKey))) return fail(400, 'idemKey missing');
     const asset = op === 'place' && b.assetType === 'equity' ? 'equity' : op === 'place' ? 'future' : assetOf(b.symbol);
     if ((op === 'place' || op === 'flatten' || op === 'bracket') && !validContract(String(b.symbol || '').toUpperCase(), now, asset)) return fail(400, 'Not a valid symbol');
@@ -120,10 +133,10 @@ export async function exec(request, env, deps, g, b) {
     }
   }
   let order = null;
-  if (op === 'place' || op === 'modify') { const c = cleanOrder(b, { partial: op === 'modify' }); if (c.error) return fail(400, c.error); order = c.order; if (op === 'modify' && Object.keys(order).length < 2) return fail(400, 'nothing to change'); }
+  if (op === 'place' || op === 'modify') { const c = cleanOrder(b, { partial: op === 'modify', mt }); if (c.error) return fail(400, c.error); order = c.order; if (op === 'modify' && Object.keys(order).length < 2) return fail(400, 'nothing to change'); }
   // moving a stop loss / take profit (drag on the chart): it must stay on its side of the other one (advisor: same checks as place)
   let modGroup = null;
-  if (chart && op === 'modify' && typeof b.symbol === 'string' && validContract(b.symbol.toUpperCase(), now, assetOf(b.symbol.toUpperCase()))) {
+  if (chart && !mt && op === 'modify' && typeof b.symbol === 'string' && validContract(b.symbol.toUpperCase(), now, assetOf(b.symbol.toUpperCase()))) {
     try { modGroup = await getBracket(env, deps, groupId(b.accountId, String(b.symbol).toUpperCase())); } catch (e) { return fail(503, 'Could not read the stop loss / take profit record, nothing sent', 'bracket_unreadable'); }
     if (modGroup && (modGroup.slId === b.orderId || modGroup.tpId === b.orderId)) {
       const isSl = modGroup.slId === b.orderId, np = isSl ? order.stopPrice : order.price;
@@ -197,14 +210,20 @@ export async function exec(request, env, deps, g, b) {
   // For a chart place / flatten it runs in parallel with the fresh read that has to happen anyway.
   const opened = t.step('audit', openAudit(env, deps, entry, chart ? b.idemKey : undefined).then((a) => ({ a }), (e) => ({ e })));
   const needRead = chart && (op === 'place' || op === 'flatten');
+  // MetaTrader: the account record must say MT4 / MT5 (a futures account can never take the MT path and skip the contract list)
+  const acctRead = mt && op !== 'schema' ? t.step('acct', call('GET', A)) : null;
   // single flight per account in this isolate: a second place/flatten waits for the first to answer, so the pre-send read (used to
   // settle an unclear answer) never overlaps another send (advisor review 16 Nov). Costs nothing for one order at a time.
   const release = needRead ? await t.step('queue', acquire(b.accountId)) : () => {};
   try {
-  const [au, st0] = await Promise.all([opened, needRead ? t.step('read', read()) : null]);
+  const [au, st0, ar] = await Promise.all([opened, needRead ? t.step('read', read()) : null, acctRead]);
   if (au.e) { if (au.e && au.e.duplicate) return json({ error: 'This order was already sent once. Nothing new was sent.', code: 'duplicate', duplicate: true }, 409); try { console.warn('finatic order: audit unavailable: ' + (au.e.reason || 'error')); } catch (e) {} return fail(503, 'Audit log unavailable' + (au.e.reason ? ' (' + String(au.e.reason).slice(0, 160) + ')' : '') + ', order not sent', 'audit_unavailable'); }
   const audit = { id: au.a.id, finish: (res) => defer(au.a.finish(res)) };   // the result row goes out after the reply, never skipped
   if (renewFail) { audit.finish({ result: 'rejected', message: 'session renew failed' }); return needsConnect(); }
+  if (mt) {
+    if (!ar || !ar.ok) { audit.finish({ result: 'rejected', message: 'account read failed' }); return fail(503, 'Could not read the account, order not sent', 'read_failed'); }
+    if (!mtPlatform(ar.data && ar.data.account ? ar.data.account : ar.data)) { audit.finish({ result: 'rejected', message: 'not a MetaTrader account' }); return fail(400, 'This is not a MetaTrader account', 'not_mt'); }
+  }
   if (chart && op === 'place') {   // fresh read (the settle baseline); no exposure cap since 21 Nov
     if (!st0) { audit.finish({ result: 'rejected', message: 'read failed' }); return fail(503, 'Could not read positions and orders, order not sent', 'read_failed'); }
     if (bracket) {   // one stop loss / take profit group per account + contract
@@ -265,7 +284,7 @@ export function findNew(before, after, order, sentAt) {
   for (const o of after || []) {
     const id = String(o && (o.orderId || o.id) || ''); if (!id || old.has(id)) continue;
     const leg = (o.legs || [])[0] || {};
-    if (contractOf(leg) !== order.symbol && contractOf(o) !== order.symbol) continue;
+    if (!matches(leg, order.symbol) && !matches(o, order.symbol)) continue;
     const side = String(leg.side || o.side || o.action || '').toLowerCase(); if (side && side !== order.action) continue;
     const q = Number(leg.quantity != null ? leg.quantity : o.orderQty != null ? o.orderQty : o.quantity); if (Number.isFinite(q) && q > 0 && q !== order.orderQty) continue;
     const c = Date.parse(o.orderCreatedAt || o.createdAt || ''); if (Number.isFinite(c) && c < sentAt - 60000) continue;

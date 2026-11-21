@@ -101,6 +101,7 @@ function ctx() {
   // the TRADE instrument (chart symbol or its mini / micro partner). Live: pairs whose contract specs are known (chart-live-core ROOTS).
   let fam = PE0 && PE0.familyOf ? PE0.familyOf(chartSym) : null;
   if (lv && fam && !(L.ROOTS[fam.mini] && L.ROOTS[fam.micro])) fam = null;
+  if (lv && lv.mtFor && lv.mtFor(chartSym)) fam = null;   // MetaTrader account: the broker symbol picker replaces the mini / micro switch
   const sym = (fam && P.tradeSym ? P.tradeSym(chartSym) : chartSym) || '';
   const a = P.account;
   const PE = window.PaperEngine;
@@ -115,9 +116,10 @@ function ctx() {
   const exName = !fut && prov ? ((SOURCES.find((s) => s.id === prov) || {}).name || prov.toUpperCase()) : '';
   const code = li && li.code ? li.code : fm ? fm.code : exName;
   const tick = lv ? (li ? li.tick : lv.tickOf(sym)) : sp.ok ? sp.tick : 0.01;
-  const last = lv ? (li && Number.isFinite(li.last) ? li.last : P.lastPrice(sym)) : (a && Number.isFinite(a.last[sp.symbol]) ? a.last[sp.symbol] : P.lastPrice(sym));
+  const last = lv ? (li && li.mt ? li.chartLast : li && Number.isFinite(li.last) ? li.last : P.lastPrice(sym)) : (a && Number.isFinite(a.last[sp.symbol]) ? a.last[sp.symbol] : P.lastPrice(sym));
   const chartRootName = fam ? String((PE.specOf(chartSym) || {}).root || '') : '';
-  return { sym, chartSym, fam, chartRootName, lv, li, a, sp, prov, tk, fut, rootName, label, code, tick: tick || 0.01, dec: decOf(tick || 0.01), last: Number.isFinite(last) && last > 0 ? last : null, live: !!lv };
+  const mt = li && li.mt ? li.mt : '';
+  return { sym, chartSym, fam, chartRootName, lv, li, a, sp, prov, tk, fut, rootName, label, code, mt, tick: tick || 0.01, dec: mt ? Math.min(decOf(tick || 0.01), 2) : decOf(tick || 0.01), last: Number.isFinite(last) && last > 0 ? last : null, live: !!lv };
 }
 const fmt = (c, p) => (p == null || !Number.isFinite(p) ? '—' : p.toLocaleString('en-US', { minimumFractionDigits: c.dec, maximumFractionDigits: c.dec }));
 const fmtIn = (c, p) => (Number.isFinite(p) ? p.toFixed(c.dec) : '');
@@ -162,6 +164,7 @@ const noQuoteWhy = (c) => (c.fut && l2Delayed() ? 'Join Bid / Join Ask need the 
 
 // ------------------------------------------------------------------------------------------------ quantities, brackets
 function qtyRules(c) {
+  if (c.mt && c.li.lots) return { min: c.li.lots.min, max: c.li.lots.max, step: c.li.lots.step, int: false, lots: c.li.lots };   // MetaTrader lots
   if (c.live) return { min: 1, max: Infinity, step: 1, int: true };   // whole numbers from 1; no TradeZoro cap (the broker applies its own)
   if (!c.sp.ok) return { min: 1, max: 1, step: 1, int: true };
   if (c.sp.kind === 'futures') return { min: 1, max: c.sp.maxQty || 500, step: 1, int: true };
@@ -169,11 +172,13 @@ function qtyRules(c) {
 }
 function cleanQty(c, v) {
   const r = qtyRules(c); let q = num(v); if (!(q > 0)) q = r.min;
+  if (r.lots) return L.roundLots(Math.min(q, r.max), r.lots) || r.min;
   if (r.int) q = Math.round(q);
   return clamp(q, r.min, r.max);
 }
 function stepQty(c, dir) {
   const r = qtyRules(c), q = cleanQty(c, F.qty);
+  if (r.lots) return L.roundLots(clamp(q + dir * r.step + 1e-9, r.min, r.max), r.lots) || r.min;
   if (r.step) return clamp(q + dir * r.step, r.min, r.max);
   const st = Math.pow(10, Math.floor(Math.log10(Math.max(q, r.min))));
   return clamp(Math.round((q + dir * st) * 1e8) / 1e8, r.min, r.max);
@@ -196,7 +201,7 @@ function caps(c) {
   const k = c.lv.caps();
   // live stop loss / take profit: market entries only (the server places them after the fill); never TP1 / break-even (one group)
   const mo = !!k.bracket && F.type !== 'market';
-  return { stop: !!k.stop, bracket: !!k.bracket && !mo, trail: false, two: false, why: mo ? k.marketOnly : k.why, adv: !!prefs.adv };
+  return { stop: !!k.stop, limit: k.limit !== false, mt: !!k.mt, bracket: !!k.bracket && !mo, trail: false, two: false, why: mo ? k.marketOnly : k.why, adv: !!prefs.adv };
 }
 // risk-based size -> { qty, risk, over, capped, amt } | { error } | null (off / not applicable)
 function riskSize(c, k, ref, sl) {
@@ -249,7 +254,7 @@ function join(side) {
 function confirmOrder() {
   const c = ctx(), why = blockOf(c); if (why) { P.toast(why, 'error'); return; }
   const k = caps(c), qt = quote(c);
-  if (F.type === 'stop' && !k.stop) { P.toast(k.why, 'error'); return; }
+  if ((F.type === 'stop' && !k.stop) || (F.type === 'limit' && k.limit === false)) { P.toast(k.why, 'error'); return; }
   let price;
   if (F.type !== 'market') { price = roundTick(num(F.price), c.tick); if (!(price > 0)) { P.toast('Enter the ' + F.type + ' price.', 'error'); return; } F.price = fmtIn(c, price); }
   const ref = entryRef(c, qt);
@@ -295,7 +300,7 @@ function build() {
     '</div>' +
     '<div class="stkop-info">' +
       '<div class="stkop-il"><p class="stkop-sym" id="stkop-sym"><b data-k="root"></b><span class="stkop-nm" data-k="name"></span></p><span class="stkop-code" data-k="code"></span>' +
-        '<span class="stkop-inst" role="radiogroup" aria-label="Trade instrument (mini or micro)" data-k="inst" hidden></span></div>' +
+        '<span class="stkop-inst" role="radiogroup" aria-label="Trade instrument (mini or micro)" data-k="inst" hidden></span><label class="stkop-mtsym" data-k="mtsym" hidden></label></div>' +
       '<div class="stkop-il"><span class="stkop-last" data-k="last">—</span><span class="stkop-chg" data-k="chg"></span><span class="stkop-sp"></span>' +
         '<span class="stkop-ba"><span>Bid <b class="bid" data-k="bid">—</b></span><span>Ask <b class="ask" data-k="ask">—</b></span></span></div>' +
     '</div>' +
@@ -353,6 +358,13 @@ function onInput(e) {
   else if (f === 'price') F.price = v;
   else if (f === 'trail') F.trail = v;
   else if (f === 'hk') { prefs.hk = v; savePrefs(); }
+  else if (f === 'mtsym') {
+    const c = ctx(); if (!c.mt || !c.li || !c.lv.mtSetSymbol) return;
+    let sym = v;
+    if (v === '__other') { sym = (window.prompt('Type the symbol exactly as MetaTrader’s Market Watch shows it (for example NDX100, US100.cash, NAS100).', c.li.map.sym || '') || '').trim(); e.target.dataset.sig = ''; e.target.closest('[data-k=mtsym]').dataset.sig = ''; if (!sym) { update(); return; } }
+    if (!c.lv.mtSetSymbol(c.li.map.key, sym)) { P.toast('That is not a valid symbol name.', 'error'); el.querySelector('[data-k=mtsym]').dataset.sig = ''; update(); return; }
+    F.priceKey = ''; viewSig = ''; P.toast(c.li.map.label + ' trades as ' + sym + ' on this ' + c.mt + ' account.', 'success');
+  }
   else if (f === 'adv') { prefs.adv = !!v; savePrefs(); footSig = ''; }
   else if (f === 'tp1.size') F.tp1.size = v;
   else if (f === 'be.on') F.be.on = v;
@@ -562,9 +574,19 @@ function renderInfo(c) {
   const name = cleanDesc(meta.desc) || (c.fut ? '' : c.code);
   setText('root', root);
   const nm = setText('name', name); if (nm) nm.hidden = !name;
-  const code = c.fut ? c.code || '' : '';
+  const code = c.mt ? '' : c.fut ? c.code || '' : '';   // MetaTrader: the symbol picker shows it
   const ce = setText('code', code); if (ce) ce.hidden = !code;
-  const ie = el.querySelector('[data-k=inst]');
+  const ie = el.querySelector('[data-k=inst]'), mp = el.querySelector('[data-k=mtsym]');
+  if (mp) {   // MetaTrader: which broker symbol this chart trades (picked once per chart instrument, remembered)
+    const m = c.mt && c.li ? c.li.map : null, sig = m ? [m.key, m.sym, m.cands.join(','), m.known].join('|') : '';
+    if (mp.dataset.sig !== sig) {
+      mp.dataset.sig = sig; mp.hidden = !m;
+      mp.innerHTML = m ? '<span class="stkop-vh">' + esc(c.mt) + ' symbol for ' + esc(m.label) + '</span><select data-f="mtsym" aria-label="' + esc(c.mt + ' symbol for ' + m.label) + '" title="' + esc(m.known ? 'Symbols from your account' : 'Usual names at brokers. Use the exact name from MetaTrader’s Market Watch.') + '">' +
+        (m.sym ? '' : '<option value="" selected>Pick symbol</option>') +
+        [...new Set((m.sym ? [m.sym] : []).concat(m.cands))].map((v) => '<option value="' + esc(v) + '"' + (v === m.sym ? ' selected' : '') + '>' + esc(v) + '</option>').join('') +
+        '<option value="__other">Other…</option></select><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>' : '';
+    }
+  }
   if (ie) {
     const f = c.fam, sig = f ? f.mini + '|' + f.micro + '|' + c.rootName + '|' + c.chartRootName : '';
     if (ie.dataset.sig !== sig) {
@@ -652,6 +674,7 @@ export function update() {
   renderInfo(c);
   el.setAttribute('aria-label', 'Order panel ' + c.label + (c.live ? ', LIVE account' : ', paper trading'));
   // quantity (cap + integer rules follow the mode)
+  if (c.mt && F.mtAcct !== c.li.map.key + c.mt) { F.mtAcct = c.li.map.key + c.mt; F.qty = String(c.li.lots.min); }   // MetaTrader: start at the smallest lot, never a futures size
   const qn = cleanQty(c, F.qty); if (document.activeElement && document.activeElement.dataset && document.activeElement.dataset.f === 'qty') {} else if (String(qn) !== F.qty) F.qty = String(qn);
   setVal('qty', F.qty);
   const r = qtyRules(c);
@@ -661,15 +684,16 @@ export function update() {
   for (const n of el.querySelectorAll('[data-k=ask]')) { const t = qt ? fmt(c, qt.ask) : '—'; if (n.textContent !== t) n.textContent = t; }
   // scalp
   for (const b of el.querySelectorAll('.stkop-scalp [data-a=buy], .stkop-scalp [data-a=sell]')) b.disabled = !!why;
-  for (const b of el.querySelectorAll('.stkop-join')) { b.disabled = !!why || !qt; b.title = why || (!qt ? noQuoteWhy(c) : (b.dataset.a === 'jbid' ? 'Buy limit at the best bid' : 'Sell limit at the best ask')); }
+  const lim = caps(c).limit !== false;
+  for (const b of el.querySelectorAll('.stkop-join')) { b.disabled = !!why || !qt || !lim; if (!lim) { b.title = caps(c).why; continue; } b.title = why || (!qt ? noQuoteWhy(c) : (b.dataset.a === 'jbid' ? 'Buy limit at the best bid' : 'Sell limit at the best ask')); }
   const hk = el.querySelector('[data-f=hk]'); if (hk) hk.checked = !!prefs.hk;
   // order form
   const form = el.querySelector('.stkop-order');
   if (form) {
     const k = caps(c);
-    if (F.type === 'stop' && !k.stop) F.type = 'market';
+    if ((F.type === 'stop' && !k.stop) || (F.type === 'limit' && k.limit === false)) F.type = 'market';
     for (const b of form.querySelectorAll('[data-side]')) { const on = b.dataset.side === F.side; b.setAttribute('aria-checked', String(on)); b.classList.toggle('on', on); }
-    for (const b of form.querySelectorAll('[data-type]')) { const on = b.dataset.type === F.type; b.setAttribute('aria-checked', String(on)); b.classList.toggle('on', on); b.disabled = b.dataset.type === 'stop' && !k.stop; b.title = b.disabled ? k.why : ''; }
+    for (const b of form.querySelectorAll('[data-type]')) { const on = b.dataset.type === F.type; b.setAttribute('aria-checked', String(on)); b.classList.toggle('on', on); b.disabled = (b.dataset.type === 'stop' && !k.stop) || (b.dataset.type === 'limit' && k.limit === false); b.title = b.disabled ? k.why : ''; }
     // price
     const pk = c.sym + '|' + F.type + '|' + F.side;
     if (F.type !== 'market' && F.priceKey !== pk) {

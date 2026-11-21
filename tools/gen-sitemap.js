@@ -70,6 +70,8 @@ const PAGES = [
   ['/help/install-mac-app', '0.5', 'monthly'],
   ['/help/connect-broker',  '0.5', 'monthly'],
   ['/help/connect-broker-interactive-brokers', '0.4', 'monthly'],
+  ['/help/connect-broker-metatrader-4', '0.4', 'monthly'],
+  ['/help/connect-broker-metatrader-5', '0.4', 'monthly'],
   ['/help/connect-broker-ninjatrader', '0.4', 'monthly'],
   ['/help/connect-broker-rithmic', '0.4', 'monthly'],
   ['/help/connect-broker-tastytrade', '0.4', 'monthly'],

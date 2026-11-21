@@ -121,12 +121,19 @@ export function contractOf(rec) {
   if (!isFutRec(rec)) for (const s of syms) { const t = s.replace(/^[^:]+:/, ''); if (EQ_SYM.test(t)) return t; }
   return '';
 }
+// does a broker record belong to `code`? A futures code (NQZ6) matches by contractOf; anything else is a MetaTrader broker symbol
+// (NDX100, US100.cash, EURUSD.m) and matches one of the record's symbol fields exactly (case-insensitive).
+export function matches(rec, code) {
+  const c = String(code || '').toUpperCase(); if (!c) return false;
+  if (FUT_CODE.test(c) && contractOf(rec) === c) return true;   // exact broker symbol too: DJ30 looks like a futures code but is not one
+  return symsOf(rec).some((s) => s === c || s.replace(/^[^:]+:/, '') === c);
+}
 // signed net position (contracts) for one contract, from Finatic positions (quantity may be signed, or side=SHORT with a positive qty)
 export function netPosition(positions, code) {
   let q = 0, avgN = 0, avgD = 0, upl = null, updated = '';
   for (const p of Array.isArray(positions) ? positions : []) {
     if (!p || String(p.status || 'OPEN').toUpperCase() === 'CLOSED') continue;
-    if (contractOf(p) !== code) continue;
+    if (!matches(p, code)) continue;
     let n = num(p.quantity != null ? p.quantity : p.units);
     if (String(p.side || '').toUpperCase() === 'SHORT' && n > 0) n = -n;
     if (!n) continue;
@@ -160,7 +167,7 @@ export function workingOrders(orders, code) {
   for (const o of Array.isArray(orders) ? orders : []) {
     if (!o || !WORKING.test(String(o.status || '').toUpperCase())) continue;
     const leg = (o.legs || [])[0] || {};
-    if (contractOf(leg) !== code && contractOf(o) !== code) continue;
+    if (!matches(leg, code) && !matches(o, code)) continue;
     const qty = num(leg.remainingQuantity != null && leg.remainingQuantity !== '' ? leg.remainingQuantity : leg.quantity != null ? leg.quantity : o.orderQty);
     const type = String(o.orderType || leg.orderType || '').toLowerCase();
     const price = num(leg.limitPrice != null ? leg.limitPrice : o.limitPrice != null ? o.limitPrice : o.price) || num(leg.stopPrice != null ? leg.stopPrice : o.stopPrice) || null;
@@ -278,8 +285,9 @@ const GENERIC = /^(individual|joint|ira|roth( ira)?|margin|cash|default|primary|
 const str = (v) => (v == null || typeof v === 'object' ? '' : String(v).trim());
 export function brokerNice(b) {
   const s = str(b) || 'Broker';
-  const fix = { ibkr: 'IBKR', interactivebrokers: 'Interactive Brokers', tastytrade: 'tastytrade', ninjatrader: 'NinjaTrader', ninja_trader: 'NinjaTrader', tradestation: 'TradeStation', topstepx: 'TopstepX', projectx: 'ProjectX', tasty_trade: 'tastytrade' };
-  const k = s.toLowerCase().replace(/[^a-z_]/g, '');
+  const fix = { metatrader_4: 'MetaTrader 4', metatrader_5: 'MetaTrader 5', metatrader4: 'MetaTrader 4', metatrader5: 'MetaTrader 5', mt: 'MetaTrader', ibkr: 'IBKR', interactivebrokers: 'Interactive Brokers', tastytrade: 'tastytrade', ninjatrader: 'NinjaTrader', ninja_trader: 'NinjaTrader', tradestation: 'TradeStation', topstepx: 'TopstepX', projectx: 'ProjectX', tasty_trade: 'tastytrade' };
+  if (/^mt[_ ]?([45])$/i.test(s)) return 'MetaTrader ' + s.slice(-1);
+  const k = s.toLowerCase().replace(/[^a-z0-9_]/g, '');
   return fix[k] || fix[k.replace(/_/g, '')] || s.replace(/[_-]+/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 }
 const okVal = (ownId) => (v) => v && v.length <= 64 && !UUIDISH.test(v) && v !== ownId;
@@ -310,6 +318,7 @@ export function acctInfo(x) {
   const alnum = number.replace(/[^A-Za-z0-9]/g, '');
   return { id, broker, number, alt, last4: alnum.slice(-4), text: number ? broker + ' ' + number : broker,
     brokerId: str(x && (x.brokerId || x.broker_id)).toLowerCase(), brokerAccountId: str(x && (x.brokerAccountId || x.broker_account_id)),
+    mt: mtPlatform(x),
     grantId: str(x && (x.grantId || x.grant_id || x.accountGrantId || x.account_grant_id)), currency: str(x && (x.currencyCode || x.currency_code || x.currency)).toUpperCase(), sync: syncInfo(x) };
 }
 // what every live surface shows for an account: the Owner's own label (Edit details) wins, else the broker's account name.
@@ -500,7 +509,7 @@ export function fmtMoney(n, cur, sign) {
   return (n < 0 ? '-' : sign && n > 0 ? '+' : '') + t;
 }
 // ---- per-account notes the admin adds (pencil): label, prop firm, account type -------------------------------------------
-export const FIRMS = ['Apex', 'Topstep', 'Tradeify', 'Take Profit Trader', 'My Funded Futures', 'Lucid', 'Bulenox', 'Alpha Futures', 'Elite Trader Funding', 'Earn2Trade', 'The Trading Pit', 'Own account'];
+export const FIRMS = ['Apex', 'Topstep', 'Tradeify', 'Take Profit Trader', 'My Funded Futures', 'Lucid', 'Bulenox', 'Alpha Futures', 'Elite Trader Funding', 'Earn2Trade', 'The Trading Pit', 'FundingPips', 'FTMO', 'Own account'];
 export const TYPES = [['eval', 'Evaluation'], ['funded', 'Funded'], ['live', 'Live'], ['sim', 'Sim']];
 const clip = (v, n) => str(v).replace(/[\u0000-\u001f<>]/g, '').replace(/\s+/g, ' ').slice(0, n).trim();
 // -> { label, firm, type } with every field cleaned ('' when empty); the same limits are in firestore.rules
@@ -519,7 +528,7 @@ export function acctTitle(a, meta) {
 }
 // open P&L estimate from the chart's last price (contract spec point value), or the broker's figure when no price
 export function openPnl(pos, avg, last, pv, brokerUpl) {
-  if (pos && avg > 0 && last > 0 && pv > 0) return (last - avg) * pos * pv;
+  if (pos && avg > 0 && last > 0 && pv > 0) return (last - avg) * pos * pv;   // MetaTrader: pv unknown -> the broker's figure
   return brokerUpl == null ? null : brokerUpl;
 }
 
@@ -609,4 +618,105 @@ export function bracketPlan(g, positions, orders) {
   if (g.sl != null && !sW) return { act: 'alarm', why: g.slId ? 'The stop loss is no longer working at the broker. The position has no stop.' : 'No stop loss is working. The position has no stop.' };
   for (const [o, id] of [[s, g.slId], [t, g.tpId]]) if (o && isWorking(o.status) && rem(o) > Math.abs(pos)) return { act: 'resize', id, qty: Math.abs(pos) };
   return { act: 'ok' };
+}
+
+// ---- MetaTrader 4 / 5 accounts (Owner order 2026-11-21, AUTO-MTHELP) -------------------------------------------------------
+// MT accounts reach the broker link through the connector EA running in the member's own MetaTrader terminal (push agent). They
+// trade CFD / forex symbols in LOTS, named by each broker (the Nasdaq 100 is NDX100, US100, NAS100, USTEC ...), so a chart symbol is
+// mapped to the account's broker symbol: from the account's symbol list when the broker link gives one, else the member picks it
+// once per chart symbol and it is remembered (chart-live.js). No TradeZoro size, symbol or rate limits (21 Nov; the broker applies its own),
+// market / limit / stop only, no server stop loss / take profit, no flatten
+// (a hedging account closes by ticket, which this route does not do yet). Prices on a futures chart are futures prices, not the
+// CFD's, so a chart that is not the broker's own instrument sends MARKET orders only.
+export const MT_SYM = /^[A-Za-z0-9][A-Za-z0-9._#+\-]{0,23}$/;
+// 'MT4' | 'MT5' | '' for one account record (broker id / name, or a platform field the broker link adds)
+export function mtPlatform(x) {
+  if (!x || typeof x !== 'object') return '';
+  const f = [x.brokerId, x.broker_id, x.brokerName, x.broker_name, x.brokerDisplayName, x.institutionName, x.broker, x.platform, x.mtPlatform, x.mt_platform].map(str).join(' ').toLowerCase();
+  const m = /(?:metatrader|\bmt)[ _-]?([45])\b/.exec(f);
+  return m ? 'MT' + m[1] : /metatrader/.test(f) ? 'MT5' : '';
+}
+// chart symbol -> what it is for MetaTrader: { key, label, cands, same }. key = the mapping key (one per instrument, so NQ / MNQ /
+// NDX charts share it); cands = the usual broker names, most common first; same = the chart prices the broker instrument itself
+// (forex / spot metal / crypto pair), so limit and stop prices from the chart are valid. null = not tradable on MetaTrader.
+const MT_INDEX = {
+  NDX: ['Nasdaq 100', ['NDX100', 'US100', 'NAS100', 'USTEC', 'NQ100', 'US100.cash', 'NAS100.cash']],
+  SPX: ['S&P 500', ['US500', 'SPX500', 'SP500', 'US500.cash', 'SPX500.cash']],
+  DJI: ['Dow Jones 30', ['US30', 'DJ30', 'WS30', 'US30.cash']],
+  RUT: ['Russell 2000', ['US2000', 'RUSS2000', 'US2000.cash']],
+  XAU: ['Gold', ['XAUUSD', 'GOLD']], XAG: ['Silver', ['XAGUSD', 'SILVER']], WTI: ['WTI crude oil', ['USOIL', 'WTI', 'XTIUSD', 'USOUSD', 'USOIL.cash']],
+};
+const MT_ROOT = { NQ: 'NDX', MNQ: 'NDX', NDX: 'NDX', NAS100: 'NDX', US100: 'NDX', NDX100: 'NDX', ES: 'SPX', MES: 'SPX', SPX: 'SPX', SPX500: 'SPX', US500: 'SPX', YM: 'DJI', MYM: 'DJI', DJI: 'DJI', US30: 'DJI', RTY: 'RUT', M2K: 'RUT', RUT: 'RUT', GC: 'XAU', MGC: 'XAU', SI: 'XAG', SIL: 'XAG', CL: 'WTI', MCL: 'WTI' };
+const FX = /^(USD|EUR|GBP|JPY|CHF|CAD|AUD|NZD|XAU|XAG|SEK|NOK|DKK|SGD|HKD|MXN|ZAR|TRY|PLN|CNH)(USD|EUR|GBP|JPY|CHF|CAD|AUD|NZD|SEK|NOK|DKK|SGD|HKD|MXN|ZAR|TRY|PLN|CNH)$/;
+const CRYPTO = /^(BTC|ETH|SOL|XRP|LTC|BNB|ADA|DOGE)(USDT|USDC|USD)$/;
+export function mtChartKey(sym) {
+  const t = String(sym || '').replace(/^[^:]+:/, '').toUpperCase().replace(/[12]!$/, '').replace(/[^A-Z0-9]/g, '');
+  if (!t) return null;
+  if (MT_ROOT[t]) { const k = MT_ROOT[t], d = MT_INDEX[k]; return { key: k, label: d[0], cands: d[1], same: false }; }
+  if (t === 'XAUUSD' || t === 'XAGUSD') { const k = t.slice(0, 3), d = MT_INDEX[k]; return { key: k, label: d[0], cands: d[1], same: true }; }
+  if (FX.test(t)) return { key: t, label: t.slice(0, 3) + '/' + t.slice(3), cands: [t], same: true };
+  const c = CRYPTO.exec(t); if (c) return { key: c[1] + 'USD', label: c[1] + '/USD', cands: [c[1] + 'USD', c[1] + 'USDT'], same: true };
+  return null;
+}
+// broker symbols matching a chart key: exact names first, then broker suffix forms (NDX100.r, US100cash, EURUSDm, EURUSD.pro)
+export function mtMatches(key, list) {
+  const k = mtChartKey(key) || (MT_INDEX[key] ? { cands: MT_INDEX[key][1] } : FX.test(key) ? { cands: [key] } : null);
+  if (!k || !Array.isArray(list)) return [];
+  const base = (s) => String(s).toUpperCase().replace(/\.?(CASH|PRO|ECN|RAW|STD|M|R|I|X|C|Z|P|SB|MICRO|MINI)$/, '').replace(/[._#+-]/g, '');
+  const want = new Set(k.cands.map((c) => c.toUpperCase().replace(/\.CASH$/, '').replace(/[._#+-]/g, '')));
+  const out = [];
+  for (const s of list) { const v = str(s); if (!MT_SYM.test(v) || out.includes(v)) continue; if (want.has(base(v)) || want.has(v.toUpperCase().replace(/[._#+-]/g, ''))) out.push(v); }
+  return out;
+}
+// the broker's symbol list, from what the broker link exposes: a symbol enum in the place schema, plus every symbol already seen in
+// the account's positions and orders. [] = unknown (the member picks).
+export function mtSymbolList(schema, positions, orders) {
+  const out = new Set(), add = (v) => { const s = str(v); if (MT_SYM.test(s)) out.add(s); };
+  const seen = new Set();
+  const walk = (o, d) => { if (!o || typeof o !== 'object' || d > 8 || seen.has(o)) return; seen.add(o); for (const k of Object.keys(o)) { if (/^symbols?$|^instruments?$/i.test(k) && o[k] && Array.isArray(o[k].enum)) o[k].enum.forEach(add); else if (/^(symbols|instruments|availableSymbols|symbolList)$/i.test(k) && Array.isArray(o[k])) o[k].forEach((x) => add(typeof x === 'object' && x ? x.symbol || x.name : x)); walk(o[k], d + 1); } };
+  walk(schema, 0);
+  for (const r of [...(positions || []), ...(orders || [])]) { if (!r) continue; const leg = (r.legs || [])[0] || {}; [r.symbol, r.brokerProvidedSymbol, leg.symbol, leg.brokerProvidedSymbol, r.instrument && r.instrument.providerSymbol].forEach(add); }
+  return [...out];
+}
+// lot rules from the place schema when it says (volume min / step / max), else MetaTrader's usual 0.01 / 0.01; max = the schema's, else none
+export function mtLots(schema) {
+  const found = {}; const seen = new Set();
+  const walk = (o, d) => { if (!o || typeof o !== 'object' || d > 8 || seen.has(o)) return; seen.add(o); for (const k of Object.keys(o)) { const v = Number(o[k]);
+    if (/^(volume_?min|min_?volume|lot_?min|min_?lot|minQty|minimumQuantity)$/i.test(k) && v > 0) found.min = v;
+    else if (/^(volume_?step|lot_?step|qtyStep|quantityStep|step)$/i.test(k) && v > 0) found.step = v;
+    else if (/^(volume_?max|max_?volume|lot_?max|max_?lot|maxQty)$/i.test(k) && v > 0) found.max = v;
+    else walk(o[k], d + 1); } };
+  walk(schema, 0);
+  const step = found.step > 0 && found.step <= 1 ? found.step : 0.01, min = found.min > 0 ? found.min : step;
+  return { min, step, max: found.max > 0 ? found.max : Infinity, fromSchema: !!(found.min || found.step) };
+}
+// round a lot size to the step (never up past max), 0 when below the minimum
+export function roundLots(q, r) {
+  const n = Number(q); if (!(n > 0)) return 0;
+  const dec = Math.min(6, Math.max(0, -Math.floor(Math.log10(r.step) + 1e-9)));
+  const v = Number((Math.floor(n / r.step + 1e-9) * r.step).toFixed(dec));
+  return v < r.min - 1e-9 ? 0 : Math.min(v, r.max);
+}
+// MetaTrader price tick for a broker symbol: JPY pairs 0.001, other pairs 0.00001, metals / indices / crypto 0.01
+export const mtTick = (key) => (FX.test(key) && !/^XA[UG]/.test(key) ? (/JPY$/.test(key) ? 0.001 : 0.00001) : 0.01);
+// panel / ladder order on a MetaTrader account -> body for POST /connect/finatic/order. -> { body } | { error }
+export function buildPlaceMt({ sym, side, qty, type, price, lots, same, asset }) {
+  if (!MT_SYM.test(String(sym || ''))) return { error: 'Pick the broker symbol first.' };
+  if (side !== 'buy' && side !== 'sell') return { error: 'Pick Buy or Sell.' };
+  const r = lots || { min: 0.01, step: 0.01, max: Infinity }, q = roundLots(qty, r);
+  if (!q || Math.abs(q - Number(qty)) > 1e-9) return { error: 'Size is ' + r.min + ' to ' + r.max + ' lots, in steps of ' + r.step + '.' };
+  if (!['market', 'limit', 'stop'].includes(type)) return { error: 'Market, limit or stop only.' };
+  if (type !== 'market' && !same) return { error: 'This chart’s prices are not ' + sym + '’s prices at your broker, so only market orders go from here.' };
+  const body = { op: 'place', venue: 'mt', symbol: sym, side, qty: q, type, assetType: asset === 'cfd' ? 'cfd' : 'forex', timeInForce: 'gtc' };
+  if (type !== 'market') { if (!(Number(price) > 0)) return { error: 'Enter a price.' }; const t = mtTick(sym.toUpperCase().replace(/[^A-Z]/g, '').slice(0, 6)); const p = Number((Math.round(Number(price) / t) * t).toFixed(5)); if (type === 'limit') body.limitPrice = p; else body.stopPrice = p; }
+  return { body };
+}
+// the asset class the account's place schema lists for MetaTrader ('cfd' when it names cfd, else 'forex')
+// (FDX asset types have no CFD; a MetaTrader place schema keys its order types by asset class, so its own key is used when present)
+export function mtAsset(schema) {
+  const seen = new Set(); let keys = null;
+  const walk = (o, d) => { if (keys || !o || typeof o !== 'object' || d > 6 || seen.has(o)) return; seen.add(o); const s = o.supportedOrderTypesByAssetClass || o.supported_order_types_by_asset_class; if (s && typeof s === 'object') { keys = Object.keys(s).map((k) => k.toLowerCase()); return; } for (const k of Object.keys(o)) walk(o[k], d + 1); };
+  walk(schema, 0);
+  if (keys && keys.some((k) => /^cfds?$/.test(k))) return 'cfd';
+  return 'forex';
 }

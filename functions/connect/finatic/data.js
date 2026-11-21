@@ -5,7 +5,7 @@
 // SPEED (2026-11-16): the Finatic session is cached per isolate (_fin.js cachedSession, 2 min; a 401 renews it once), so the chart's
 // 10 s poll keeps it warm for the order route, and 'live' reads positions + orders in parallel. 'revoke' always uses a fresh session
 // and drops the cached one afterwards.
-import { gate, readBody, fin, startSession, cachedSession, finSession, dropSession, pagesEntry, json, fail, needsConnect, methodNotAllowed, safe, UPSTREAM_MSG, UUID, ID } from './_fin.js';
+import { gate, readBody, fin, startSession, cachedSession, finSession, dropSession, pagesEntry, json, fail, needsConnect, methodNotAllowed, safe, listAll, UPSTREAM_MSG, UUID, ID } from './_fin.js';
 
 const A = (id) => '/api/v1/accounts/' + encodeURIComponent(id);
 export const OPS = {
@@ -17,6 +17,7 @@ export const OPS = {
   balances: (b) => A(b.accountId) + '/balances',
 };
 const MAX_ORDERS_PER_CALL = 25;
+export const LIVE_PAGE = { limit: 500, maxPages: 4 };   // one call while the account has under 500 orders
 
 async function run(request, env, deps) {
   if (request.method !== 'POST') return methodNotAllowed('POST');
@@ -53,10 +54,11 @@ async function run(request, env, deps) {
     return r.ok ? json({ ok: true, userId: finUser }) : fail(502, 'Could not disconnect');
   }
   if (op === 'live') {
-    const [p, o] = await Promise.all([call('GET', OPS.positions(b), { query: { limit: 200, offset: 0 } }), call('GET', OPS.orders(b), { query: { limit: 200, offset: 0 } })]);
+    // every page (no documented sort order): the newest orders may sit past the first page (21 Nov)
+    const [p, o] = await Promise.all([listAll(call, OPS.positions(b), LIVE_PAGE), listAll(call, OPS.orders(b), LIVE_PAGE)]);
     if (renewFail) return needsConnect();
     if (!p.ok || !o.ok) return fail(502, 'Broker data is unavailable right now', 'upstream');
-    return json({ data: { positions: Array.isArray(p.data) ? p.data : [], orders: Array.isArray(o.data) ? o.data : [] }, userId: finUser });
+    return json({ data: { positions: p.data, orders: o.data, truncated: p.truncated || o.truncated }, userId: finUser });
   }
   if (op === 'fills') {
     const out = [];
@@ -66,6 +68,12 @@ async function run(request, env, deps) {
       (Array.isArray(r.data) ? r.data : []).forEach((f) => out.push(f));
     }
     return json({ data: out, userId: finUser });
+  }
+  if (op === 'balances') {   // all snapshots (21 Nov): no documented sort order, so page 1 alone may not hold the newest one
+    const l = await listAll(call, OPS.balances(b), { limit: 1000, maxPages: 3 });
+    if (renewFail) return needsConnect();
+    if (!l.ok) return fail(502, 'Broker data is unavailable right now', 'upstream');
+    return json({ data: l.data, truncated: l.truncated, userId: finUser });
   }
   const r = await call('GET', OPS[op](b), { query: op === 'accounts' ? { ...page, include_sync_status: 'true' } : page });
   if (!r.ok) return fail(502, 'Broker data is unavailable right now', 'upstream');

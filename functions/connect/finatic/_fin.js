@@ -127,11 +127,34 @@ export async function fin(env, deps, method, path, { headers = {}, query, body }
   try { j = await r.json(); } catch (e) { j = null; }
   if (!j || typeof j !== 'object') {   // HTML error page or garbage: never treat as success
     if (r.ok) console.warn('finatic: non-JSON answer, status ' + r.status);
-    return { ok: false, status: r.status, data: null, bad: r.ok };
+    return { ok: false, status: r.status, data: null, bad: r.ok, errCode: 'non_json' };   // e.g. a gateway's HTML 504 page
   }
   const errs = j.errors || j.error;
   const data = j.data !== undefined ? j.data : (j.success && j.success.data !== undefined ? j.success.data : null);
-  return { ok: r.ok && !(Array.isArray(errs) ? errs.length : errs), status: r.status, data };
+  const ok = r.ok && !(Array.isArray(errs) ? errs.length : errs);
+  return ok ? { ok, status: r.status, data } : { ok, status: r.status, data, ...errInfo(errs) };
+}
+// the broker link's error code + message (e.g. 504 GATEWAY_TIMEOUT / BROKER_ERROR), for the audit row and the log: short, and anything
+// that looks like a key, token or id is cut out. -> { errCode, errMsg }
+export function errInfo(errs) {
+  const e = Array.isArray(errs) ? errs[0] : errs;
+  if (!e || typeof e !== 'object') return typeof e === 'string' ? { errCode: '', errMsg: clean(e) } : {};
+  return { errCode: String(e.code || e.type || '').replace(/[^A-Za-z0-9_.-]/g, '').slice(0, 40), errMsg: clean(e.message || e.detail || '') };
+}
+const clean = (m) => String(m || '').replace(/fntc_[A-Za-z0-9_]+|eyJ[A-Za-z0-9._-]+|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi, '[x]').replace(/\s+/g, ' ').slice(0, 160);
+// Every page of a list (Owner bug 21 Nov, balance "updated 4 days ago"): the broker link's list routes take limit/offset (max 1000)
+// and document no sort order, so reading only the first page (the chart asked for 50 balance snapshots) can miss the newest one.
+// call(method, path, opts) = a session call; -> { ok, data, pages, truncated, r (the failing reply) }
+export async function listAll(call, path, { limit = 200, maxPages = 5 } = {}) {
+  const out = [];
+  for (let i = 0; i < maxPages; i++) {
+    const r = await call('GET', path, { query: { limit, offset: i * limit } });
+    if (!r.ok) return { ok: false, data: out, pages: i, r };
+    const rows = Array.isArray(r.data) ? r.data : [];
+    rows.forEach((x) => out.push(x));
+    if (rows.length < limit) return { ok: true, data: out, pages: i + 1, truncated: false };
+  }
+  return { ok: true, data: out, pages: maxPages, truncated: true };
 }
 
 // X-Finatic-Environment. A live key always wins: FINATIC_ENV=sandbox next to an fntc_live_ key is ignored (with a warning).

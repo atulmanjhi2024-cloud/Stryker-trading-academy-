@@ -72,8 +72,9 @@ const data = (op, extra) => call('/connect/finatic/data', Object.assign({ op, us
 const order = (b, timing) => call('/connect/finatic/order', Object.assign({ src: 'chart', userId: S.userId, accountId: S.acct.id }, b), timing);
 
 // ------------------------------------------------------------------------------------------ accounts
+const ACCT_MS = 120000;
 async function loadAccounts() {
-  S.userId = lsUser(); S.loadErr = '';
+  S.userId = lsUser(); S.loadErr = ''; S.acctAt = now();
   if (!S.userId) { S.accounts = []; S.loaded = true; render(); return; }
   try {
     const r = await data('accounts');
@@ -99,7 +100,7 @@ const menuEvent = (what, id) => { try { window.dispatchEvent(new CustomEvent('st
 // Now (L.balanceOf / L.liveBalance, chart-live-core.js): the newest snapshot of the account's currency, net liquidation first; plus
 // the realised P&L of the broker's own fills AFTER that snapshot; re-read every 30 s while the Trade menu or the header strip is on
 // screen, and at once after every fill / position change. The snapshot's age shows as "updated X min ago" once it is over 2 min old.
-const BAL_MS = 30000, BAL_ROWS = 50, FILL_BATCH = 25, FILL_MAX = 100;
+const BAL_MS = 30000, FILL_BATCH = 25, FILL_MAX = 100;
 S.bal = {};
 S.day = { at: 0, busy: false, key: '', fills: [], truncated: false, sig: '' };   // the active account's fills for today (and since the snapshot)
 const dayStart = () => { const d = new Date(now()); d.setHours(0, 0, 0, 0); return d.getTime(); };   // local midnight, like paper's day P&L
@@ -110,9 +111,9 @@ function balance(id, force) {
   const c = S.bal[id];
   if (c && (c.busy || (!force && now() - c.at < BAL_MS))) return view(id);
   S.bal[id] = { at: now(), busy: true, snap: c && c.snap, none: c && c.none };
-  data('balances', { accountId: id, limit: BAL_ROWS }).then((r) => {
+  data('balances', { accountId: id }).then((r) => {   // the server reads every page now (21 Nov); the newest snapshot wins in L.balanceOf
     const b = L.balanceOf(r.data, a.currency);
-    S.bal[id] = { at: now(), busy: false, snap: b || null, none: !b, rows: Array.isArray(r.data) ? r.data.length : 0 };
+    S.bal[id] = { at: now(), busy: false, snap: b || null, none: !b, rows: Array.isArray(r.data) ? r.data.length : 0, truncated: !!r.truncated };
   }).catch(() => { S.bal[id] = { at: now(), busy: false, snap: c && c.snap, none: !(c && c.snap) }; })
     .then(() => { if (S.acct && S.acct.id === id) dayFills(); menuEvent('balance', id); });
   return view(id);
@@ -123,8 +124,10 @@ function view(id) {
   if (!c.snap) return c.busy && !c.none ? { state: 'loading' } : { state: 'none' };
   const b = c.snap, act = S.acct && S.acct.id === id;
   const lb = act && S.day.key === id + '|' + b.at ? L.liveBalance(b, S.day.truncated ? [] : S.day.fills, S.data.positions) : { amount: b.amount, at: b.at, adjusted: false };
+  const a = S.accounts.find((x) => x.id === id);
+  // 21 Nov: the broker link's own sync state rides along, so a failed sync says so instead of only an old age
   return { state: 'ok', amount: lb.amount, currency: b.currency, upl: b.upl, at: b.at, kind: b.kind, adjusted: !!lb.adjusted, fillsAfter: lb.fillsAfter || 0,
-    age: lb.adjusted ? '' : L.ageText(b.at, now()), snap: b };
+    age: lb.adjusted ? '' : L.balanceNote(b.at, a && a.sync, now()), sync: a && a.sync, snap: b };
 }
 // today's fills of the active account (orders filled since local midnight, or since the snapshot when that is older). A filled order's
 // fills never change, so they are cached per order and only NEW filled orders are read (25 ids per call): the data route allows 20
@@ -193,6 +196,7 @@ setInterval(() => {
   if (document.hidden || !S.accounts.length) return;
   const menu = shown('#stkc-trade-pop') || shown('.stkpt-tmenu') || !!document.getElementById('stktm-mg'), strip = shown('#stkas');
   if (menu) S.accounts.forEach((a) => balance(a.id));
+  if ((menu || strip) && now() - (S.acctAt || 0) > ACCT_MS && !S.acctBusy) { S.acctBusy = true; loadAccounts().finally(() => { S.acctBusy = false; }); }   // the broker link's sync state (21 Nov)
   else if (strip && S.acct) balance(S.acct.id);
   if ((menu || strip) && S.acct) { dayFills(); menuEvent('balance', S.acct.id); }   // also re-draws the "updated X min ago" age
 }, TEST && TEST.balMs ? TEST.balMs : BAL_MS);
@@ -431,9 +435,10 @@ function confirmSheet(d) {
 async function write(body, what, pending) {
   S.busy = true; S.lastWriteAt = now(); S.pending = pending || null; render();
   const tm = { op: body.op, t0: performance.now() };
-  try { const r = await order(body, tm); tm.ok = true; toast(what + ' sent. ' + (r.status ? 'Broker status: ' + r.status + '.' : ''), 'success'); return r; }
+  try { const r = await order(body, tm); tm.ok = true; toast(what + ' sent. ' + (r.settled ? 'The broker was slow to answer, so we checked: the order is there. ' : '') + (r.status ? 'Broker status: ' + r.status + '.' : ''), 'success'); return r; }
   catch (e) {
-    if (e.code === 'unknown' || e.network) { S.unknown = true; toast('No clear answer from the broker. The order may or may not be live. Check the working orders before sending again.', 'error'); }
+    // the server's message says what the broker answered and whether a read already looked for the order (21 Nov)
+    if (e.code === 'unknown' || e.network) { S.unknown = true; toast(e.code === 'unknown' && e.message ? e.message : 'No clear answer from the broker. The order may or may not be live. Check the working orders before sending again.', 'error'); }
     else toast(what + ' refused: ' + e.message, 'error');
     return null;
   } finally {

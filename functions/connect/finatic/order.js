@@ -18,9 +18,9 @@
 // is cached per isolate (_fin.js cachedSession, 2 min) and the poll / 'env' call warm it, the fresh read fetches positions and orders
 // in parallel WITH the audit 'attempt' row (both must succeed before anything is sent), and the audit result row is written after the
 // reply (deps.defer = ctx.waitUntil). Every reply carries Server-Timing (rl, auth, admin, gate, sess, read, audit, fin, total).
-import { gate, readBody, cachedSession, finSession, ordersBlocked, envMode, json, fail, needsConnect, methodNotAllowed, safe, pagesEntry, deferOf, UPSTREAM_MSG, UUID, ID } from './_fin.js';
+import { gate, readBody, cachedSession, finSession, ordersBlocked, envMode, json, fail, needsConnect, methodNotAllowed, safe, pagesEntry, deferOf, listAll, UPSTREAM_MSG, UUID, ID } from './_fin.js';
 import { openAudit, liveSwitchOn, getBracket, putBracket, delBracket, logBracket } from './_audit.js';
-import { validContract, workingOrders, netPosition, exposureError, flattenPlan, IDEM, MAX_QTY, groupId, bracketCheck, bracketPlan } from '../../../assets/chart-live-core.js';
+import { validContract, workingOrders, netPosition, exposureError, flattenPlan, IDEM, MAX_QTY, groupId, bracketCheck, bracketPlan, contractOf } from '../../../assets/chart-live-core.js';
 
 export const MAX_FUT = 2, MAX_EQ = 100, ORDERS_PER_MIN = 10;
 const TYPES = ['market', 'limit', 'stop', 'stop_limit'], TIFS = ['day', 'gtc', 'ioc', 'fok'], ASSETS = ['future', 'equity'];
@@ -155,8 +155,9 @@ async function run(request, env, deps) {
     return r.ok ? json({ data: r.data, env: envMode(env) }) : fail(r.status === 403 ? 403 : 502, r.status === 403 ? 'Trading is not enabled for this account yet' : 'Broker data is unavailable right now');
   }
   const read = async () => {
-    const [p, o] = await Promise.all([call('GET', A + '/positions', { query: { limit: 200 } }), call('GET', A + '/orders', { query: { limit: 200 } })]);
-    return p.ok && o.ok ? { positions: Array.isArray(p.data) ? p.data : [], orders: Array.isArray(o.data) ? o.data : [] } : null;
+    // every page (21 Nov): the list has no documented sort order, so a working order past the first 200 must still count
+    const [p, o] = await Promise.all([listAll(call, A + '/positions', { limit: 500, maxPages: 4 }), listAll(call, A + '/orders', { limit: 500, maxPages: 4 })]);
+    return p.ok && o.ok ? { positions: p.data, orders: o.data, truncated: p.truncated || o.truncated } : null;
   };
   if (op === 'bracket') {
     if (renewFail) return needsConnect();
@@ -193,15 +194,29 @@ async function run(request, env, deps) {
 
   if (op === 'flatten') return await flatten(env, deps, b, A, send, read, audit, sandbox, st0);
   let r;
+  const sentAt = Date.now();
   if (op === 'place') r = await send('POST', A + '/orders', idem, { order, paperTradeConfirmed: sandbox });
   else if (op === 'modify') r = await send('PATCH', A + '/orders/' + encodeURIComponent(b.orderId), idem, { order, paperTradeConfirmed: sandbox });
   else r = await send('DELETE', A + '/orders/' + encodeURIComponent(b.orderId), idem);
   const res = r.data && r.data.order ? r.data : (r.data || {});
-  const brokerOrderId = String((res.order && (res.order.orderId || res.order.brokerOrderId)) || b.orderId || '');
+  let brokerOrderId = String((res.order && (res.order.orderId || res.order.brokerOrderId)) || b.orderId || '');
   const unknown = r.status === 0 || r.status >= 500 || r.bad;   // timeout / network / garbage: it may or may not have reached the broker
-  const accepted = r.ok && res.accepted !== false;
-  audit.finish({ result: accepted ? 'accepted' : unknown ? 'unknown' : 'rejected', httpStatus: r.status, brokerOrderId, message: String(res.message || '').slice(0, 200) });
-  if (!accepted && unknown && chart) return fail(502, 'No clear answer from the broker. The order may or may not have gone through. Checking positions and orders.', 'unknown');
+  let accepted = r.ok && res.accepted !== false;
+  // what the broker link said, for the audit row (Owner bug 21 Nov: the row said only "unknown, 504" with an empty message)
+  const said = (r.status ? 'HTTP ' + r.status : 'no answer (timeout or network)') + (r.errCode ? ' ' + r.errCode : '') + (r.errMsg ? ': ' + r.errMsg : '');
+  // SETTLE (Owner bug 21 Nov): a place with no clear answer (the broker link answered 504) is checked HERE with fresh reads before the
+  // reply: a new order for this contract + side + quantity that was not in the pre-send read = it reached the broker. Nothing is ever
+  // re-sent. Not found = still 'unknown' (the chart keeps new orders blocked until its own read lands).
+  let settled = null;
+  if (!accepted && unknown && chart && op === 'place' && st0) {
+    settled = await t.step('settle', settle(read, st0, order, sentAt, deps));
+    if (settled.found) { accepted = true; brokerOrderId = settled.found.id; }
+  }
+  audit.finish({ result: accepted ? 'accepted' : unknown ? 'unknown' : 'rejected', httpStatus: r.status, brokerOrderId,
+    message: (settled ? (settled.found ? 'unclear answer (' + said + '), order found by read: ' + settled.found.status : 'unclear answer (' + said + '), not found in ' + settled.reads + ' read(s)') : (res.message ? String(res.message) : unknown || !accepted ? said : '')).slice(0, 300) });
+  if (!accepted && unknown && chart) return fail(502, op === 'place' && settled && settled.reads
+    ? 'No clear answer from the broker (' + (r.status ? 'code ' + r.status : 'no answer') + '), and the order did not show up at the broker in the next ' + settled.secs + ' s. It may still appear. New orders stay blocked until the next read settles it.'
+    : 'No clear answer from the broker (' + (r.status ? 'code ' + r.status : 'no answer') + '). The order may or may not have gone through. Checking positions and orders.', 'unknown');
   if (!accepted) return fail(r.status === 403 ? 403 : r.status === 429 ? 429 : 502, r.status === 403 ? 'Trading is not enabled for this account yet' : (res.message ? String(res.message).slice(0, 200) : 'The broker did not accept the order'));
   let br;
   if (bracket && op === 'place') {   // the children go in after the fill (op 'bracket'); the group is the server's record of them
@@ -214,8 +229,37 @@ async function run(request, env, deps) {
     const gid = groupId(b.accountId, String(b.symbol).toUpperCase());
     try { const grp = modGroup; if (grp) { if (grp.slId === b.orderId) grp.sl = order.stopPrice; else grp.tp = order.price; await putBracket(env, deps, gid, grp); br = viewGroup(grp); } } catch (e) {}
   }
-  return json({ ok: true, op, env: envMode(env), orderId: brokerOrderId, status: res.order && res.order.status || '', accepted: true, strategy: res.executionStrategy || '', superseded: res.supersededOrderId || '', ...(br ? { bracket: br } : {}) });
+  return json({ ok: true, op, env: envMode(env), orderId: brokerOrderId, status: settled && settled.found ? settled.found.status : (res.order && res.order.status || ''), accepted: true, strategy: res.executionStrategy || '', superseded: res.supersededOrderId || '', ...(settled && settled.found ? { settled: true } : {}), ...(br ? { bracket: br } : {}) });
   } finally { release(); }
+}
+// Settle an unclear place: up to SETTLE_MS.length fresh reads; an order that was NOT in the pre-send read, for the same contract, side and
+// quantity, created no earlier than a minute before the send = ours (the per-account lock means no other place from this site ran in
+// between). -> { found: { id, status } | null, reads, secs }
+export const SETTLE_MS = [700, 1500, 2500];
+export function findNew(before, after, order, sentAt) {
+  const old = new Set((before || []).map((o) => String(o && (o.orderId || o.id) || '')));
+  for (const o of after || []) {
+    const id = String(o && (o.orderId || o.id) || ''); if (!id || old.has(id)) continue;
+    const leg = (o.legs || [])[0] || {};
+    if (contractOf(leg) !== order.symbol && contractOf(o) !== order.symbol) continue;
+    const side = String(leg.side || o.side || o.action || '').toLowerCase(); if (side && side !== order.action) continue;
+    const q = Number(leg.quantity != null ? leg.quantity : o.orderQty != null ? o.orderQty : o.quantity); if (Number.isFinite(q) && q > 0 && q !== order.orderQty) continue;
+    const c = Date.parse(o.orderCreatedAt || o.createdAt || ''); if (Number.isFinite(c) && c < sentAt - 60000) continue;
+    return { id, status: String(o.status || '').toUpperCase() };
+  }
+  return null;
+}
+async function settle(read, st0, order, sentAt, deps) {
+  const sleep = deps.sleep || ((ms) => new Promise((r) => setTimeout(r, ms)));
+  let reads = 0, ms = 0;
+  for (const w of SETTLE_MS) {
+    await sleep(w); ms += w;
+    const st = await read(); if (!st) continue;
+    reads++;
+    const f = findNew(st0.orders, st.orders, order, sentAt);
+    if (f) return { found: f, reads, secs: Math.round(ms / 1000) };
+  }
+  return { found: null, reads, secs: Math.round(ms / 1000) };
 }
 const locks = new Map();
 // -> release(). Waits for the previous holder (max 15 s, then goes ahead: a stuck request must not block the account forever).

@@ -52,7 +52,7 @@ async function run(b, w, h, mobile, theme) {
     M.calls.push({ path: u.pathname, op: body.op, body, at: Date.now() });
     if (u.pathname.endsWith('/session')) return r.fulfill(j({ configured: true }));
     if (u.pathname.endsWith('/data')) {
-      if (body.op === 'accounts') return r.fulfill(j({ userId: US, data: [{ accountId: ACC, accountName: 'DEMO 5551234', accountNumber: 'DEMO5551234', brokerName: 'tradovate', currency: 'USD' }] }));
+      if (body.op === 'accounts') return r.fulfill(j({ userId: US, data: [{ accountId: ACC, accountName: 'DEMO 5551234', accountNumber: 'DEMO5551234', brokerName: 'tradovate', currency: 'USD', ...(M.sync ? { syncStatus: M.sync } : {}) }] }));
       if (body.op === 'live') return r.fulfill(j({ data: { positions: M.positions, orders: M.orders } }));
       if (body.op === 'balances') return r.fulfill(j({ data: M.balances }));
       if (body.op === 'fills') return r.fulfill(j({ data: M.fills.filter((f) => body.orderIds.includes(f.orderId)) }));
@@ -157,6 +157,23 @@ async function run(b, w, h, mobile, theme) {
   mb = await menuBal();
   check(mb && mb.v === '$53,961.14' && mb.age === '', tag + ': Trade menu: new balance, no age line (snapshot is fresh)', mb);
   await p.screenshot({ path: OUT + '/livebal-' + tag + '-3-menu-fresh.png' });
+  await p.keyboard.press('Escape'); await p.evaluate(() => { const m = document.getElementById('stkc-trade-pop'); if (m) m.hidden = true; });
+
+  // D (21 Nov, "updated 4 days ago"): the broker link reports a FAILED sync and the newest snapshot is 4 days old -> the note under the
+  // balance says "sync failed" (the cause), and the accounts list (with the sync state) is re-read every 2 min while the menu / strip shows
+  M.balances = [{ balanceId: 'b9', currencyCode: 'USD', netLiquidationValue: '53582.88', lastUpdated: iso(T0 - 4 * 86400e3) }];
+  M.positions = []; M.orders = []; M.fills = [];
+  M.sync = 'FAILED';
+  const a0 = n('accounts');
+  await p.evaluate(() => { window.__off = 31000 + 130000; });
+  check(await (async () => { for (let i = 0; i < 60; i++) { if (n('accounts') > a0) return true; await sleep(100); } return false; })(), tag + ': accounts (sync state) re-read after 2 min while the strip shows');
+  await p.evaluate(() => { window.__stkLive.state.reading = false; return window.__stkLive.read(); });
+  await openMenu();
+  check(await wait((id) => { const c = document.querySelector('#stkc-trade-pop [data-bal="' + id + '"] .stktm-age'); return c && /sync failed/.test(c.textContent); }, ACC, 12000), tag + ': failed broker sync shows "sync failed" under the 4-day-old balance', await menuBal());
+  const al2 = await p.evaluate((id) => { const c = document.querySelector('#stkc-trade-pop [data-bal="' + id + '"]'); const a = c.querySelector('.stktm-age'), v = c.querySelector('.stktm-bv'); const tr = (e) => { const rg = document.createRange(); rg.selectNodeContents(e); return rg.getBoundingClientRect().right; }; return { clip: a.scrollWidth > a.clientWidth + 1, dr: Math.abs(tr(a) - tr(v)), hscroll: document.documentElement.scrollWidth > innerWidth }; }, ACC);
+  check(!al2.clip && al2.dr <= 1 && !al2.hscroll, tag + ': "sync failed" not clipped, right edge on the amount (<= 1 px), no horizontal scroll', al2);
+  await p.screenshot({ path: OUT + '/livebal-' + tag + '-4-menu-syncfail.png' });
+  const pop2 = await p.$('#stkc-trade-pop'); if (pop2) await pop2.screenshot({ path: OUT + '/crop-livebal-' + tag + '-4-syncfail.png' });
   check(!M.calls.some((c) => c.WRITE && ['place', 'cancel', 'modify', 'flatten'].includes(c.WRITE)), tag + ': no order op was sent', M.calls.filter((c) => c.WRITE).map((c) => c.WRITE));
   check(errors.length === 0, tag + ': no console errors ' + errors.slice(0, 2).join(' | '));
   await ctx.close();

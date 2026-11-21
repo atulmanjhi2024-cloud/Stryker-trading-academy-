@@ -265,7 +265,7 @@ export function acctInfo(x) {
   const alnum = number.replace(/[^A-Za-z0-9]/g, '');
   return { id, broker, number, alt, last4: alnum.slice(-4), text: number ? broker + ' ' + number : broker,
     brokerId: str(x && (x.brokerId || x.broker_id)).toLowerCase(), brokerAccountId: str(x && (x.brokerAccountId || x.broker_account_id)),
-    grantId: str(x && (x.grantId || x.grant_id || x.accountGrantId || x.account_grant_id)), currency: str(x && (x.currencyCode || x.currency_code || x.currency)).toUpperCase() };
+    grantId: str(x && (x.grantId || x.grant_id || x.accountGrantId || x.account_grant_id)), currency: str(x && (x.currencyCode || x.currency_code || x.currency)).toUpperCase(), sync: syncInfo(x) };
 }
 // what every live surface shows for an account: the Owner's own label (Edit details) wins, else the broker's account name.
 // short = tight spots (phone badge, chip, order panel): "Apex eval 1" | "FNFTFAGAURAVSINGH27021"; badge = the LIVE badge, header
@@ -348,6 +348,26 @@ export function liveBalance(snap, fills, positions) {
   if (!r.complete) return Object.assign(base, { fillsAfter: r.fills, why: r.why });
   // netliq at a flat snapshot = cash then; now = that + realised since (open P&L is shown separately as UP&L)
   return { amount: Math.round((snap.amount + r.value) * 100) / 100, at: snap.at, adjusted: true, fillsAfter: r.fills, why: '' };
+}
+// The broker link's own sync state for one account (GET /accounts?include_sync_status=true, Owner bug 21 Nov "updated 4 days ago"):
+// -> { status: 'ok' | 'syncing' | 'failed' | '', at (ms of its last sync) | null, error }. Field names per the provider's schema
+// (syncStatus, lastSyncedAt, syncError) plus snake_case and a nested syncStatus object; anything unknown -> ''.
+export function syncInfo(x) {
+  if (!x || typeof x !== 'object') return { status: '', at: null, error: '' };
+  const o = x.syncStatus && typeof x.syncStatus === 'object' ? x.syncStatus : x.sync && typeof x.sync === 'object' ? x.sync : x;
+  const raw = str(o.syncStatus || o.sync_status || (o !== x ? o.status : '')).toLowerCase();   // the account's own 'status' is not a sync state
+  const err = str(o.syncError || o.sync_error || o.error).slice(0, 120);
+  const at = stampOf({ updatedAt: o.lastSyncedAt || o.last_synced_at || o.balancesSyncedAt || o.lastSyncAt || x.lastSyncedAt || x.last_synced_at });
+  const status = /fail|error|reauth|expired|revoked|disconnect/.test(raw) || err ? 'failed' : /sync|pending|progress|queued|running|started/.test(raw) && !/synced|succeeded/.test(raw) ? 'syncing' : raw ? 'ok' : '';
+  return { status, at, error: err };
+}
+// what the balance line says under the figure: the snapshot's age, and when the broker link itself reports a failed sync, that instead
+// (it is the reason the figure is old, and Reconnect fixes it)
+export function balanceNote(snapAt, sync, now) {
+  const age = ageText(snapAt, now);
+  if (!age) return '';
+  if (sync && sync.status === 'failed') return 'sync failed';   // short: it sits under the figure in an 11 px line
+  return age;
 }
 // "updated 3 min ago" when the snapshot is older than `after` ms (default 2 min), else ''. Never "delayed" / "real-time".
 export function ageText(at, now, after = 120000) {

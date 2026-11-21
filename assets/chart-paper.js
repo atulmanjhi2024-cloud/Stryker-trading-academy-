@@ -1966,6 +1966,18 @@ function flattenSym(sym){
   return act(() => { acct.cancelAll(sp.symbol); return acct.position(sym) ? acct.closePosition(sym) : []; }, 'Flattened ' + showSym(sym) + ' (paper)');
 }
 function setTrailing(sym){ return act(() => { acct.setTrailing(sym, true); return []; }); }
+// COPY TRADING (assets/chart-copy.js): a Paper follower of a live leader account. Like act(), but it runs while a live account is
+// picked (the leader); throws the engine's own message (shown in the copy status list).
+function copyRun(fn){
+  if (!acct) throw new Error('Paper trading is still loading.');
+  if (!paperOn()) throw new Error('Paper trading is off on this chart.');
+  return withLive(() => {
+    syncFromLocal();
+    const r = fn(acct, specOf);
+    if (r && r.events && r.events.length) onEvents(r.events); else if (Array.isArray(r) && r.length) onEvents(r); else { save(); renderAll(); }
+    return r;
+  });
+}
 
 const CSS = `
 .stkpt-bb{ display:inline-flex; align-items:center; gap:8px; min-width:0; }
@@ -2290,7 +2302,7 @@ export function mountPaper(ws, opts){
   setTimeout(start, 4000);                    // no auth answer: run as a guest
   window.__stkPaper = {
     get account(){ return acct; }, get liveAccount(){ return replay ? liveAcct : acct; }, get replay(){ return !!replay; }, get leader(){ return leader; }, get uid(){ return uid; }, setReplay, replayFeed, resetReplayAccount,
-    openTicket, openPanel, placeOrder, orderPanel, flattenSym, setTrailing, toast, closePos, reversePos, flattenAll, cancelOrder, poll, pushLines, sendToJournal,
+    openTicket, openPanel, placeOrder, orderPanel, flattenSym, setTrailing, copyRun, toast, closePos, reversePos, flattenAll, cancelOrder, poll, pushLines, sendToJournal,
     ctxAt, ctxOrder, commitDrag, runHotkey, hotkeys: { get: hkMap, set: hkSave }, setLiveHook, get live(){ return liveOn() ? LIVE : null; }, lastPrice: chartLast, renderAll, activeSymbol: () => { const c = activeCell(); return c ? c.symbol : ''; }, tradeSym, setTradeSym, acctSummary, setEnabled: setPaperEnabled, get enabled(){ return paperOn(); }, tradeUi, get tradeUiOn(){ return tradeUiOn(); }, paperOff, symMeta, openTradeMenu: () => openTradeMenu && openTradeMenu(), label: LABEL, toasts: toastLog, get saves(){ return { saves: saveCount, pushes: cloudPushes, busy: cloudBusy, pending: cloudFirstPending }; }
   };
 }

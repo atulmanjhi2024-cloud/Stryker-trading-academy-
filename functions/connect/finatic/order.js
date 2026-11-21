@@ -69,6 +69,11 @@ async function run(request, env, deps) {
   if (g instanceof Response) return g;
   const b = await readBody(request);
   if (!b || typeof b !== 'object') return fail(400, 'Bad request');
+  return exec(request, env, deps, g, b);
+}
+// Everything after the door (gate + body). Also called by copy.js (copy trading across the member's OWN accounts) once per follower
+// account with the SAME signed-in member (g): every guard below (ownership, consent, kill switches, audit row, idempotency) runs again.
+export async function exec(request, env, deps, g, b) {
   const op = b.op;
   // MEMBER LIVE (Owner 21 Nov): the one-time "Enable live trading" acceptance. {op:'consent', accept:true, version} -> stored server-side
   // (liveConsent/{uid}: uid, time, version). Only the current version is accepted; nothing else in the body is read.
@@ -136,7 +141,7 @@ async function run(request, env, deps) {
   // independent checks in parallel; each verdict is applied below in the old order (bracket sync rate, kill switch, member gates, session)
   // (no orders-a-minute limit since 21 Nov; the bracket sync keeps its own 40-a-minute cap: it is a background poll, not an order)
   const [limited, sw, s0, mc, mb] = await t.step('gate', Promise.all([
-    op === 'bracket' ? syncLimited(g.uid) : false,
+    deps.fanChild ? false : op === 'bracket' ? syncLimited(g.uid) : false,   // a copied follower's bracket sync rides on the leader's (copy.js)
     op !== 'schema' && live ? liveSwitchOn(env, deps).then((v) => ({ v }), (e) => ({ err: true, why: String((e && e.reason) || 'unknown error').slice(0, 160) })) : { v: true },   // kill switch, fails closed
     userId ? cachedSession(env, deps, userId) : null,
     write ? hasConsent(env, deps, g.uid).then((v) => ({ v }), () => ({ err: true })) : { v: true },     // "Enable live trading" accepted
@@ -187,7 +192,7 @@ async function run(request, env, deps) {
     finally { release(); }
   }
 
-  const entry = { uid: g.uid, env: envMode(env), op, src: chart ? 'chart' : 'journal', account: b.accountId, symbol: order ? (order.symbol || '') : (op === 'flatten' ? String(b.symbol).toUpperCase() : ''), side: order ? (order.action || '') : '', qty: order && order.orderQty ? order.orderQty : 0, type: order ? (order.orderType || '') : '', orderId: b.orderId || '' };
+  const entry = { uid: g.uid, env: envMode(env), op, src: chart ? (deps.fanChild ? 'copy' : 'chart') : 'journal', account: b.accountId, symbol: order ? (order.symbol || '') : (op === 'flatten' ? String(b.symbol).toUpperCase() : ''), side: order ? (order.action || '') : '', qty: order && order.orderQty ? order.orderQty : 0, type: order ? (order.orderType || '') : '', orderId: b.orderId || '' };
   // audit 'attempt' row: written before anything is sent (no audit, no order; also the duplicate guard for the idemKey).
   // For a chart place / flatten it runs in parallel with the fresh read that has to happen anyway.
   const opened = t.step('audit', openAudit(env, deps, entry, chart ? b.idemKey : undefined).then((a) => ({ a }), (e) => ({ e })));

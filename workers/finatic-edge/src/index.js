@@ -5,8 +5,9 @@
 import { handle as order } from '../../../functions/connect/finatic/order.js';
 import { handle as data } from '../../../functions/connect/finatic/data.js';
 import { handle as session } from '../../../functions/connect/finatic/session.js';
+import { handle as copy } from '../../../functions/connect/finatic/copy.js';
 
-export const ROUTES = { '/connect/finatic/order': order, '/connect/finatic/data': data, '/connect/finatic/session': session };
+export const ROUTES = { '/connect/finatic/order': order, '/connect/finatic/data': data, '/connect/finatic/session': session, '/connect/finatic/copy': copy };
 
 export function route(request, env, ctx) {
   const url = new URL(request.url);

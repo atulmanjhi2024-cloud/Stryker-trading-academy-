@@ -21,7 +21,7 @@ const enc = (p) => p.split('/').map(encodeURIComponent).join('/');
 
 // ---- tiny document store: Firestore REST with the service account, or deps.store in tests -------------------------------
 // get -> object | null (throws when unreadable); create -> true, or throws e.duplicate; set -> merge the given fields (throws)
-function store(env, deps) {
+export function store(env, deps) {
   if (deps.store) return deps.store;
   return {
     async get(path) {

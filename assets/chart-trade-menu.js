@@ -100,6 +100,8 @@ export function draw(pop, live, paper) {
     if (!live.accounts.length) h += '<div class="stktm-empty">' + (live.loaded ? 'No broker connected yet.' : 'Loading accounts…') + '</div>';
     h += live.accounts.map((a) => liveRow(a, live, act && act.id === a.id)).join('') + '</div>';
     h += '<div class="stktm-foot"><button type="button" role="menuitem" class="stktm-pill stktm-add" data-a="connect" tabindex="-1">' + SV(16, '<path d="M12 5v14M5 12h14"/>', 2.2) + 'Connect a broker</button><button type="button" role="menuitem" class="stktm-pill stktm-manage" data-x="manage" tabindex="-1">' + SLIDERS + 'Manage</button></div>';
+    // COPY TRADING (Owner 21 Nov 2026): one leader account copied to the member's other accounts (assets/chart-copy.js sets __stkCopy)
+    if (window.__stkCopy && live.accounts.length) { const st = window.__stkCopy.badge(); h += '<button type="button" role="menuitem" class="stktm-pill stktm-copytr" data-x="copytrade" tabindex="-1">' + SV(16, '<rect x="8" y="8" width="12" height="12" rx="2"/><path d="M4 16V6a2 2 0 0 1 2-2h10"/>') + '<span>Copy trading</span>' + (st ? '<span class="stktm-copyst' + (st.on ? ' on' : '') + '">' + esc(st.text) + '</span>' : '') + '</button>'; }
     // the saved connection expired: a quiet Reconnect (reloads it, no broker portal); "Connect a broker" always opens the portal
     if (act && live.readErr && /renew/i.test(live.readErr)) h += '<button type="button" role="menuitem" class="stktm-pill stktm-recon" data-a="reconnect" tabindex="-1">' + SV(16, '<path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/>', 2.2) + 'Reconnect</button>';
     if (window.__stkHl) h += '<button type="button" role="menuitem" class="stktm-pill stktm-hl" data-a="hl" tabindex="-1">Hyperliquid wallet</button>';   // admin only: hl-trade.js sets window.__stkHl after its admin check
@@ -136,6 +138,7 @@ function onClick(e, root, pop) {
     const k = x.dataset.x;
     if (k === 'gear') openGear(pop, x);
     else if (k === 'manage') openSheet(pop);
+    else if (k === 'copytrade') { closeGear(); pop.hidden = true; const ob = document.getElementById('stkc-paper-btn'); if (ob) ob.setAttribute('aria-expanded', 'false'); if (window.__stkCopy) window.__stkCopy.open(); }
     else if (k === 'edit') { closeGear(); openEditor(root, x.dataset.id); }
     else if (k === 'paperoff') askPaperOff(pop);
     else if (k === 'off') askDisconnect(pop, x.dataset.id);

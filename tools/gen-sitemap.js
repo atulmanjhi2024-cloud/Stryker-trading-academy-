@@ -74,6 +74,7 @@ const PAGES = [
   ['/help/connect-broker-tastytrade', '0.4', 'monthly'],
   ['/help/connect-broker-tradovate', '0.4', 'monthly'],
   ['/help/connect-broker-webull', '0.4', 'monthly'],
+  ['/help/copy-trading',   '0.4', 'monthly'],
   ['/help/connect-your-own-data', '0.5', 'monthly'],
   ['/compare',              '0.6', 'monthly'],
   ['/indicators',           '0.7', 'weekly']

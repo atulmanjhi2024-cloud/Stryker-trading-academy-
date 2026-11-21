@@ -73,7 +73,15 @@ async function call(url, body, timing, fresh) {
   return j || {};
 }
 const data = (op, extra) => call('/connect/finatic/data', Object.assign({ op, userId: S.userId }, extra || {}));
-const order = (b, timing) => call('/connect/finatic/order', Object.assign({ src: 'chart', userId: S.userId, accountId: S.acct.id }, b), timing);
+// COPY TRADING (assets/chart-copy.js sets window.__stkCopy): while this account is the member's copy leader, a write goes to the
+// copy route, which runs the leader order first and, only once it is accepted, one order per follower account (functions/connect/
+// finatic/copy.js). The reply is the leader's own reply plus copy.results.
+const COPY_OPS = ['place', 'modify', 'cancel', 'flatten'];
+const order = (b, timing) => {
+  const lead = Object.assign({ src: 'chart', userId: S.userId, accountId: S.acct.id }, b), cp = window.__stkCopy;
+  if (cp && COPY_OPS.includes(b.op) && cp.active(S.acct.id)) return call('/connect/finatic/copy', { op: 'fan', lead }, timing).then((r) => { try { cp.after(lead, r); } catch (e) {} return r; });
+  return call('/connect/finatic/order', lead, timing);
+};
 
 // ------------------------------------------------------------------------------------------ accounts
 const ACCT_MS = 120000;
@@ -558,7 +566,7 @@ async function syncGroup() {
   const code = S.group ? S.group.code : i ? i.code : ''; if (!code) return;
   if (!S.group && S.groupCode === code) return;   // already checked this contract since the account was picked: nothing open
   S.syncing = true; const id = S.acct.id;
-  try { const r = await order({ op: 'bracket', symbol: code }); if (S.acct && S.acct.id === id) { S.groupCode = code; setGroup(r.group, code); if (r.did && /closed|placed|oco/.test(r.did)) fastReads(); } }
+  try { const r = await order({ op: 'bracket', symbol: code }); if (S.acct && S.acct.id === id) { S.groupCode = code; setGroup(r.group, code); if (r.did && /closed|placed|oco/.test(r.did)) fastReads(); } const cp = window.__stkCopy; if (cp && cp.active(id)) cp.sync(code); }
   catch (e) { /* the next read retries */ }
   finally { S.syncing = false; }
 }
@@ -846,6 +854,7 @@ export function mountLive(paperApi, opts) {
   if (!document.getElementById('stklv-css')) { const st = document.createElement('style'); st.id = 'stklv-css'; st.textContent = CSS; document.head.appendChild(st); }
   P.setLiveHook({ active, noLiveWhy, lines, chipText, badgeFor, tickOf, chipX, drag, flattenActive, openTicket, renderHead, renderSummary, renderView, foot, dock, dockTrades, ladder, domState, cancel, flatten, caps, opInfo, placeTicket, kill, killOn, retryEnv, enableLive });
   loadMeta(); loadAccounts();
+  import('./chart-copy.js?v=1182').then((m) => m.mountCopy({ live: window.__stkLive, paper: P, toast })).catch((e) => console.warn('TradeZoro: copy trading', e));   // Trade menu > Copy trading
   window.addEventListener('storage', (e) => { if (e.key === lsUserKey()) loadAccounts(); });
   Object.assign(window.__stkLive, { connect, reconnect, pick, leave, read, loadAccounts, info, confirmSheet, balance, summary, metaOf, saveMeta, disconnect, L, envCheck, retryEnv, syncGroup, enableLive, get admin() { return isAdmin; } });
   Object.defineProperty(window.__stkLive, 'blockReason', { configurable: true, get: () => blockReason() });   // a getter (Object.assign would copy one frozen value)

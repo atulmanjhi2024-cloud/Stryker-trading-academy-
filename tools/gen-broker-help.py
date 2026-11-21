@@ -157,6 +157,7 @@ def hub():
 <li>Try your first order, or click <strong>Enable live trading</strong>. A short risk notice opens.</li>
 <li>Read it, tick the box and click <strong>Enable live trading</strong>. We save when you accepted it.</li></ol>
 <p>After that, clicking Buy, Sell, Flatten or the order book sends a real order to your broker. There is no extra confirm step. TradeZoro is not a broker and gives no advice; you are responsible for your orders. If you click <strong>Not now</strong>, the account stays view-only. TradeZoro can switch live trading off for everyone or for one account at any time.</p>
+<p>Have several accounts? <a href="/help/copy-trading">Copy trading across your accounts</a> copies an order you place on one of them to the others.</p>
 <h2 id="disconnect">How to disconnect</h2>
 <ol><li>Open the <strong>Trade</strong> menu.</li><li>Click the small gear on the account, then <strong>Disconnect</strong> (or <strong>Manage</strong> to see all accounts), then confirm.</li></ol>
 <p>This removes the link. Trades already imported stay in your journal. You can connect again any time. You can also remove TradeZoro\u2019s access in your broker\u2019s own settings.</p>
@@ -200,12 +201,51 @@ def broker(k):
 <p class="bh-small">Other brokers: %(others)s</p>
 %(disc)s''' % dict(n=b['name'], hub=HUB, login=b['login'], types=types, extra=b['extra'], path=PATH, auth=auth, syncs=b['syncs'], lim=lim, faq=faq, others=others, disc=DISC)
 
+COPY_PATH = '<ol class="bh-path" aria-label="The steps in TradeZoro"><li>Charts</li><li>Trade menu</li><li>Copy trading</li><li>Leader</li><li>Followers</li><li>Save</li></ol>'
+def copy_page():
+    # Copy trading across your own accounts (Owner order 21 Nov 2026). The panel links here (assets/chart-copy.js).
+    return '''<p>Copy trading sends an order you place on one of your accounts (the <strong>leader</strong>) to your other accounts (the <strong>followers</strong>). It works across brokers and with Paper. It only ever uses <strong>your own</strong> connected accounts. You cannot copy another member, and nobody can copy you.</p>
+<div class="bh-card bh-warn"><strong>Copied orders are real orders</strong><ul><li>Every live follower gets a real order at its broker, using that account\u2019s money.</li><li>Prop firms and brokers may have rules about copy trading or trading the same idea on several accounts. Check your firm\u2019s rules before you turn it on.</li><li>TradeZoro is not a broker and gives no advice. Copied orders are your own orders; see <a href="/terms#copy-trading">the Terms</a>.</li></ul></div>
+<h2 id="what">What is copied</h2>
+<ul><li><strong>Orders you place in TradeZoro</strong> on the leader: market, limit and stop orders, the stop loss and take profit you add, moving an order, cancelling it, and Flatten.</li>
+<li>Each follower gets its order <strong>right after the leader\u2019s order is accepted</strong>. If the leader\u2019s order is refused or has no clear answer, nothing is sent to the followers.</li>
+<li><strong>Orders you place in your broker\u2019s own platform are not copied.</strong> The broker connection does not give TradeZoro a reliable live feed of those orders, so we do not try.</li></ul>
+<h2 id="setup">Set it up</h2>
+%s
+<ol><li>Connect your brokers and pick a live account once in the Trade menu, then <strong>Enable live trading</strong> (see <a href="/help/connect-broker#live">Connect your broker</a>).</li>
+<li>Open a chart, click <strong>Trade</strong>, then <strong>Copy trading</strong> at the bottom of the menu.</li>
+<li>Pick the <strong>Leader account</strong>.</li>
+<li>Switch on each <strong>follower</strong> you want and set its rules (below).</li>
+<li>Switch <strong>Copy trading on</strong> and click <strong>Save</strong>. The first time, a short confirm asks you to accept that copied orders are real orders.</li></ol>
+<h2 id="rules">Rules per follower</h2>
+<div class="bh-tblw"><table class="bh-tbl"><thead><tr><th>Setting</th><th>What it does</th></tr></thead><tbody>
+<tr><td>On / off</td><td>Copy to this account or not.</td></tr>
+<tr><td>Same size</td><td>The follower gets the same quantity as the leader.</td></tr>
+<tr><td>Multiplier</td><td>x0.1 to x10 of the leader\u2019s quantity, rounded to whole contracts. If it rounds to 0, that order is skipped for this account.</td></tr>
+<tr><td>Fixed qty</td><td>The same quantity on every copied order, whatever the leader trades.</td></tr>
+<tr><td>Contract</td><td>Same contract, or map it: <strong>Micro</strong> (NQ to MNQ, ES to MES) or <strong>Full size</strong> (MNQ to NQ). Same month.</td></tr>
+<tr><td>Copy exits</td><td>On by default. Copies Flatten and the stop loss / take profit. Off: only entries are copied, and you manage exits on that account yourself.</td></tr>
+</tbody></table></div>
+<h2 id="status">See what happened</h2>
+<p>After each copied order you see a short message per account, and the <strong>Copy status</strong> list in the panel shows every account: <strong>Sent</strong>, <strong>Filled</strong>, <strong>Rejected</strong> (with the broker\u2019s message), or <strong>Skipped</strong> (with the reason). One account failing never stops the others. Every copied order is logged on its own, with its own duplicate guard, so a repeated tap never sends it twice.</p>
+<h2 id="safety">Stop it fast</h2>
+<ul><li><strong>Pause copying</strong>: one tap. Orders on the leader still go; nothing is copied until you resume.</li>
+<li><strong>Flatten all copied</strong>: closes the chart\u2019s contract (or its mapped contract) and cancels its working orders on every follower. The leader is not touched.</li>
+<li>If TradeZoro switches live trading off for everyone or for your account, no copied order goes out either.</li></ul>
+<h2 id="faq">FAQ</h2>
+<h3>Can I copy a friend\u2019s trades, or let others copy mine?</h3><p>No. Copy trading only works between accounts connected to your own TradeZoro login.</p>
+<h3>Can a follower be on a different broker?</h3><p>Yes, any connected broker that allows orders from TradeZoro, plus Paper. Some brokers are read only (see each broker\u2019s guide); copies to them are rejected with the broker\u2019s message.</p>
+<h3>The leader filled but a follower was rejected. What now?</h3><p>Read the message in Copy status, then check that account at its broker. TradeZoro does not retry on its own.</p>
+<p class="bh-small">Related: <a href="/help/%s">Connect your broker</a></p>
+%s''' % (COPY_PATH, HUB, DISC)
+
 def main():
     out = os.path.join(ROOT, 'help')
     open(os.path.join(out, HUB + '.html'), 'w', encoding='utf-8').write(page(HUB, 'Connect your broker', 'What connecting a broker does in TradeZoro, what you need, how to disconnect, privacy and fixes.', 'Connect your broker', hub()))
     for k in ORDER:
         b = BROKERS[k]
         open(os.path.join(out, b['slug'] + '.html'), 'w', encoding='utf-8').write(page(b['slug'], 'Connect %s: step by step' % b['name'], b['blurb'], 'Connect %s: step by step' % b['name'], broker(k)))
-    print('wrote', 1 + len(ORDER), 'pages')
+    open(os.path.join(out, 'copy-trading.html'), 'w', encoding='utf-8').write(page('copy-trading', 'Copy trading across your accounts', 'Copy orders you place in TradeZoro from one of your accounts to your other accounts: setup, size rules, contract mapping and safety.', 'Copy trading across your accounts', copy_page()))
+    print('wrote', 2 + len(ORDER), 'pages')
 
 main()

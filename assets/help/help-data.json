@@ -3946,12 +3946,35 @@
         "connect-broker-rithmic",
         "connect-broker-tastytrade",
         "connect-broker-tradovate",
-        "connect-broker-webull"
+        "connect-broker-webull",
+        "copy-trading"
        ],
        "links": [
         {
          "label": "Connect your broker guide",
          "href": "/help/connect-broker"
+        }
+       ]
+      },
+      {
+       "id": "copy-trading",
+       "q": "Can I copy a trade to my other accounts?",
+       "a": "<p>Yes. Copy trading sends an order you place in TradeZoro on one of your accounts (the leader) to your other connected accounts and Paper, with a size rule and contract mapping per account. It only uses your own accounts. Orders you place in your broker's own platform are not copied. Copied orders are real orders on every live follower; prop firms may have rules about copy trading. Education only. Not financial advice.</p>",
+       "tags": [
+        "copy trading",
+        "copy",
+        "leader",
+        "follower",
+        "accounts",
+        "broker"
+       ],
+       "related": [
+        "connect-broker"
+       ],
+       "links": [
+        {
+         "label": "Copy trading guide",
+         "href": "/help/copy-trading"
         }
        ]
       },

@@ -26,7 +26,7 @@
 // - Order panel (assets/chart-order-panel.js, 2026-11-16) replaces the bottom strip while live; it calls placeTicket() -> place() only.
 // Tests: tests/finatic/chart-live.test.mjs (core + server, mocked broker), tools/tests/chart-live-browser.js (mocked endpoints only).
 // Education only. Not financial advice.
-import * as L from './chart-live-core.js?v=1169';
+import * as L from './chart-live-core.js?v=1170';
 
 const POLL_MS = 10000, STALE_MS = 25000, IDLE_MS = 15 * 60000, HIDDEN_MS = 2 * 60000, RATE_MAX = 10;
 const DISCLAIMER = 'Education only. Not financial advice.';
@@ -243,7 +243,7 @@ async function disconnect(id) {
 // (Owner 19 Nov: a new broker could not be added because the saved session auto-reconnected and closed). reconnect(): the quiet path
 // for an expired connection, reloads the saved one without the portal (the portal is one tap away if that fails).
 function openSync(portal) {
-  import('./finatic-journal-ui.js?v=1169').then((m) => m.openBrokerSync({ uid, mode: 'chart', portal, onConnected: () => { loadAccounts().then(() => toast('Broker connected. Pick the account in the panel.', 'success')); } }))
+  import('./finatic-journal-ui.js?v=1170').then((m) => m.openBrokerSync({ uid, mode: 'chart', portal, onConnected: () => { loadAccounts().then(() => toast('Broker connected. Pick the account in the panel.', 'success')); } }))
     .catch(() => toast('Could not open the broker connection.', 'error'));
 }
 const connect = () => openSync(true), reconnect = () => openSync(false);

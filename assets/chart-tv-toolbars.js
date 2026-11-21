@@ -35,7 +35,7 @@ const NS = 'http://www.w3.org/2000/svg';
 // column's own buttons match the drawing-tool icons. Vela's built-in column buttons (cursor,
 // measure, magnet, stay, eraser, sync, collapse) get the same set in restyle() below.
 const IC = {
-  zoomIn: 'zoomIn', zoomOut: 'zoomOut', lock: 'lock', unlock: 'unlock', eye: 'eye', eyeOff: 'eyeOff', trash: 'trash',
+  importLevels: 'importLevels', zoomIn: 'zoomIn', zoomOut: 'zoomOut', lock: 'lock', unlock: 'unlock', eye: 'eye', eyeOff: 'eyeOff', trash: 'trash',
   full: '<path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/>',
   fullOff: '<path d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5"/>',
   arrow: '<path d="M9 6l6 6-6 6"/>'
@@ -259,6 +259,8 @@ export function mountTvToolbars(ws, opts){
       if (cells().length > 1) out.push({ label: 'Remove ' + all + ' drawing' + (all === 1 ? '' : 's') + ' (all charts)', icon: IC.trash, disabled: !all, run: () => removeDrawings(true) });
       return out;
     });
+    // Import levels from a screenshot or a list (assets/chart-levels-import.js, via vela-chart.js)
+    nodes.imp = btn('stkt-import', IC.importLevels, 'Import levels', (e) => { closeFly(); if (window.__stkImportLevels) window.__stkImportLevels({ returnFocus: e.currentTarget }); });
     nodes.d = [divider(), divider(), divider(), divider()];
   }
   function removeDrawings(every){
@@ -318,7 +320,7 @@ export function mountTvToolbars(ws, opts){
       const sync = byLabel(/^Sync drawings/);
       const fav = col.querySelector('.stk-fb-tog');
       if (!collapse || !measure || !eraser || !magnetCell || !stay) return;
-      const want = [measure, nodes.zoom, nodes.d[0], magnetCell, stay, nodes.lock, nodes.hide, nodes.d[1], eraser, nodes.trash, nodes.d[2], sync, fav].filter(Boolean);
+      const want = [measure, nodes.zoom, nodes.d[0], magnetCell, stay, nodes.lock, nodes.hide, nodes.d[1], eraser, nodes.trash, nodes.imp, nodes.d[2], sync, fav].filter(Boolean);
       // where the tail starts: right after the divider that follows the last group
       let at = measure.previousElementSibling;
       let ok = true;

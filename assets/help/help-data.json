@@ -1727,7 +1727,8 @@
        ],
        "related": [
         "magnet",
-        "favorites-bar"
+        "favorites-bar",
+        "import-levels"
        ],
        "level": "beginner"
       },
@@ -1774,6 +1775,32 @@
        "related": [
         "draw-how"
        ]
+      },
+      {
+       "id": "import-levels",
+       "q": "Import your levels from a screenshot",
+       "a": "<p>Bring the horizontal levels you already have into ZoroCharts in one go. Open <strong>Import levels</strong> from the left drawing toolbar, from a right-click on the chart, or on a phone from Drawings.</p><ul><li><strong>Screenshot</strong>: paste a screenshot of your chart (Ctrl+V), drop it in, or choose the file. We read the price axis, find the horizontal lines and read their prices. It all happens on your device: the picture is not uploaded.</li><li><strong>Text or Pine</strong>: paste a list of prices (one per line, or <code>21450 PDH</code> with a label), or a Pine script with <code>hline()</code> or <code>line.new()</code>.</li></ul><p>Check the list before you add: tick or untick a level, fix a price, rename it, remove it or add one. Nothing changes on your chart until you press <strong>Add levels to chart</strong>. The levels become normal horizontal lines on that symbol, saved with your layout, and sit together in the Object tree as <em>Imported levels</em> with the date, so you can hide or delete them as a group. Ctrl+Z removes the whole import.</p><p><strong>Tips</strong>: crop the picture to the chart; keep the price axis in it; light or dark charts both work. Coloured price boxes on the axis give the most exact prices. If the prices are far from the chart you have open (for example NQ levels on an ES chart), you see a warning.</p><p>Education only. Not financial advice.</p>",
+       "steps": [
+        "Open Import levels (drawing toolbar, right-click, or Drawings on a phone).",
+        "Paste or drop a screenshot of your chart, or paste a list of prices.",
+        "Check the prices, labels and ticks in the list.",
+        "Press Add levels to chart."
+       ],
+       "tags": [
+        "import levels",
+        "screenshot",
+        "levels",
+        "horizontal lines",
+        "paste levels",
+        "pine",
+        "hline",
+        "import"
+       ],
+       "related": [
+        "draw-how",
+        "lock-hide-drawings"
+       ],
+       "level": "beginner"
       }
      ]
     },

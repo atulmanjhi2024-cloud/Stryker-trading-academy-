@@ -3942,6 +3942,8 @@
        ],
        "related": [
         "connect-broker-ibkr",
+        "connect-broker-mt4",
+        "connect-broker-mt5",
         "connect-broker-ninjatrader",
         "connect-broker-rithmic",
         "connect-broker-tastytrade",
@@ -3995,6 +3997,54 @@
         {
          "label": "Interactive Brokers guide",
          "href": "/help/connect-broker-interactive-brokers"
+        }
+       ]
+      },
+      {
+       "id": "connect-broker-mt4",
+       "q": "How do I connect MetaTrader 4?",
+       "a": "<p>Step by step guide for MetaTrader 4: prop firm accounts (MT login, password and server), the connector add-on, broker symbols, lots, what syncs and known limits.</p>",
+       "tags": [
+        "broker",
+        "connect",
+        "metatrader",
+        "mt4",
+        "prop firm",
+        "lots",
+        "symbol",
+        "sync"
+       ],
+       "related": [
+        "connect-broker"
+       ],
+       "links": [
+        {
+         "label": "MetaTrader 4 guide",
+         "href": "/help/connect-broker-metatrader-4"
+        }
+       ]
+      },
+      {
+       "id": "connect-broker-mt5",
+       "q": "How do I connect MetaTrader 5?",
+       "a": "<p>Step by step guide for MetaTrader 5: prop firm accounts (MT login, password and server), the connector add-on, broker symbols, lots, what syncs and known limits.</p>",
+       "tags": [
+        "broker",
+        "connect",
+        "metatrader",
+        "mt5",
+        "prop firm",
+        "lots",
+        "symbol",
+        "sync"
+       ],
+       "related": [
+        "connect-broker"
+       ],
+       "links": [
+        {
+         "label": "MetaTrader 5 guide",
+         "href": "/help/connect-broker-metatrader-5"
         }
        ]
       },

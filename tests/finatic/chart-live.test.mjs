@@ -175,7 +175,7 @@ assert.deepEqual(L.acctLabel({ broker: 'tradovate', name: 'DEMO123456' }), { bro
   const ti = L.acctTitle(tv, { label: 'Apex eval 1', firm: 'Apex', type: 'eval' });
   assert.equal(ti.name, 'Apex eval 1'); assert.equal(ti.full, 'Apex eval 1 · Apex · Tradovate APEX-123456-01'); assert.equal(ti.type, 'Evaluation');
   assert.equal(L.acctTitle(tv, {}).name, 'APEX-123456-01', 'no label: the broker account name (19 Nov)'); assert.equal(L.acctTitle(tv, {}).full, 'Tradovate APEX-123456-01');
-  assert.ok(L.FIRMS.includes('Apex') && L.FIRMS.includes('Own account') && L.FIRMS.length === 12);
+  assert.ok(L.FIRMS.includes('Apex') && L.FIRMS.includes('Own account') && L.FIRMS.length === 14);
 }
 assert.equal(L.openPnl(1, 21000, 21010, 20, null), 200); assert.equal(L.openPnl(-2, 6000, 5990, 50, null), 1000); assert.equal(L.openPnl(1, null, 5, 2, -12), -12);
 

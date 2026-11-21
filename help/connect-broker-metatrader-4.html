@@ -1,0 +1,230 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="stryker-build" content="1187">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="description" content="Connect MetaTrader 4: prop accounts, the connector, symbols, lots, what syncs.">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="TradeZoro">
+<meta property="og:title" content="Connect MetaTrader 4: step by step">
+<meta property="og:description" content="Connect MetaTrader 4: prop accounts, the connector, symbols, lots, what syncs.">
+<meta property="og:url" content="https://tradezoro.com/help/connect-broker-metatrader-4">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="Connect MetaTrader 4: step by step">
+<meta name="twitter:description" content="Connect MetaTrader 4: prop accounts, the connector, symbols, lots, what syncs.">
+<meta name="theme-color" content="#050506">
+<title>Connect MetaTrader 4: step by step | TradeZoro</title>
+<link rel="canonical" href="https://tradezoro.com/help/connect-broker-metatrader-4">
+<link rel="preload" href="/assets/fonts/archivo-latin-variable.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="/assets/fonts/archivo-tnum-latin-variable.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="/assets/style.css?v=1187">
+<link rel="stylesheet" href="/assets/nav-features.css?v=1187">
+<script src="/assets/sanitize.js?v=1187"></script>
+<script>
+// TradeZoro — device detection for forced views
+//
+// Loaded synchronously in <head>, before first paint, so the layout never
+// flashes from one mode to another. Stamps the html root element with data-device="mobile|
+// tablet|desktop">, which assets/style.css uses to FORCE the right shell
+// for the physical device instead of trusting viewport width alone:
+//
+//   - a phone held in landscape reports >900px and used to get the squeezed
+//     desktop sidebar; it now keeps the mobile drawer shell.
+//   - a tablet in portrait reports <900px and used to get the phone drawer;
+//     it now keeps a visible sidebar.
+//
+// Detection order matters: explicit mobile UAs first, then tablet UAs
+// (including iPadOS, which reports itself as a Mac but has multi-touch),
+// then a touch-screen heuristic to catch phones running in "Desktop site"
+// mode with a spoofed UA. Touch-screen laptops fall through to desktop
+// because their PRIMARY pointer is still fine (mouse/trackpad).
+
+(function () {
+  var ua = navigator.userAgent || '';
+  var touchPoints = navigator.maxTouchPoints || 0;
+  var coarsePrimary = !!(window.matchMedia && window.matchMedia('(pointer: coarse)').matches);
+  var iPadOS = /Macintosh/.test(ua) && touchPoints > 1;
+
+  var device;
+  if (/iPhone|iPod|Windows Phone|BlackBerry|Opera Mini/i.test(ua) ||
+      (/Android/i.test(ua) && /Mobile/i.test(ua))) {
+    device = 'mobile';
+  } else if (/iPad|Tablet|PlayBook|Silk/i.test(ua) || iPadOS ||
+      (/Android/i.test(ua) && !/Mobile/i.test(ua))) {
+    device = 'tablet';
+  } else if (coarsePrimary) {
+    // Touch-first device wearing a desktop UA ("Desktop site" checkbox).
+    // The shorter screen edge separates phones from tablets well enough.
+    var shortEdge = Math.min(window.screen.width || 0, window.screen.height || 0);
+    device = shortEdge && shortEdge < 620 ? 'mobile' : 'tablet';
+  } else {
+    device = 'desktop';
+  }
+
+  document.documentElement.setAttribute('data-device', device);
+})();
+</script>
+<script src="/assets/toast.js?v=1187" defer></script>
+<script src="/assets/version-check.js?v=1187" defer></script>
+<script src="/assets/cookie-notice.js?v=1187" defer></script>
+<script src="/assets/acquisition.js?v=1187" defer></script>
+<script src="/assets/focus-mode.js?v=1187" defer></script>
+<link rel="manifest" href="/manifest.json">
+<link rel="icon" type="image/x-icon" href="/assets/images/tradezoro-favicon-32-494.png?v=1187">
+<link rel="icon" type="image/png" sizes="32x32" href="/assets/images/tradezoro-favicon-32-494.png?v=1187">
+<link rel="icon" type="image/png" sizes="16x16" href="/assets/images/tradezoro-favicon-16-494.png?v=1187">
+<link rel="apple-touch-icon" sizes="180x180" href="/assets/images/tradezoro-apple-touch-icon-494.png?v=1187">
+<link rel="icon" type="image/png" sizes="192x192" href="/assets/images/tradezoro-icon-192-494.png?v=1187">
+<script>try{var _t=localStorage.getItem('stryker_theme');if(_t==='day')document.documentElement.setAttribute('data-theme','light')}catch(e){}</script>
+<style>
+.bh-card{ border:1px solid var(--line,#2c2c32); border-radius:12px; padding:16px; margin:0 0 20px; background:var(--bg-2,rgba(255,255,255,.03)); }
+.bh-card ul{ margin:8px 0 0; }
+.bh-warn{ border-color:rgba(255,176,32,.6); background:rgba(255,176,32,.09); }
+:root[data-theme="light"] .bh-warn{ border-color:rgba(176,112,0,.6); background:rgba(176,112,0,.08); }
+.bh-small{ font-size:13px; line-height:20px; color:var(--ink-2,#8b93a0); margin:8px 0 0; }
+.bh code{ font-family:var(--font-code); font-size:.9em; overflow-wrap:anywhere; }
+.bh-path{ display:flex; flex-wrap:wrap; align-items:center; gap:8px; list-style:none; margin:0 0 20px; padding:0; }
+.bh-path li{ display:inline-flex; align-items:center; min-height:32px; padding:0 12px; border:1px solid var(--line,#2c2c32); border-radius:999px; background:var(--bg-2,rgba(255,255,255,.04)); font-size:14px; line-height:20px; font-variant-numeric:tabular-nums; }
+.bh-path li+li::before{ content:"\203A"; margin:0 8px 0 -4px; color:var(--ink-2,#8b93a0); }
+.bh-grid{ display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:16px; margin:0 0 24px; }
+.bh-grid a{ display:flex; flex-direction:column; justify-content:flex-start; gap:4px; min-height:88px; padding:16px; border:1px solid var(--line,#2c2c32); border-radius:12px; background:var(--bg-2,rgba(255,255,255,.03)); text-decoration:none; color:inherit; }
+.bh-grid a:hover,.bh-grid a:focus-visible{ border-color:var(--accent,#7aa2ff); }
+.bh-grid b{ font-size:16px; line-height:24px; } .bh-grid span{ font-size:13px; line-height:20px; color:var(--ink-2,#8b93a0); }
+.bh-tbl{ width:100%; border-collapse:collapse; margin:0 0 20px; font-size:14px; line-height:20px; }
+.bh-tbl th,.bh-tbl td{ text-align:left; vertical-align:top; padding:10px 12px; border-bottom:1px solid var(--line,#2c2c32); }
+.bh-tblw{ overflow-x:auto; margin:0 0 20px; } .bh-tblw .bh-tbl{ margin:0; min-width:520px; }
+</style>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+
+<nav class="nav" id="site-nav">
+  <div class="nav-inner">
+    <a href="/" class="brand">
+      <picture><source media="(max-width:767px)" srcset="/assets/images/tradezoro-tzmark-1014-144.webp" type="image/webp" width="144" height="144"><source srcset="/assets/images/tradezoro-wordmark-1014-192.webp" type="image/webp"><img class="brand-mark" src="/assets/images/tradezoro-wordmark-1014-192.png" alt="TradeZoro" width="273" height="64"></picture>
+    </a>
+    <div class="nav-links">
+      <a href="/features">Features</a>
+      <a href="/features/community">Community</a>
+      <a href="/#faq">FAQ</a>
+      <a href="/help">Help</a>
+    </div>
+    <div class="nav-cta">
+      <a href="/login" class="btn btn-ghost btn-sm">Log in</a>
+      <a href="/signup" class="btn btn-primary btn-sm">Start learning</a>
+      <button class="nav-toggle" aria-label="Menu">☰</button>
+    </div>
+  </div>
+</nav>
+<main id="main" tabindex="-1">
+<header class="site-page-hero"><div class="container"><h1 id="site-page-title">Connect MetaTrader 4: step by step</h1>
+<span class="updated-note">Beta · Last updated 21 November 2026</span></div></header>
+<div class="container"><div class="article-wrap"><div class="article-body bh">
+<p>This guide connects <strong>MetaTrader 4</strong> to TradeZoro. Read the <a href="/help/connect-broker">Connect your broker</a> guide first if you want the big picture.</p>
+<div class="bh-card"><strong>What you need</strong><ul><li>MetaTrader 4 on a computer, logged in to your trading account. Prop firm accounts log in with the <strong>MT login, password and server</strong> the firm gave you.</li><li>The accounts you want to share, ready at MetaTrader 4.</li><li>Pop-ups allowed for TradeZoro (the sign-in opens in a new tab).</li></ul></div>
+<h2 id="accounts">Accounts that work</h2><ul><li><strong>MetaTrader 4</strong> accounts at a broker or prop firm: live, demo, evaluation and funded, logged in the same way as in MetaTrader.</li><li><strong>Prop firm accounts</strong> (FundingPips and other firms that give you a MetaTrader login): log in to MetaTrader 4 with the login number, password and server name from the firm’s dashboard or welcome email. That is the only login you need. The firm’s website login is not used.</li><li>Forex, indices, gold, oil and the other CFDs your account can trade, sized in <strong>lots</strong>.</li><li>Each MetaTrader account is one connection. With two prop accounts you connect twice, each with its own terminal running.</li></ul><div class="bh-card bh-warn"><strong>Keep %(o)s running.</strong> MetaTrader has no cloud login for us to use, so the connector add-on in <em>your</em> terminal is the link. When the terminal is closed, the computer sleeps, or %(algo)s is off, TradeZoro cannot read the account or send orders. An order sent while the terminal is offline waits up to 90 seconds and then fails; it is not kept for later. An always-on computer or a Windows VPS keeps it running.</div>
+<p><strong>Prop firm rules.</strong> Some firms limit EAs or third-party tools on their accounts. The connector does not trade on its own, it only carries what you send from TradeZoro, but your firm decides what is allowed. Read your firm’s rules or ask its support before you connect.</p>
+<h2 id="steps">Step by step</h2>
+<ol class="bh-path" aria-label="The steps in TradeZoro"><li>Charts</li><li>Trade menu</li><li>Connect a broker</li><li>Pick your broker</li><li>Log in</li><li>Choose accounts</li><li>Done</li></ol>
+<ol><li>Open a chart and click <strong>Trade</strong>, then <strong>Connect a broker</strong> at the bottom of the menu. (Journal: <strong>Broker sync (beta)</strong>.)</li>
+<li>In the connect window click <strong>Connect a broker</strong>. A new tab opens.</li>
+<li>Pick <strong>MetaTrader 4</strong> in the list and finish the steps there.</li><li>It shows <strong>connector details</strong> (an address, a connector ID and a connector secret). <strong>The secret is shown once</strong>: keep that tab open until you have pasted it.</li><li>Download the connector add-on (an Expert Advisor, “EA”) from the link there. In MetaTrader 4 choose <strong>File › Open Data Folder</strong> and copy it into <code>MQL4/Experts</code>. Restart MT4 (or refresh <strong>Navigator › Expert Advisors</strong>).</li><li>In <strong>Tools › Options › Expert Advisors</strong> tick <strong>Allow WebRequest for listed URL</strong> and add the address (only the <code>https://</code> part and the host name).</li><li>Drag the EA onto any chart. In its <strong>Inputs</strong> paste the address, connector ID, secret and secret version. Leave <strong>sign envelopes</strong> switched on.</li><li>Switch on <strong>AutoTrading</strong> in the MT4 toolbar. After about 15 seconds the connector shows as online. Choose the account and finish.</li>
+<li>Go back to the TradeZoro tab and click <strong>Continue</strong>. Your MetaTrader 4 accounts show in the Trade menu.</li>
+<li>Journal only: pick the account and dates, click <strong>Load trades</strong>, check the preview, then <strong>Import</strong>.</li></ol>
+<h2 id="symbols">Symbols: chart vs broker</h2>
+<p>MetaTrader brokers name their instruments their own way. The Nasdaq 100 is <code>NDX100</code> at one firm and <code>US100</code>, <code>NAS100</code>, <code>USTEC</code> or <code>US100.cash</code> at others. TradeZoro charts use exchange symbols (NQ, ES, the index itself, or the forex pair).</p>
+<ul><li>When a MT4 account is picked, the order panel shows a <strong>MT4 symbol</strong> box next to the chart name. If your account’s symbol list says which one it is, it is filled in for you.</li>
+<li>If not, pick it once from the list, or choose <strong>Other…</strong> and type the name <strong>exactly</strong> as MetaTrader’s <strong>Market Watch</strong> shows it (including any ending like <code>.cash</code> or <code>.r</code>). TradeZoro remembers it for that chart instrument and that account on this device.</li>
+<li>One choice covers related charts: NQ, MNQ and Nasdaq 100 index charts all trade the Nasdaq 100 symbol you picked.</li></ul>
+<div class="bh-tblw"><table class="bh-tbl"><thead><tr><th>Chart</th><th>Usual MetaTrader names (check yours)</th></tr></thead><tbody>
+<tr><td>NQ, MNQ, Nasdaq 100</td><td><code>NDX100</code> <code>US100</code> <code>NAS100</code> <code>USTEC</code></td></tr>
+<tr><td>ES, MES, S&amp;P 500</td><td><code>US500</code> <code>SPX500</code> <code>SP500</code></td></tr>
+<tr><td>YM, MYM, Dow 30</td><td><code>US30</code> <code>DJ30</code> <code>WS30</code></td></tr>
+<tr><td>RTY, M2K, Russell 2000</td><td><code>US2000</code> <code>RUSS2000</code></td></tr>
+<tr><td>GC, MGC (gold)</td><td><code>XAUUSD</code> <code>GOLD</code></td></tr>
+<tr><td>CL, MCL (crude oil)</td><td><code>USOIL</code> <code>WTI</code> <code>XTIUSD</code></td></tr>
+<tr><td>Forex pairs (EURUSD and others)</td><td>The same pair, sometimes with an ending like <code>EURUSD.m</code></td></tr></tbody></table></div>
+<p><strong>Prices differ.</strong> A futures chart (NQ) is not your broker’s CFD price (NDX100): the two move together but are not the same number. So from a futures or index chart only <strong>market</strong> orders go to MetaTrader, and no order lines are drawn on the chart. Limit and stop orders from the chart need a chart of the broker’s own instrument, such as a forex pair or spot gold (XAUUSD).</p>
+<h2 id="lots">Size in lots</h2>
+<ul><li>MetaTrader trades in <strong>lots</strong>, not contracts. The size box shows lots and steps by the account’s lot step (usually 0.01, the smallest lot).</li>
+<li>What one lot is worth is set by your broker for each symbol. Check the symbol’s <strong>Specification</strong> in Market Watch before you size a trade.</li>
+<li>TradeZoro sets no size limit of its own. Your broker applies its own lot limits and its message is shown if it refuses an order.</li></ul>
+<h2 id="syncs">What syncs</h2><p>Accounts, balance, open positions and working orders, read through the EA. Orders from TradeZoro (market, limit, stop) go to the EA, which places them in your terminal, and MetaTrader gives each one a ticket number. In TradeZoro, orders work after you enable live trading once.</p>
+<h2 id="limits">Known limits</h2><ul><li>Your terminal must be running with the EA attached and AutoTrading on.</li><li>Stop loss and take profit: set them in MetaTrader for now. TradeZoro does not attach them to MetaTrader orders yet.</li><li>Closing a position: close it in MetaTrader for now. Working orders can be cancelled from TradeZoro.</li><li>No order lines or DOM ladder on a chart whose prices are not the broker’s instrument (see Symbols).</li><li>If you make a new connector secret, paste it into the EA, or connect again.</li></ul>
+<h2 id="disconnect">Disconnect</h2><p>Trade menu, gear on the account, <strong>Disconnect</strong>, confirm. Imported journal trades stay. You can also remove access in MetaTrader 4’s own settings.</p>
+<h2 id="faq">FAQ</h2><h3>I trade the NDX100 CFD on MT5 with a FundingPips account. How do I connect it?</h3><p>Log in to MetaTrader 5 with the FundingPips MT login, password and server. Then follow the steps above: connect window, MetaTrader 5, copy the connector details, put the EA on a chart, paste the details, switch on Algo Trading. On an NQ or Nasdaq 100 chart pick <code>NDX100</code> as the MT5 symbol once, and size in lots.</p><h3>Does TradeZoro see my MetaTrader password?</h3><p>No. You type it into MetaTrader only. TradeZoro and the connect window never ask for it. The EA uses its own connector secret.</p><h3>The connector does not show online.</h3><p>Check that the terminal is open, the EA is on a chart, AutoTrading is on, and the WebRequest list has the address from the connect window. If you made a new secret, paste the new one.</p><h3>MetaTrader 4 or 5?</h3><p>Use the one your broker or firm gave you a login for. The steps are the same; MT4 uses <code>MQL4/Experts</code>, MT5 uses <code>MQL5/Experts</code>.</p><h3>My symbol is not in the list.</h3><p>Choose <strong>Other…</strong> and type it exactly as Market Watch shows it. If the name is wrong the broker rejects the order; pick the box again to change it.</p><h3>Can I use a phone?</h3><p>The EA needs desktop MetaTrader; the phone app cannot run it. Once the desktop terminal is running, you can trade from TradeZoro on any device.</p>
+<h3>Something went wrong. Where do I look?</h3><p>See Troubleshooting in <a href="/help/connect-broker#fix">Connect your broker</a>. If you get “no clear answer from the broker”, check your working orders at MetaTrader 4 before you send anything again.</p>
+<p class="bh-small">Other brokers: <a href="/help/connect-broker-interactive-brokers">Interactive Brokers</a> · <a href="/help/connect-broker-metatrader-5">MetaTrader 5</a> · <a href="/help/connect-broker-ninjatrader">NinjaTrader</a> · <a href="/help/connect-broker-rithmic">Rithmic</a> · <a href="/help/connect-broker-tastytrade">tastytrade</a> · <a href="/help/connect-broker-tradovate">Tradovate</a> · <a href="/help/connect-broker-webull">Webull</a></p>
+<p class="bh-small">Education only. Not financial advice. Live orders are real and use your own money. See <a href="/terms#broker-live">Broker connections and live trading</a> in the Terms. Beta.</p>
+</div></div></div>
+</main>
+<footer>
+  <div class="container">
+    <div class="footer-grid">
+      <div>
+        <a href="/" class="brand" style="margin-bottom:14px;">
+          <picture><source media="(max-width:767px)" srcset="/assets/images/tradezoro-tzmark-1014-144.webp" type="image/webp" width="144" height="144"><source srcset="/assets/images/tradezoro-wordmark-1014-144.webp" type="image/webp"><img class="brand-mark" src="/assets/images/tradezoro-wordmark-1014-144.png" alt="TradeZoro" width="205" height="48"></picture>
+        </a>
+        <p style="color:var(--ink-3); font-size:13.5px; max-width:280px;">Chapter-based ICT and SMT trading education, built like a trading desk curriculum.</p>
+      </div>
+      <div>
+        <h5>Mentis</h5>
+        <a href="/academy">Mentis home</a>
+        <a href="/features">All features</a>
+        <a href="/courses">Full curriculum</a>
+        <a href="/#concepts">ICT / SMT glossary</a>
+        <a href="/learn">Mentis articles</a>
+      </div>
+      <div>
+        <h5>Account</h5>
+        <a href="/login">Log in</a>
+        <a href="/signup">Create account</a>
+        <a href="/dashboard-user">Student dashboard</a>
+      </div>
+      <div>
+        <h5>Company</h5>
+        <a href="/about">About TradeZoro</a>
+        <a href="/traders-for-traders">Traders for Traders</a>
+        <a href="/help">Help Center</a>
+        <a href="/suggestions">Suggestions</a>
+        <a href="/creators">Creator Hub</a>
+        <a href="https://discord.gg/M4d4gTr5c3" target="_blank" rel="noopener">Get help on Discord</a>
+        <a href="/contact">Contact us</a>
+        <a href="mailto:support@tradezoro.com">support@tradezoro.com</a>
+        <a href="/terms">Terms &amp; Risk Disclosure</a>
+      </div>
+    </div>
+    <div class="footer-bottom">
+      <span>© 2026 TradeZoro LLC. All rights reserved.</span>
+      <span>Made for traders who read the tape.</span>
+    </div>
+    <div class="footer-legal-row">
+      <a href="/privacy">Privacy Policy</a>
+      <a href="/cookies">Cookie Policy</a>
+      <a href="/gdpr">GDPR</a>
+      <a href="/refund-policy">Refund Policy</a>
+      <a href="/market-data-terms">Market Data Terms</a>
+      <a href="/terms#third-party-notices">Third-party notices</a>
+    </div>
+    <p class="risk-disclaimer">Trading foreign exchange, indices, and commodities carries a high level of risk and may not be suitable for all investors. TradeZoro is an educational service only and does not provide financial advice or manage client funds. Past performance shown in course materials is illustrative and not indicative of future results.</p>
+  </div>
+</footer>
+
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
+<script src="/assets/nav-features.js?v=1187" defer></script>
+<script src="/assets/main.js?v=1187"></script>
+<script src="/assets/auth.js?v=1187"></script>
+<script src="/assets/progress.js?v=1187"></script>
+<script src="/assets/activity-log.js?v=1187"></script>
+<script src="/assets/banned-check.js?v=1187"></script>
+<script src="/assets/email-verify.js?v=1187"></script>
+<script src="/assets/profiles-sync.js?v=1187"></script>
+<script src="/assets/loading-animation.js?v=1187"></script>
+<script src="/assets/branding.js?v=1187"></script>
+<script src="/assets/seo.js?v=1187"></script>
+<script src="/assets/theme.js?v=1187"></script>
+</body>
+</html>

@@ -12961,6 +12961,15 @@ section.stkss-sec{ padding:0; margin:0; }
 .stkop-inst{ flex:none; display:inline-flex; height:24px; padding:2px; border-radius:999px; background:var(--bg-3); }
 .stkop-inst[hidden]{ display:none; }
 .stkop-il:has(.stkop-inst:not([hidden])) .stkop-sym{ white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+/* MetaTrader account (AUTO-MTHELP): which broker symbol this chart trades. Pill select, same height as the mini / micro switch */
+.stkop-mtsym{ position:relative; flex:none; display:inline-flex; align-items:center; height:24px; max-width:140px; border-radius:999px; background:var(--bg-3); color:var(--ink-0); }
+.stkop-mtsym[hidden]{ display:none; }
+.stkop-mtsym select{ appearance:none; -webkit-appearance:none; height:24px; max-width:140px; margin:0; padding:0 24px 0 10px; border:0; border-radius:999px; background:transparent; color:inherit; font:600 11px/24px var(--font-mono, monospace); letter-spacing:.02em; font-variant-numeric:tabular-nums; text-overflow:ellipsis; cursor:pointer; }
+.stkop-mtsym select:focus-visible{ outline:2px solid var(--accent); outline-offset:1px; }
+.stkop-mtsym:hover{ box-shadow:0 0 0 1px var(--line); }
+.stkop-mtsym svg{ position:absolute; right:8px; top:6px; pointer-events:none; color:var(--ink-2); }
+.stkop-mtsym:has(option[value=""]:checked){ box-shadow:0 0 0 1px var(--warn, #f5a524); }
+.stkop-il:has(.stkop-mtsym:not([hidden])) .stkop-sym{ white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .stkop-inst button{ height:20px; min-width:40px; padding:0 8px; border:0; border-radius:999px; background:transparent; color:var(--ink-2); font:600 11px/20px var(--font-mono, monospace); letter-spacing:.02em; cursor:pointer; }
 .stkop-inst button:hover{ color:var(--ink-0); }
 .stkop-inst button.on{ background:var(--bg-1); color:var(--ink-0); box-shadow:0 1px 2px rgba(0,0,0,.35), 0 0 0 1px var(--line); }

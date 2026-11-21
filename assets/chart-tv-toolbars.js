@@ -27,6 +27,7 @@ import { UI_ICONS } from './chart-tool-icons.js?v=1174';
 
 const LS_LOCK = 'stkc_tv_lockall';
 const LS_HIDE = 'stkc_tv_hideall';
+const LS_HIDEI = 'stkc_tv_hideind';
 const LONG_MS = 420;
 const NS = 'http://www.w3.org/2000/svg';
 
@@ -57,7 +58,9 @@ export function mountTvToolbars(ws, opts){
   const activeChart = () => { try { return ws.cell(ws.active.id).chart; } catch (e) { try { return ws.active.chart; } catch (e2) { return null; } } };
 
   // ------------------------------------------------------------------ lock / hide all
-  const st = { lock: lsGet(LS_LOCK), hide: lsGet(LS_HIDE) };
+  const st = { lock: lsGet(LS_LOCK), hide: lsGet(LS_HIDE), hideInd: lsGet(LS_HIDEI) };
+  // indicators this switch hid, per chart: only these are shown again (hidden ones are kept, never removed)
+  const hiddenInd = new WeakMap();
   // ids this switch changed, per chart object (only these are undone when it goes off)
   const touched = { lock: new WeakMap(), hide: new WeakMap() };
   const setOf = (kind, ch) => { let s = touched[kind].get(ch); if (!s) { s = new Set(); touched[kind].set(ch, s); } return s; };
@@ -105,6 +108,26 @@ export function mountTvToolbars(ws, opts){
     st[kind] = on;
     lsSet(kind === 'lock' ? LS_LOCK : LS_HIDE, on);
     applyAll(kind, on);
+    paint();
+  }
+  function applyInd(on){
+    cells().forEach(({ chart: ch }) => {
+      let list = [];
+      try { list = ch.indicators() || []; } catch (e) { return; }
+      let mine = hiddenInd.get(ch); if (!mine) { mine = new Set(); hiddenInd.set(ch, mine); }
+      list.forEach((h) => {
+        try {
+          if (on && h.visible !== false) { h.setVisible(false); mine.add(h.id); }
+          if (!on && mine.has(h.id) && h.visible === false) h.setVisible(true);
+        } catch (e) { console.warn('TradeZoro: indicators hide', e); }
+      });
+      if (!on) mine.clear();
+    });
+  }
+  function setHideMode(drawings, inds){
+    st.hide = drawings; st.hideInd = inds;
+    lsSet(LS_HIDE, drawings); lsSet(LS_HIDEI, inds);
+    applyAll('hide', drawings); applyInd(inds);
     paint();
   }
   function countDrawings(ch){ try { return (ch.drawings.all() || []).length; } catch (e) { return 0; } }
@@ -219,7 +242,15 @@ export function mountTvToolbars(ws, opts){
       { label: 'Zoom out', icon: IC.zoomOut, hint: navigator.platform && /Mac/.test(navigator.platform) ? '⌘↓' : 'Ctrl+↓', run: () => { lastZoom = 'out'; paintZoom(); zoom(1.25); } }
     ]);
     nodes.lock = btn('stkt-lock', IC.lock, 'Lock all drawings', () => setSwitch('lock', !st.lock));
-    nodes.hide = btn('stkt-hide', IC.eye, 'Hide all drawings', () => setSwitch('hide', !st.hide));
+    nodes.hide = cell('stkt-hide', 'Hide all drawings', IC.eye, () => setHideMode(!st.hide, st.hideInd), () => {
+      const any = st.hide || st.hideInd;
+      const out = [{ head: 'Hide on the chart' },
+        { label: 'Hide drawings', icon: IC.eyeOff, run: () => setHideMode(true, st.hideInd) },
+        { label: 'Hide indicators', icon: IC.eyeOff, run: () => setHideMode(st.hide, true) },
+        { label: 'Hide both', icon: IC.eyeOff, run: () => setHideMode(true, true) }];
+      if (any) out.push({ label: 'Show everything again', icon: IC.eye, run: () => setHideMode(false, false) });
+      return out;
+    });
     nodes.trash = cell('stkt-trash', 'Remove drawings', IC.trash, () => removeDrawings(), () => {
       const ch = activeChart();
       const n = ch ? countDrawings(ch) : 0;
@@ -254,10 +285,13 @@ export function mountTvToolbars(ws, opts){
       nodes.lock.setAttribute('aria-pressed', st.lock ? 'true' : 'false');
     }
     if (nodes.hide) {
-      nodes.hide.dataset.active = st.hide ? '1' : '';
-      nodes.hide.innerHTML = hit(st.hide ? IC.eyeOff : IC.eye);
-      tipFor(nodes.hide, st.hide ? 'Show all drawings' : 'Hide all drawings');
-      nodes.hide.setAttribute('aria-pressed', st.hide ? 'true' : 'false');
+      const any = st.hide || st.hideInd;
+      const b = nodes.hide.querySelector('.vela-dtb-icon');
+      nodes.hide.dataset.active = any ? '1' : '';
+      b.innerHTML = hit(any ? IC.eyeOff : IC.eye);
+      tipFor(b, st.hide ? 'Show all drawings' : 'Hide all drawings');
+      b.setAttribute('aria-pressed', st.hide ? 'true' : 'false');
+      nodes.hide.querySelector('.vela-dtb-arrow').setAttribute('aria-label', st.hide || st.hideInd ? 'Hide or show drawings and indicators' : 'Hide drawings, indicators or both');
     }
   }
 
@@ -338,9 +372,9 @@ export function mountTvToolbars(ws, opts){
   if (tbHost) mo.observe(tbHost, { childList: true, subtree: true });
   arrange();
   wire();
-  try { ws.on('layout:changed', () => setTimeout(() => { wire(); if (st.lock) applyAll('lock', true); if (st.hide) applyAll('hide', true); }, 0)); } catch (e) {}
+  try { ws.on('layout:changed', () => setTimeout(() => { wire(); if (st.lock) applyAll('lock', true); if (st.hide) applyAll('hide', true); if (st.hideInd) applyInd(true); }, 0)); } catch (e) {}
   // switches remembered from last visit apply once the drawings have loaded
-  if (st.lock || st.hide) setTimeout(() => { if (st.lock) applyAll('lock', true); if (st.hide) applyAll('hide', true); }, 1500);
+  if (st.lock || st.hide || st.hideInd) setTimeout(() => { if (st.lock) applyAll('lock', true); if (st.hide) applyAll('hide', true); if (st.hideInd) applyInd(true); }, 1500);
 
   // ------------------------------------------------------------------ top: tooltips
   // TradingView shows a tooltip on every toolbar control; Vela's symbol and Indicators have none.
@@ -456,7 +490,7 @@ export function mountTvToolbars(ws, opts){
   new MutationObserver(() => copyTokens(document.querySelector('.stkw-rail') || document.createElement('i'))).observe(root, { attributes: true, attributeFilter: ['style'] });
 
   const api = {
-    get lockAll(){ return st.lock; }, get hideAll(){ return st.hide; },
+    get lockAll(){ return st.lock; }, get hideAll(){ return st.hide; }, get hideIndicators(){ return st.hideInd; }, setHideMode,
     setLockAll: (v) => setSwitch('lock', !!v), setHideAll: (v) => setSwitch('hide', !!v),
     removeDrawings, zoom, arrange, get railReady(){ return railDone; }
   };

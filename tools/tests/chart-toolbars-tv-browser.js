@@ -127,11 +127,11 @@ async function desktop(b, w, h, tag, deep) {
     await p.click('.stkt-lock'); await wait(p, 200);
     d = await all();
     check(d.every((x) => !x.l), 'Unlock all unlocks them again', d);
-    await p.click('.stkt-hide'); await wait(p, 200);
+    await p.click('.stkt-hide .vela-dtb-icon'); await wait(p, 200);
     d = await all();
     check(d.every((x) => !x.v), 'Hide all hides every drawing', d);
     await p.screenshot({ path: `${OUT}/tvbars-${tag}-hidden.png` });
-    await p.click('.stkt-hide'); await wait(p, 200);
+    await p.click('.stkt-hide .vela-dtb-icon'); await wait(p, 200);
     d = await all();
     check(d.every((x) => x.v), 'Show all shows them again', d);
     await p.click('.stkt-trash .vela-dtb-arrow'); await wait(p, 250);

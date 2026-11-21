@@ -326,13 +326,13 @@
       var a = it[1].split('/'), f = function (c, cls) { return '<svg class="' + cls + '" viewBox="0 0 20 20" aria-hidden="true"><clipPath id="hvf' + cls + it[0] + '"><circle cx="10" cy="10" r="10"/></clipPath><g clip-path="url(#hvf' + cls + it[0] + ')">' + FLAG[c] + '</g></svg>'; };
       return '<span class="hv-tk-ic hv-tk-fx" aria-hidden="true">' + f(a[0], 'a') + f(a[1], 'b') + '</span>';
     }
-    if (it[2] === 'fut') return '<span class="hv-tk-ic hv-tk-mono" aria-hidden="true"><svg viewBox="0 0 16 16"><path d="M5 3v10M11 2v12"/><rect x="3.5" y="5" width="3" height="5" rx=".5"/><rect x="9.5" y="4.5" width="3" height="6" rx=".5"/></svg></span>';
-    if (it[2] === 'cry') return '<span class="hv-tk-ic hv-tk-coin" style="background:' + it[6] + '" aria-hidden="true">' + it[1].charAt(0) + '</span>';
-    return '<span class="hv-tk-ic hv-tk-mono" aria-hidden="true">' + it[1].charAt(0) + '</span>';
+    // self-hosted icon (assets/images/tickers/<KEY>.svg|webp); the monogram under it shows only if the file fails (see tape())
+    return '<span class="hv-tk-ic hv-tk-mono" aria-hidden="true"><img src="/assets/images/tickers/' + it[0] + (it[2] === 'cry' ? '.webp' : '.svg') + '" width="20" height="20" alt="" decoding="async" data-m="' + it[1].charAt(0) + '"></span>';
   }
   function tape(sec) {
     if (!sec || !window.fetch) return;
     var vp = sec.querySelector('[data-hv-tape-vp]'), track = sec.querySelector('[data-hv-track]');
+    track.addEventListener('error', function (e) { var i = e.target; if (i.tagName === 'IMG' && i.dataset.m) i.replaceWith(i.dataset.m); }, true); // icon failed: monogram
     var rm = root.classList.contains('hv-rm'), data = {}, shown = '', timer = 0, onScreen = true, busy = false;
     try { var c = JSON.parse(localStorage.getItem(TAPE_KEY) || 'null'); if (c && Date.now() - c.at < STALE_MS && c.q) data = c.q; } catch (e) {}
     function itemHTML(it) {

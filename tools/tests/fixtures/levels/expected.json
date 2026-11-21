@@ -1,0 +1,296 @@
+[
+ {
+  "file": "a-dark-solid-boxes.png",
+  "tick": 0.25,
+  "style": "a-dark",
+  "sample": true,
+  "perPx": 0.27356,
+  "levels": [
+   {
+    "price": 21525.25,
+    "label": "PDH",
+    "style": "solid",
+    "box": true
+   },
+   {
+    "price": 21487.5,
+    "label": "VWAP",
+    "style": "solid",
+    "box": true
+   },
+   {
+    "price": 21442.75,
+    "label": "",
+    "style": "solid",
+    "box": true
+   },
+   {
+    "price": 21401.0,
+    "label": "PDL",
+    "style": "solid",
+    "box": true
+   }
+  ]
+ },
+ {
+  "file": "a-light-dashed-boxes.png",
+  "tick": 0.25,
+  "style": "a-light",
+  "sample": true,
+  "perPx": 0.1084,
+  "levels": [
+   {
+    "price": 6051.5,
+    "label": "Weekly high",
+    "style": "dashed",
+    "box": true
+   },
+   {
+    "price": 6022.25,
+    "label": "",
+    "style": "dashed",
+    "box": true
+   },
+   {
+    "price": 5995.75,
+    "label": "ONL",
+    "style": "dashed",
+    "box": true
+   }
+  ]
+ },
+ {
+  "file": "a-dark-noboxes.png",
+  "tick": 0.25,
+  "style": "a-dark",
+  "sample": true,
+  "perPx": 0.05015,
+  "levels": [
+   {
+    "price": 6031.25,
+    "label": "",
+    "style": "solid",
+    "box": false
+   },
+   {
+    "price": 6019.5,
+    "label": "",
+    "style": "dotted",
+    "box": false
+   },
+   {
+    "price": 6011.0,
+    "label": "Open",
+    "style": "solid",
+    "box": false
+   }
+  ]
+ },
+ {
+  "file": "a-light-noboxes.png",
+  "tick": 0.1,
+  "style": "a-light",
+  "sample": true,
+  "perPx": 0.05178,
+  "levels": [
+   {
+    "price": 2667.4,
+    "label": "R1",
+    "style": "solid",
+    "box": false
+   },
+   {
+    "price": 2655.0,
+    "label": "Pivot",
+    "style": "dashed",
+    "box": false
+   },
+   {
+    "price": 2646.3,
+    "label": "S1",
+    "style": "solid",
+    "box": false
+   }
+  ]
+ },
+ {
+  "file": "b-dark-solid.png",
+  "tick": 1,
+  "style": "b-dark",
+  "sample": true,
+  "perPx": 1.82371,
+  "levels": [
+   {
+    "price": 98250,
+    "label": "",
+    "style": "solid",
+    "box": false
+   },
+   {
+    "price": 97810,
+    "label": "",
+    "style": "solid",
+    "box": false
+   },
+   {
+    "price": 97355,
+    "label": "",
+    "style": "solid",
+    "box": false
+   }
+  ]
+ },
+ {
+  "file": "b-light-dashed.png",
+  "tick": 1,
+  "style": "b-light",
+  "sample": true,
+  "perPx": 0.42493,
+  "levels": [
+   {
+    "price": 44372,
+    "label": "",
+    "style": "dashed",
+    "box": false
+   },
+   {
+    "price": 44260,
+    "label": "",
+    "style": "dashed",
+    "box": false
+   },
+   {
+    "price": 44135,
+    "label": "",
+    "style": "dashed",
+    "box": false
+   }
+  ]
+ },
+ {
+  "file": "b-dark-phone.png",
+  "tick": 0.25,
+  "style": "b-dark",
+  "sample": true,
+  "perPx": 0.1432,
+  "levels": [
+   {
+    "price": 21411.0,
+    "label": "",
+    "style": "solid",
+    "box": false
+   },
+   {
+    "price": 21388.5,
+    "label": "",
+    "style": "dashed",
+    "box": false
+   },
+   {
+    "price": 21362.25,
+    "label": "",
+    "style": "solid",
+    "box": false
+   },
+   {
+    "price": 21341.0,
+    "label": "",
+    "style": "solid",
+    "box": false
+   },
+   {
+    "price": 21318.75,
+    "label": "",
+    "style": "dashed",
+    "box": false
+   }
+  ]
+ },
+ {
+  "file": "b-light-cl.png",
+  "tick": 0.01,
+  "style": "b-light",
+  "sample": true,
+  "perPx": 0.00107,
+  "levels": [
+   {
+    "price": 69.02,
+    "label": "",
+    "style": "solid",
+    "box": false
+   },
+   {
+    "price": 68.75,
+    "label": "",
+    "style": "solid",
+    "box": false
+   },
+   {
+    "price": 68.31,
+    "label": "",
+    "style": "dashed",
+    "box": false
+   }
+  ]
+ },
+ {
+  "file": "a-dark-mixed.png",
+  "tick": 0.25,
+  "style": "a-dark",
+  "sample": true,
+  "perPx": 0.09358,
+  "levels": [
+   {
+    "price": 5931.75,
+    "label": "PDH",
+    "style": "solid",
+    "box": true
+   },
+   {
+    "price": 5912.0,
+    "label": "",
+    "style": "dashed",
+    "box": false
+   },
+   {
+    "price": 5896.5,
+    "label": "",
+    "style": "solid",
+    "box": true
+   },
+   {
+    "price": 5878.25,
+    "label": "PDL",
+    "style": "solid",
+    "box": false
+   }
+  ]
+ },
+ {
+  "file": "a-light-coarse-boxes.png",
+  "tick": 0.25,
+  "style": "a-light",
+  "sample": true,
+  "perPx": 1.51976,
+  "levels": [
+   {
+    "price": 21712.75,
+    "label": "",
+    "style": "solid",
+    "box": true
+   },
+   {
+    "price": 21388.25,
+    "label": "Gap",
+    "style": "solid",
+    "box": true
+   },
+   {
+    "price": 20955.5,
+    "label": "",
+    "style": "solid",
+    "box": true
+   }
+  ]
+ }
+]

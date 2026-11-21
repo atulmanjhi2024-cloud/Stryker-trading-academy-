@@ -795,6 +795,9 @@ function lateLists(provider){
   } catch (e) { console.warn('TradeZoro: tool icons', e); }
   // Paper trading (assets/chart-paper.js): its on-chart line layer + right-click items register before boot.
   if (!BT) try { Paper.installPaper(Core); } catch (e) { console.warn('TradeZoro: paper install', e); }
+  // Import levels from a screenshot or a list (assets/chart-levels-import.js): right-click item + saved "Imported levels" groups, before boot. OCR loads only when it opens.
+  let LevelsImp = null;
+  if (!BT) { try { LevelsImp = await import('./chart-levels-import.js?v=1193'); LevelsImp.installLevelsImport(Core, () => ws); } catch (e) { console.warn('TradeZoro: import levels', e); } }
   // backtest: the order-lines / trade-markers layer (assets/chart-bt-orders.js), installed before the workspace is built
   if (BT && BT.install) { try { await BT.install(Core); } catch (e) { console.warn('TradeZoro: backtest layer', e); } }
 
@@ -1315,7 +1318,31 @@ function legendFold(R) {
     .then((m) => m.mountCompact())
     .catch((e) => console.warn('TradeZoro: compact layout', e));
   // TradingView-style left drawing column, right icon bar, fullscreen (assets/chart-tv-toolbars.js).
-  import('./chart-tv-toolbars.js?v=1194')
+  if (LevelsImp) window.__stkImportLevels = (o) => LevelsImp.openImport(ws, Object.assign({ toast }, o || {}));
+  // Phone: an "Import levels" row on top of the drawing-tools sheet (re-added after each render of its list)
+  if (LevelsImp && typeof ws.openDrawingsDrawer === 'function') {
+    const openDD = ws.openDrawingsDrawer.bind(ws);
+    ws.openDrawingsDrawer = function () {
+      openDD();
+      try {
+        const dd = ws.drawingsDrawer, list = dd && dd.list;
+        if (!list || list.__stkImp) return;
+        list.__stkImp = true;
+        const row = () => {
+          if (list.querySelector('.stk-dd-imp') || dd.input.value.trim()) return;
+          const r = document.createElement('div');
+          r.className = 'vela-dd-row stk-dd-imp'; r.setAttribute('role', 'button'); r.tabIndex = 0;
+          r.innerHTML = '<span class="vela-dd-glyph">' + ToolIcons.UI_ICONS.importLevels.replace('width="1em" height="1em"', 'width="24" height="24"') + '</span><span class="vela-dd-label">Import levels</span>';
+          const go = () => { try { dd.close(); } catch (e) {} window.__stkImportLevels(); };
+          r.addEventListener('click', go); r.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); go(); } });
+          list.prepend(r);
+        };
+        new MutationObserver(row).observe(list, { childList: true });
+        row();
+      } catch (e) { console.warn('TradeZoro: import levels row', e); }
+    };
+  }
+  import('./chart-tv-toolbars.js?v=1193')
     .then((m) => m.mountTvToolbars(ws, { toast }))
     .catch((e) => console.warn('TradeZoro: tv toolbars', e));
   // TradingView-style "Indicators, metrics, and strategies" window replaces Vela's picker

@@ -1,0 +1,7 @@
+Self-hosted OCR engine for ZoroCharts "Import levels" (assets/chart-levels-import.js).
+Loaded only when a member opens Import levels; the image is read on the device and never uploaded.
+
+tesseract.esm.min.js, worker.min.js   tesseract.js 7.0.0           Apache-2.0 (LICENSE.md)
+core/*.wasm.js                        tesseract.js-core 7.0.0      Apache-2.0 (core/LICENSE)
+lang/eng.traineddata.gz               @tesseract.js-data/eng 1.0.0 (4.0.0_best_int)  Apache-2.0 (Tesseract OCR)
+Source maps removed. Files are otherwise unmodified npm package contents.

@@ -13453,3 +13453,4 @@ html.stk-compact body.charts-page .stkcmp-float .icon-btn{ width:28px; height:28
 html.stk-compact body.charts-page .stkcmp-float .gm-icon-wrap, html.stk-compact body.charts-page .stkcmp-float .msg-icon-wrap, html.stk-compact body.charts-page .stkcmp-float .notif-bell-wrap, html.stk-compact body.charts-page .stkcmp-float .account-menu-wrap{ display:flex; align-items:center; position:relative; }
 html.stk-compact body.charts-page .stkcmp-float .account-trigger{ height:28px; padding:0 2px; }
 @media (pointer:coarse){ html.stk-compact body.charts-page .stkcmp-float .icon-btn{ width:44px; height:44px; } html.stk-compact body.charts-page .stkcmp-float{ height:48px; } }
+.side-link > svg{ width:20px; height:20px; }   /* same 20px slot as the product tiles so labels line up */

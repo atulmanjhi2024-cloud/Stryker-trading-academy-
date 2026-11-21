@@ -66,7 +66,7 @@
   // that count as this item]. Only real pages. Pro items are in PRO. Owner order 2026-11-01 (menu restructure).
   var HOME = ['dashboard-user', 'Home', 'Your dashboard and progress', '<path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z"/>', ['index']];
   // Product icons (Owner 16 Nov): an item whose icon is 'IMG:<name>' shows the product tile instead of a line icon.
-  function prodImg(n, sz){ var b = '/assets/img/products/' + n; return '<picture class="pi-p"><source type="image/webp" srcset="' + b + '.webp 1x, ' + b + '@2x.webp 2x"><img class="pi pi-' + sz + '" src="' + b + '.png" srcset="' + b + '@2x.png 2x" width="' + sz + '" height="' + sz + '" alt="" aria-hidden="true" decoding="async"></picture>'; }
+  function prodImg(n, sz){ var o = n === 'spectra', b = '/assets/' + (o ? 'img' : 'images') + '/products/' + (o ? '' : 'pi2-') + n, s1 = o ? '' : '-64', s2 = o ? '@2x' : '-128'; return '<picture class="pi-p"><source type="image/webp" srcset="' + b + s1 + '.webp 1x, ' + b + s2 + '.webp 2x"><img class="pi pi-' + sz + '" src="' + b + s1 + '.png" srcset="' + b + s2 + '.png 2x" width="' + sz + '" height="' + sz + '" alt="" aria-hidden="true" decoding="async"></picture>'; }
   function iconHtml(ic, sz, svgAttrs){ return ic.slice(0, 4) === 'IMG:' ? prodImg(ic.slice(4), sz) : '<svg ' + svgAttrs + '>' + ic + '</svg>'; }
   var PRO = { gex: 1, 'platform-levels': 1 };   // ZoroOptions is free for signed-in members (07 Nov)
   // ZoroOptions launch flag (Owner 2026-11-06: ships all at once). false = hidden from the menu and the page shows
@@ -96,7 +96,7 @@
       ['market-stats', 'Market stats', 'How often sessions behave, with sample sizes', 'IMG:market-stats'],
       ['economic-calendar', 'Economic calendar', 'Upcoming news events', '<rect x="3" y="4" width="18" height="17" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/>'],
       ['smart-money', 'Smart Money Desk', 'Institutional flow view', '<path d="M12 3v18"/><path d="M17 7H9.5a3 3 0 0 0 0 6h5a3 3 0 0 1 0 6H6"/>'],
-      ['global-monitor', 'Global Monitor', 'World events and market news', '<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a15 15 0 0 1 0 18M12 3a15 15 0 0 0 0 18"/>']
+      ['global-monitor', 'Global Monitor', 'World events and market news', 'IMG:global-monitor']
     ]],
     ['learn', 'Mentis', [
       ['academy', 'Mentis home', 'Lessons, courses and guides in one place', 'IMG:mentis'],

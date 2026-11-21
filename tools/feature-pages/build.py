@@ -40,9 +40,9 @@ def img(page, name, alt, lazy=True, extra=''):
             f'alt="{E(alt)}" {ld}decoding="async"{extra}>')
 
 def picon(name, size):
-    b = f'/assets/img/products/{name}'
-    return (f'<picture><source type="image/webp" srcset="{b}.webp 1x, {b}@2x.webp 2x"><img data-fp-nopad src="{b}.png" '
-            f'srcset="{b}@2x.png 2x" width="{size}" height="{size}" alt="" aria-hidden="true" decoding="async" loading="lazy"></picture>')
+    b = f'/assets/images/products/pi2-{name}'
+    return (f'<picture><source type="image/webp" srcset="{b}-64.webp 1x, {b}-128.webp 2x"><img data-fp-nopad src="{b}-64.png" '
+            f'srcset="{b}-128.png 2x" width="{size}" height="{size}" alt="" aria-hidden="true" decoding="async" loading="lazy"></picture>')
 
 def device(page, name, alt, label, lazy=True):
     return (f'<figure class="fpg-device fp-pad"><div class="fpg-bar"><span class="fpg-dots" aria-hidden="true"><i></i><i></i><i></i></span>'

@@ -5945,3 +5945,4 @@ html.stk-compact body.charts-page .stkcmp-float .gm-icon-wrap, html.stk-compact 
 html.stk-compact body.charts-page .stkcmp-float .account-trigger{ height:28px; padding:0 2px; }
 @media (pointer:coarse){html.stk-compact body.charts-page .stkcmp-float .icon-btn{ width:44px; height:44px; }
 html.stk-compact body.charts-page .stkcmp-float{ height:48px; }}
+.side-link > svg{ width:20px; height:20px; }

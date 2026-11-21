@@ -15,7 +15,7 @@
       line: 'Gamma Exposure. Decode the forces moving markets.' },
     { id: 'smart-money-desk', name: 'Smart Money Desk', url: '/features/smart-money-desk', icon: '🏛️' },
     { id: 'curriculum', name: 'Curriculum', url: '/features/curriculum', icon: '📚' },
-    { id: 'global-monitor', name: 'Global Monitor', url: '/features/global-monitor', icon: '🌐' },
+    { id: 'global-monitor', name: 'Global Monitor', url: '/features/global-monitor', icon: 'global-monitor' },
     { id: 'journal', name: 'Nemesis', url: '/features/journal', icon: 'nemesis', big: 1, line: 'Trading Journal. Confront your mistakes. Master your edge.' },
     { id: 'models', name: 'Trading Models', url: '/features/models', icon: '📐', big: 1 },
     { id: 'indicators', name: 'Private Indicators', url: '/features/indicators', icon: '📊' },
@@ -33,11 +33,11 @@
       '" loading="lazy" decoding="async" data-src="' + T + f.id + '-' + w + '.webp">';
   }
   // Product tiles (Owner 16 Nov): these three show their icon image; the other features keep their emoji.
-  var TILES = { omega: 1, kronos: 1, nemesis: 1, zorocharts: 1, 'market-stats': 1, 'creator-hub': 1 };
+  var TILES = { omega: 1, kronos: 1, nemesis: 1, zorocharts: 1, 'market-stats': 1, 'creator-hub': 1, 'global-monitor': 1 };
   function icon(f) {
     if (!TILES[f.icon]) return f.icon + ' ';
-    var b = '/assets/img/products/' + f.icon;
-    return '<picture class="nfx-pi"><source type="image/webp" srcset="' + b + '.webp 1x, ' + b + '@2x.webp 2x"><img src="' + b + '.png" srcset="' + b + '@2x.png 2x" width="20" height="20" alt="" aria-hidden="true" decoding="async"></picture>';
+    var b = '/assets/images/products/pi2-' + f.icon;
+    return '<picture class="nfx-pi"><source type="image/webp" srcset="' + b + '-64.webp 1x, ' + b + '-128.webp 2x"><img src="' + b + '-64.png" srcset="' + b + '-128.png 2x" width="20" height="20" alt="" aria-hidden="true" decoding="async"></picture>';
   }
   function panelHtml() {
     var h = '<div class="nfx-bento">';

@@ -553,6 +553,7 @@ function pushLines(){
   for (const c of WS.context().cells || []) {
     const cell = cellOf(c.id); const R = inner(cell); if (!R || !R.setNativeData) continue;
     const lines = chartLines(cell.symbol);
+    try { if (window.__stkAxisTags) window.__stkAxisTags.setTags(R, 'alerts', lines.filter((l) => l.active).map((l) => ({ price: l.price, color: prefs.lineColor || '#f0b90b' }))); } catch (e) {}
     // only push when something changed: every setNativeData repaints the whole chart
     const sig = JSON.stringify(lines) + prefs.lineColor;
     if (lineSig.get(R) === sig) continue;

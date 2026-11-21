@@ -823,6 +823,7 @@ function pushLines(force){
     const lines = lv ? linesFor(sym) : sp.ok ? linesFor(sym) : [];
     const data = lines.map((l) => ({ id: l.id, kind: l.kind, price: l.price, color: lineColor(l), label: fmtP(sym, l.price) }));
     syncChips(cell, inst, lines);
+    try { if (window.__stkAxisTags) window.__stkAxisTags.setTags(R, 'trade', data.map((l) => ({ price: l.price, color: l.color, text: l.label }))); } catch (e) {}   // price tags on the scale (chart-axis-tags.js)
     const badge = lv ? LIVE.badgeFor(sym) : '';
     const sig = JSON.stringify(data) + badge;
     if (!force && lineSig.get(R) === sig) continue;

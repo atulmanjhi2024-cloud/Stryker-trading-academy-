@@ -1221,6 +1221,8 @@ function legendFold(R) {
   // PAPER TRADING (Owner order 2026-10-12): demo money, simulated fills, no broker. Trade button,
   // order ticket, on-chart lines, one-click Buy/Sell, bottom panel: assets/chart-paper.js.
   if (!BT) try { Paper.mountPaper(ws, { toast, bar: document.querySelector('#stkc-bar .stkc-bar-r') }); } catch (e) { console.warn('TradeZoro: paper trading', e); }
+  // Price tags on the right scale for order / TP / SL / position lines and drawings (assets/chart-axis-tags.js)
+  import('./chart-axis-tags.js?v=1195').then((m) => m.mountAxisTags(ws)).catch((e) => console.warn('TradeZoro: axis tags', e));
   if (hlP) hlP.then((m) => m.mountHlTrade(ws, { bar: document.querySelector('#stkc-bar .stkc-bar-r') })).catch((e) => console.warn('TradeZoro: HL trade', e));
   if (!BT) try { Replay.mountBarReplay(ws, { toast, Paper, store: mods[9].sharedBarStore }); } catch (e) { console.warn('TradeZoro: bar replay', e); }
   // Right-side Watchlist panel + icon rail (phones: a full-screen sheet): assets/chart-watchlist.js.

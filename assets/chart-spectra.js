@@ -5,10 +5,10 @@
 // clicking a strike draws the converted futures price on the chart (flashLevel, as the GEX Ladder does). Price alerts from the
 // cell menu go through the chart's own alert list (chart-alerts.js addAlert), so they show as lines and fire on the server.
 // Education only. Not financial advice.
-import { createSpectra, iconImg } from './spectra-board.js?v=1187';
-import { tickerFor, fmtK } from './spectra-core.js?v=1187';
-import { flashLevel } from './chart-gex-levels.js?v=1187';
-import * as ProGate from './chart-pro-gate.js?v=1187';
+import { createSpectra, iconImg } from './spectra-board.js?v=1188';
+import { tickerFor, fmtK } from './spectra-core.js?v=1188';
+import { flashLevel } from './chart-gex-levels.js?v=1188';
+import * as ProGate from './chart-pro-gate.js?v=1188';
 
 const PHONE_MAX = 700;
 const isNum = (v) => typeof v === 'number' && Number.isFinite(v);
@@ -43,7 +43,7 @@ export function mountSpectraPanel(ws, opts) {
     compact: true, store: 'spx-chart', toast,
     chartSymbol: activeSym,
     addPriceAlert: async (doc) => {
-      try { const m = await import('./chart-alerts.js?v=1187'); return await m.addAlert(doc); }
+      try { const m = await import('./chart-alerts.js?v=1188'); return await m.addAlert(doc); }
       catch (e) { if (e && (e.full || /not ready/.test(e.message))) { if (!e.full) toast('Alerts are still loading. Try again in a moment.'); throw Object.assign(e, { full: true }); } throw e; }
     },
     onPick(u, strike, data) {

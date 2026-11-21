@@ -1,3 +1,4 @@
+import { memStore } from './_store.mjs';
 // Chart live orders: symbol mapping, payload building, exposure, flatten plan (pure) + the server's chart paths with a MOCKED broker.
 // No real network: every fetch below is a stub. Run: node tests/finatic/chart-live.test.mjs
 import assert from 'node:assert/strict';
@@ -176,6 +177,7 @@ const B = { positions: [], orders: [], calls: [], fail: '' };
 const ok = (data) => new Response(JSON.stringify({ data, errors: [] }), { status: 200 });
 const finFetch = async (url, init) => {
   const u = new URL(url); B.calls.push({ m: init.method, p: u.pathname, key: init.headers['Idempotency-Key'], body: init.body ? JSON.parse(init.body) : null });
+  if (u.pathname === '/api/v1/accounts' && init.method === 'GET') return new Response(JSON.stringify({ data: [{ accountId: '123e4567-e89b-12d3-a456-426614174000' }, { accountId: 'a' }], errors: [] }), { status: 200 });   // member live: the ownership list
   if (u.pathname === '/api/v1/session/init') return ok({ one_time_token: 'ott' });
   if (u.pathname === '/api/v1/session/start') return ok({ session_id: 's', company_id: 'c', status: 'active', user_id: US });
   if (u.pathname.endsWith('/positions')) return B.fail === 'read' ? new Response('x', { status: 500 }) : ok(B.positions);
@@ -189,7 +191,7 @@ const audits = new Map();
 const audit = async (e, id) => { if (id && audits.has(id)) { const er = new Error('dup'); er.duplicate = true; throw er; } const row = { ...e }; audits.set(id || 'r' + audits.size, row); return { finish: async (r) => Object.assign(row, r) }; };
 let killOn = true;
 const brackets = new Map();
-const deps = { verifyFetch, finFetch, audit, brackets, liveSwitch: async () => { if (killOn === 'err') throw new Error('x'); return killOn; }, now: () => N, sleep: async () => {} };
+const deps = { store: memStore({ consent: ['admin1'] }), verifyFetch, finFetch, audit, brackets, liveSwitch: async () => { if (killOn === 'err') throw new Error('x'); return killOn; }, now: () => N, sleep: async () => {} };
 const US = '0aaa1111-2222-3333-4444-555566667777', ACC = '123e4567-e89b-12d3-a456-426614174000';
 const live = { FINATIC_API_KEY: 'fntc_live_FAKE', FINATIC_LIVE_ORDERS: '1', DEV: '0' };
 let ip = 1;
@@ -242,7 +244,7 @@ r = await send({ op: 'flatten', symbol: 'NQZ6', idemKey: key(19), src: 'journal'
 const dn = B.calls.length; const dr = await D.handle(req({ op: 'live', accountId: ACC, userId: US }, token('admin1'), 'https://tradezoro.com/connect/finatic/data'), live, deps);
 assert.equal(dr.status, 200); const dj = await dr.json(); assert.ok(Array.isArray(dj.data.positions) && Array.isArray(dj.data.orders));
 assert.ok(B.calls.slice(dn).every((x) => x.m === 'GET' || x.p.includes('/session/')));
-assert.equal((await D.handle(req({ op: 'live', accountId: ACC, userId: US }, token('member9'), 'https://tradezoro.com/connect/finatic/data'), live, deps)).status, 403);
+{ const c0 = B.calls.length; assert.equal((await D.handle(req({ op: 'live', accountId: ACC, userId: US }, token('member9'), 'https://tradezoro.com/connect/finatic/data'), live, deps)).status, 409, 'member live 21 Nov: a member without their own connection cannot borrow the admin user id'); assert.equal(B.calls.length, c0, 'never reached the broker'); }
 // ---- stop loss + take profit, end to end against the mocked broker (2026-11-17) --------------------------------------------
 B.ids = true; B.positions = []; B.orders = [];
 const kk = key(40);
@@ -289,8 +291,8 @@ brackets.set(gid, { ...brackets.get(gid), state: 'active', slId: 'x-sl', tpId: '
 B.orders = [{ orderId: 'x-tp', status: 'SUBMITTED', legs: [{ securityId: 'NQZ6', side: 'BUY', quantity: 1, limitPrice: 20960 }] }];
 n0 = writes().length; r = await send({ op: 'flatten', symbol: 'NQZ6', idemKey: key(51) }); assert.equal(r.status, 200, JSON.stringify(r.j));
 assert.deepEqual(writes().slice(n0).map((x) => [x.m, x.p.split('/').pop()]), [['DELETE', 'x-tp'], ['POST', 'orders']]); assert.ok(!brackets.has(gid), 'flatten drops the group');
-// members never reach any of it
-r = await send({ op: 'bracket', symbol: 'NQZ6' }, token('member9')); assert.equal(r.status, 403);
+// a member with no connection of their own never reaches any of it (member live 21 Nov: 409 needs_connect, nothing sent)
+{ const c0 = writes().length; r = await send({ op: 'bracket', symbol: 'NQZ6' }, token('member9')); assert.equal(r.status, 409, 'member9 has no connection of their own'); assert.equal(writes().length, c0); }
 B.ids = false;
 assert.ok(![...audits.values()].some((a) => JSON.stringify(a).includes('FAKE')), 'no key in audit');
 console.log('chart live: ok');

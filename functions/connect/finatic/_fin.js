@@ -1,4 +1,4 @@
-// Shared bits for the admin-only broker-sync (beta) functions. READ ONLY: no order/trading path exists in this file.
+// Shared bits for the broker-sync functions (every signed-in member since 21 Nov; ownership checks in _owner.js). READ ONLY: no order/trading path exists in this file.
 // Env (Pages secrets, optional): FINATIC_API_KEY, FINATIC_COMPANY_ID. The key stays on the server: never returned, never logged.
 import { isAdminToken, verifyIdToken, bearerOf } from '../../api/chart/_rt.js';
 import { okOrigin, rateLimited, json } from '../_token.js';
@@ -98,8 +98,10 @@ export async function gate(request, env, deps, name) {
   const token = bearerOf(request);
   const uid = await t.step('auth', verifyIdToken(token, { fetchImpl: deps.verifyFetch }));   // Google keys cached in the isolate
   if (!uid) return fail(401, 'Sign in first');
-  if (!(await t.step('admin', isAdminToken(token, { fetchImpl: deps.verifyFetch })))) return fail(403, 'Admin only');   // admins/{uid}: 60 s memo (a "no" 5 s)
-  return { uid };
+  // MEMBER LIVE (Owner 21 Nov): every signed-in member passes; admin is only a flag now (legacy id claim, sandbox order test).
+  // What a member may touch is decided per call by _owner.js (their own broker-link user and accounts only).
+  const admin = await t.step('admin', isAdminToken(token, { fetchImpl: deps.verifyFetch }));   // admins/{uid}: 60 s memo (a "no" 5 s)
+  return { uid, admin };
 }
 
 export async function readBody(request) {

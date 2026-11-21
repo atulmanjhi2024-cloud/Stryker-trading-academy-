@@ -49,6 +49,18 @@ case("DENY", "admin reads A", 'admin', "get", L, old=A)
 case("DENY", "admin writes A", 'admin', "update", L, new=A, old=A)
 case("DENY", "signed-out get", None, "get", L, old=A)
 case("DENY", "signed-out create", None, "create", L, new=A)
+# member live trading (21 Nov 2026): server-only docs. The member may read their own consent + broker user, never write them.
+CO = {"uid": "alice", "at": TS, "version": "2026-11-21"}
+case("ALLOW", "owner reads own liveConsent", 'alice', "get", "/liveConsent/alice", old=CO)
+case("DENY", "owner writes own liveConsent", 'alice', "create", "/liveConsent/alice", new=CO)
+case("DENY", "B reads A liveConsent", 'bob', "get", "/liveConsent/alice", old=CO)
+case("ALLOW", "owner reads own brokerUsers", 'alice', "get", "/brokerUsers/alice", old={"userId": "u1"})
+case("DENY", "owner writes own brokerUsers", 'alice', "update", "/brokerUsers/alice", new={"userId": "u2"}, old={"userId": "u1"})
+case("DENY", "B reads A brokerUsers", 'bob', "get", "/brokerUsers/alice", old={"userId": "u1"})
+case("DENY", "member reads finUsers", 'alice', "get", "/finUsers/u1", old={"uid": "alice"})
+case("DENY", "member reads settings/liveBlocked", 'alice', "get", "/settings/liveBlocked", old={"bob": True})
+case("ALLOW", "member reads settings/liveTrading", 'alice', "get", "/settings/liveTrading", old={"enabled": True})
+case("ALLOW", "admin reads settings/liveBlocked", 'admin', "get", "/settings/liveBlocked", old={"bob": True})
 
 
 def run(src, label):

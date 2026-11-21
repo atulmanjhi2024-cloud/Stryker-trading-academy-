@@ -1,5 +1,6 @@
-// TradeZoro — Nemesis "Broker sync (beta)" sheet (ES module, admin only, loaded on demand by assets/finatic-journal.js).
-// READ ONLY: lists accounts and fills through /connect/finatic/data (server allow-list); no order buttons, no order code path.
+// TradeZoro — Nemesis "Broker sync (beta)" sheet (ES module, every signed-in member since 21 Nov 2026, loaded on demand by
+// assets/finatic-journal.js and by the chart's Connect a broker). READ ONLY for the journal: lists accounts and fills through
+// /connect/finatic/data (server allow-list, scoped to the member's own connection). The "Order test" step is admins only (admin flag).
 // Flow: start session -> broker portal in a new tab (the member logs in there) -> Continue -> pick account + dates -> preview -> import.
 // Depends on the journal page globals: auth, db, firebase, JOURNAL_UID, JOURNAL_TRADES, journalCollectionRef, reloadJournalData, showToast.
 import { CSS } from './rithmic-journal-ui.js?v=1179';
@@ -27,7 +28,7 @@ const EXTRA_CSS = `.fjs-tag{ display:inline-block; margin-left:8px; padding:2px 
 
 // Errors always carry a readable message: the server's {error} line, or a plain one for a network failure / non-JSON page.
 const NET_MSG = 'Couldn’t reach TradeZoro, try again.';
-const FALLBACK = (st) => (st === 401 ? 'Your sign-in expired. Reload the page and try again.' : st === 403 ? 'This is for admins only.' : st === 429 ? 'Too many tries. Wait a minute.' : 'Broker sync hit an error' + (st ? ' (code ' + st + ')' : '') + '. Try again in a minute.');
+const FALLBACK = (st) => (st === 401 ? 'Your sign-in expired. Reload the page and try again.' : st === 403 ? 'This isn’t allowed for your account.' : st === 429 ? 'Too many tries. Wait a minute.' : 'Broker sync hit an error' + (st ? ' (code ' + st + ')' : '') + '. Try again in a minute.');
 async function call(url, body, sample) {
   let t;
   try { t = await auth.currentUser.getIdToken(); } catch (e) { const er = new Error('Your sign-in expired. Reload the page and try again.'); er.status = 401; throw er; }
@@ -45,7 +46,7 @@ async function call(url, body, sample) {
 // saved accounts and close; always show the Connect step, whose button opens the broker portal (the page where you pick a broker and
 // sign in), started for the saved Finatic user so the accounts already linked stay linked. false/omitted = the quiet Reconnect path:
 // a saved connection is reloaded (and the sheet closes in chart mode) without the portal.
-export function openBrokerSync({ uid, onConnected, portal } = {}) {
+export function openBrokerSync({ uid, onConnected, portal, admin } = {}) {
   if (!document.getElementById('rjs-css')) { const s = document.createElement('style'); s.id = 'rjs-css'; s.textContent = CSS; document.head.appendChild(s); }
   if (!document.getElementById('fjs-css')) { const s = document.createElement('style'); s.id = 'fjs-css'; s.textContent = EXTRA_CSS; document.head.appendChild(s); }
   const LS = 'stryker_broker_sync_user_' + uid;
@@ -62,7 +63,7 @@ export function openBrokerSync({ uid, onConnected, portal } = {}) {
   const onKey = (e) => { if (e.key === 'Escape') { e.stopPropagation(); close(); } };
   document.addEventListener('keydown', onKey, true);
   back.addEventListener('mousedown', (e) => { if (e.target === back) close(); });
-  const head = (title) => '<div class="rjs-grab"></div><div class="rjs-head"><h2>' + esc(title) + '<span class="fjs-tag">Admin beta</span></h2><button type="button" class="rjs-x" id="fjs-x" aria-label="Close">' + X_ICON + '</button></div>' + (S.sample ? '<p class="fjs-sample">Sample data</p>' : '');
+  const head = (title) => '<div class="rjs-grab"></div><div class="rjs-head"><h2>' + esc(title) + '<span class="fjs-tag">Beta</span></h2><button type="button" class="rjs-x" id="fjs-x" aria-label="Close">' + X_ICON + '</button></div>' + (S.sample ? '<p class="fjs-sample">Sample data</p>' : '');
   const err = (m) => (m ? '<div class="rjs-err" role="alert">' + esc(m) + '</div>' : '');
   const wireX = () => { const x = sheet.querySelector('#fjs-x'); if (x) x.addEventListener('click', close); };
   const q = (s) => sheet.querySelector(s);
@@ -72,13 +73,14 @@ export function openBrokerSync({ uid, onConnected, portal } = {}) {
 
   // ---- not set up
   function drawNotSetUp() {
-    sheet.innerHTML = head('Broker sync') + '<p class="rjs-lead">Not set up yet. The broker connection key has not been added to the site, so nothing can connect. Admin note: add FINATIC_API_KEY to the Pages secrets (see the handback notes), then redeploy.</p><button type="button" class="rjs-ghost" id="fjs-close">Close</button>';
+    sheet.innerHTML = head('Broker sync') + '<p class="rjs-lead">Not set up yet. The broker connection key has not been added to the site, so nothing can connect. ' + (admin ? 'Admin note: add FINATIC_API_KEY to the Pages secrets (see the handback notes), then redeploy.' : 'Please try again later.') + '</p><button type="button" class="rjs-ghost" id="fjs-close">Close</button>';
     wireX(); q('#fjs-close').addEventListener('click', close);
   }
   // ---- start: connect a broker
   function drawStart(error) {
     sheet.innerHTML = head('Broker sync') + err(error) +
-      '<p class="rjs-lead">Pull your fills from a connected broker (for example Tradovate, NinjaTrader, Rithmic) into the journal. Data only: we read accounts and fills and never place or change an order.</p>' +
+      (onConnected ? '<p class="rjs-lead">Connect your broker to see your accounts on the chart. Interactive Brokers, MetaTrader 4 and 5, NinjaTrader, Rithmic, tastytrade, Tradovate and Webull are supported. Live orders stay off until you enable live trading for your account. <a href="/help/connect-broker" target="_blank" rel="noopener">How to connect</a></p>'
+        : '<p class="rjs-lead">Pull your fills from a connected broker (Interactive Brokers, MetaTrader 4 or 5, NinjaTrader, Rithmic, tastytrade, Tradovate or Webull) into the journal. The journal only reads accounts and fills; it never places or changes an order. <a href="/help/connect-broker" target="_blank" rel="noopener">How to connect</a></p>') +
       '<button type="button" class="rjs-go" id="fjs-connect">Connect a broker</button>' +
       (S.userId ? '<button type="button" class="rjs-ghost" id="fjs-have">' + (portal ? 'Use the brokers already linked' : 'I already connected') + '</button>' : '') +
       '<p class="rjs-fine">You sign in at your broker in a new tab. Your broker password is never typed into TradeZoro.</p>';
@@ -118,12 +120,12 @@ export function openBrokerSync({ uid, onConnected, portal } = {}) {
       '<p class="rjs-sub">Account</p><div class="rjs-rows" role="radiogroup" aria-label="Account">' + S.accounts.map((a) =>
         '<button type="button" class="rjs-row" role="radio" aria-checked="' + (a.id === S.account.id) + '" data-acct="' + esc(a.id) + '"><i></i><span><b>' + esc(a.name) + '</b><small>' + esc(a.broker) + (a.cur ? ' · ' + esc(a.cur) : '') + '</small></span></button>').join('') + '</div>' +
       '<div class="rjs-two"><label class="rjs-f"><span>From</span><input class="rjs-in" type="date" id="fjs-from" value="' + esc(S.from) + '"></label><label class="rjs-f"><span>To</span><input class="rjs-in" type="date" id="fjs-to" value="' + esc(S.to) + '"></label></div>' +
-      '<button type="button" class="rjs-go" id="fjs-load">Load trades</button><button type="button" class="rjs-ghost" id="fjs-ordbtn">Order test (admin)</button><button type="button" class="rjs-ghost" id="fjs-off">Disconnect</button>';
+      '<button type="button" class="rjs-go" id="fjs-load">Load trades</button>' + (admin ? '<button type="button" class="rjs-ghost" id="fjs-ordbtn">Order test (admin)</button>' : '') + '<button type="button" class="rjs-ghost" id="fjs-off">Disconnect</button>';
     wireX();
     sheet.querySelectorAll('[data-acct]').forEach((b) => b.addEventListener('click', () => { S.account = S.accounts.find((a) => a.id === b.dataset.acct); S.from = q('#fjs-from').value; S.to = q('#fjs-to').value; drawPick(); }));
     q('#fjs-load').addEventListener('click', loadTrades);
     q('#fjs-off').addEventListener('click', disconnect);
-    q('#fjs-ordbtn').addEventListener('click', () => { S.step = 'order'; draw(); });
+    const ob = q('#fjs-ordbtn'); if (ob) ob.addEventListener('click', () => { S.step = 'order'; draw(); });
   }
   async function loadTrades() {
     S.from = q('#fjs-from').value; S.to = q('#fjs-to').value;

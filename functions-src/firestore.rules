@@ -686,6 +686,12 @@ service cloud.firestore {
 
     // Broker order-test audit (functions/connect/finatic/_audit.js writes with the service account). Admin read only; no client write.
     match /brokerOrderAudit/{id} { allow read: if isAdmin(); allow write: if false; }
+    // MEMBER LIVE TRADING (21 Nov 2026), written only by the broker functions (service account; functions/connect/finatic/_owner.js):
+    // brokerUsers/{uid} = the member's broker-link user id, finUsers/{id} = reverse claim (one uid per broker-link user),
+    // liveConsent/{uid} = the "Enable live trading" acceptance (uid, time, version, ip). The member may read their own two docs.
+    match /brokerUsers/{uid}  { allow read: if isSelf(uid) || isAdmin(); allow write: if false; }
+    match /finUsers/{id}      { allow read: if isAdmin(); allow write: if false; }
+    match /liveConsent/{uid}  { allow read: if isSelf(uid) || isAdmin(); allow write: if false; }
 
     match /activityLog/{id} {
       allow read:   if isAdmin();
@@ -742,8 +748,9 @@ service cloud.firestore {
     // particular should NOT be public: it lists the Pine script ids and any
     // manual grants, which include members' TradingView usernames.
     // ---------------------------------------------------------------------
+    // settings/liveBlocked ({<uid>: true} = that member's live orders are refused, 21 Nov 2026) lists member uids: admins only.
     match /settings/{doc} {
-      allow read:  if doc in ['site', 'logo', 'favicon', 'commerce', 'seo'] || signedIn();
+      allow read:  if doc in ['site', 'logo', 'favicon', 'commerce', 'seo'] || (signedIn() && doc != 'liveBlocked') || isAdmin();
       allow write: if isAdmin();
     }
     match /tvSession/{doc}      { allow read, write: if false; }   // functions only

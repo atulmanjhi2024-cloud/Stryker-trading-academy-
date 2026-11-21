@@ -99,7 +99,7 @@ async function run(b, w, h, mobile, shots) {
   await p.waitForSelector('#fjs-connect');
   let st = await state(p);
   check(!/finatic/i.test(st.text), tag + ': no vendor name in member-facing copy');
-  check(/never place or change an order/.test(st.text) && !/Buy|Sell now|Place order/i.test(st.text), tag + ': read-only wording, no order buttons');
+  check(/never places or changes an order/.test(st.text) && !/Buy|Sell now|Place order/i.test(st.text), tag + ': read-only wording, no order buttons');
   if (shots) await sleep(450), await p.screenshot({ path: OUT + '/broker-' + tag + '-2-start.png' });
   await p.evaluate(() => { window.open = () => ({ location: {}, close() {} }); });
   await p.click('#fjs-connect'); await p.waitForSelector('#fjs-cont');
@@ -227,7 +227,12 @@ async function measure(b) {
       await ctx.close(); }
     { const { ctx, p } = await open(b, { w: 1440, h: 900, admin: false });
       await p.goto(BASE + '/trade-journal.html', { waitUntil: 'domcontentloaded' }); await sleep(3000);
-      check(!(await p.$('#ji-open-broker')), 'non-admin: no Broker sync button'); await ctx.close(); }
+      // since 21 Nov 2026 every signed-in member gets Broker sync (their own connection); the admin-only "Order test" stays hidden
+      const has = await p.waitForSelector('#ji-open-broker', { state: 'attached', timeout: 8000 }).then(() => true, () => false);
+      check(has, 'member: Broker sync button shown');
+      if (has) { await p.evaluate(() => switchJournalTab('history')); await p.click('#ji-open-broker'); await p.waitForSelector('#fjs', { timeout: 10000 }).catch(() => {}); await sleep(800);
+        check(!(await p.$('#fjs-ordbtn')) && !/Order test|Admin/.test(await p.evaluate(() => (document.getElementById('fjs') || {}).innerText || '')), 'member: no admin order test, no admin wording'); }
+      await ctx.close(); }
   } catch (e) { fail++; console.log('FAIL exception ' + (e && e.stack || e)); }
   await b.close();
   console.log(fail ? fail + ' FAILED' : 'ALL PASSED');

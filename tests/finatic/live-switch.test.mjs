@@ -1,3 +1,4 @@
+import { memStore } from './_store.mjs';
 // Owner bug 19 Nov "Live trading switch could not be read, order not sent": liveSwitchOn retries once with a fresh token, keeps the
 // last good value for 60 s, never caches a failure, still fails CLOSED when nothing was ever read, and carries the real reason
 // (status code, no secret) into the order's error message. No network: Google + Firestore are stubbed.
@@ -80,7 +81,7 @@ reset(); t = 3_000_000;
   const finFetch = async (url, init) => { const u = new URL(url); if (u.pathname === '/api/v1/session/init') return J({ data: { one_time_token: 'o' } }); if (u.pathname === '/api/v1/session/start') return J({ data: { session_id: 's1', user_id: '0aaa1111-2222-3333-4444-555566667777', status: 'active' } }); if (init.method !== 'GET') brokerWrites++; return J({ data: [] }); };
   const audit = async (e) => { const row = { ...e }; rows.push(row); return { id: 'a', finish: async (r) => Object.assign(row, r) }; };
   const pend = []; const sw = async () => { const e = new Error('x'); e.reason = 'Firestore permission denied (403): the service account may not read settings/liveTrading'; throw e; };
-  const d = { verifyFetch, finFetch, audit, liveSwitch: sw, sleep: async () => {}, defer: (p) => { pend.push(p); return p; } };
+  const d = { store: memStore({ consent: ['admin1'] }), verifyFetch, finFetch, audit, liveSwitch: sw, sleep: async () => {}, defer: (p) => { pend.push(p); return p; } };
   const req = new Request('https://tradezoro.com/connect/finatic/order', { method: 'POST', headers: { 'cf-connecting-ip': '10.9.9.9', origin: 'https://tradezoro.com', 'content-type': 'application/json', authorization: 'Bearer ' + idTok }, body: JSON.stringify({ op: 'place', userId: '0aaa1111-2222-3333-4444-555566667777', accountId: '123e4567-e89b-12d3-a456-426614174000', symbol: 'MNQZ6', side: 'sell', qty: 1, type: 'market', idemKey: 'livesw0000000000001', src: 'chart' }) });
   const r = await O.handle(req, { FINATIC_API_KEY: 'fntc_live_FAKE', FINATIC_LIVE_ORDERS: '1', DEV: '0' }, d);
   const b = await r.json(); await Promise.all(pend);

@@ -103,7 +103,7 @@
       {
        "id": "place-orders",
        "q": "Can I place real trades on TradeZoro?",
-       "a": "<p>No. There is no real order placement anywhere on the site.</p><p>Paper trading and Kronos use simulated orders with demo money. The Connect broker feature only brings in market data. Nemesis broker sync only reads your trades.</p>",
+       "a": "<p>Yes, from ZoroCharts, if you connect your own broker account. Live trading is off until you enable it once for your account and accept a short risk notice. Live orders are real and use your own money at your broker. TradeZoro is not a broker and gives no advice; you are responsible for your orders.</p><p>Paper trading (the default account) and Kronos use simulated orders with demo money. The Rithmic data option and the Data source only bring in market data. See <a href=\"/help/connect-broker\">Connect your broker</a> and the <a href=\"/terms#broker-live\">Terms</a>. Education only. Not financial advice.</p>",
        "tags": [
         "orders",
         "buy sell",
@@ -3751,7 +3751,7 @@
   },
   {
    "id": "rithmic",
-   "title": "Connect broker (Rithmic data)",
+   "title": "Connect a broker",
    "icon": "plug",
    "desc": "Use your own Rithmic data on ZoroCharts.",
    "subs": [
@@ -3929,9 +3929,8 @@
       },
       {
        "id": "connect-broker",
-       "hidden": true,
        "q": "Connect your broker: what it does, privacy and fixes",
-       "a": "<p>Connecting a broker links your trading account so TradeZoro can read your trades, positions and balance. You log in on the broker's own page, so TradeZoro never sees your broker password. Placing orders works only where it is switched on for you.</p>",
+       "a": "<p>Connecting a broker links your trading account so TradeZoro can read your trades, positions and balance. You log in on the broker's own page, so TradeZoro never sees your broker password. You can also place live orders from the chart after you enable live trading once for your account.</p>",
        "tags": [
         "broker",
         "connect",
@@ -3958,7 +3957,6 @@
       },
       {
        "id": "connect-broker-ibkr",
-       "hidden": true,
        "q": "How do I connect Interactive Brokers?",
        "a": "<p>Step by step guide for Interactive Brokers: accounts that work, the login you need, what syncs and known limits.</p>",
        "tags": [
@@ -3979,7 +3977,6 @@
       },
       {
        "id": "connect-broker-ninjatrader",
-       "hidden": true,
        "q": "How do I connect NinjaTrader?",
        "a": "<p>Step by step guide for NinjaTrader: accounts that work, the login you need, what syncs and known limits.</p>",
        "tags": [
@@ -4000,7 +3997,6 @@
       },
       {
        "id": "connect-broker-rithmic",
-       "hidden": true,
        "q": "How do I connect Rithmic?",
        "a": "<p>Step by step guide for Rithmic: accounts that work, the login you need, what syncs and known limits.</p>",
        "tags": [
@@ -4021,7 +4017,6 @@
       },
       {
        "id": "connect-broker-tastytrade",
-       "hidden": true,
        "q": "How do I connect tastytrade?",
        "a": "<p>Step by step guide for tastytrade: accounts that work, the login you need, what syncs and known limits.</p>",
        "tags": [
@@ -4042,7 +4037,6 @@
       },
       {
        "id": "connect-broker-tradovate",
-       "hidden": true,
        "q": "How do I connect Tradovate?",
        "a": "<p>Step by step guide for Tradovate: accounts that work, the login you need, what syncs and known limits.</p>",
        "tags": [
@@ -4063,7 +4057,6 @@
       },
       {
        "id": "connect-broker-webull",
-       "hidden": true,
        "q": "How do I connect Webull?",
        "a": "<p>Step by step guide for Webull: accounts that work, the login you need, what syncs and known limits.</p>",
        "tags": [

@@ -1,3 +1,4 @@
+import { memStore } from './_store.mjs';
 import assert from 'node:assert/strict';
 import * as S from '../../functions/connect/finatic/session.js';
 import * as D from '../../functions/connect/finatic/data.js';
@@ -28,6 +29,7 @@ const finFetch = async (url, init) => {
   if (init.body) calls._lastBody = init.body;
   const u = new URL(url); envHdr.push(init.headers['X-Finatic-Environment']); calls.push({ method: init.method, path: u.pathname, key: init.headers['x-api-key'] });
   const ok = (data) => new Response(JSON.stringify({ data, errors: [] }), { status: 200 });
+  if (u.pathname === '/api/v1/accounts' && init.method === 'GET') return new Response(JSON.stringify({ data: [{ accountId: '123e4567-e89b-12d3-a456-426614174000' }, { accountId: 'a' }], errors: [] }), { status: 200 });   // member live: the ownership list
   if (u.pathname === '/api/v1/session/init') return ok({ one_time_token: 'ott' });
   if (u.pathname === '/api/v1/session/start') return ok({ session_id: 'sess1', company_id: 'c1', csrf_token: 'x', status: 'active', user_id: JSON.parse(init.body || '{}').user_id || 'u-new' });
   if (u.pathname === '/api/v1/session/portal') return ok({ portal_url: 'https://portal.finatic.dev/?t=secret' });
@@ -41,7 +43,7 @@ const finFetch = async (url, init) => {
 };
 const audits = [];
 const audit = async (e) => { const row = { ...e }; audits.push(row); return { id: 'a' + audits.length, finish: async (r) => Object.assign(row, r) }; };
-const deps = { verifyFetch, finFetch, audit };
+const deps = { store: memStore({ consent: ['admin1'] }), verifyFetch, finFetch, audit };
 const env = { FINATIC_API_KEY: 'fk_test_SECRET', DEV: '0' };
 let ipn = 1;
 const ACC = '123e4567-e89b-12d3-a456-426614174000';
@@ -68,9 +70,10 @@ assert.equal(await status(send(buy, token('admin1'), { FINATIC_API_KEY: 'x', FIN
 assert.equal(await status(send(buy, token('admin1'), { FINATIC_API_KEY: 'mystery' })), 403, 'unknown env is treated as live');
 assert.equal(await status(send(buy, token('admin1'), { ...liveEnv, FINATIC_LIVE_ORDERS: '0' })), 403);
 assert.equal(upstreamOrders().length, 0);
-r = await send({ op: 'env' }, token('admin1'), sbEnv); assert.deepEqual(await r.json(), { env: 'sandbox', enabled: true });
-r = await send({ op: 'env' }, token('admin1'), liveEnv); assert.deepEqual(await r.json(), { env: 'live', enabled: false });
-assert.equal(await status(send({ op: 'env' }, token('member9'), sbEnv)), 403);
+r = await send({ op: 'env' }, token('admin1'), sbEnv); { const j = await r.json(); assert.equal(j.env, 'sandbox'); assert.equal(j.enabled, true); }
+r = await send({ op: 'env' }, token('admin1'), liveEnv); { const j = await r.json(); assert.equal(j.env, 'live'); assert.equal(j.enabled, false); }
+r = await send({ op: 'env' }, token('member9'), sbEnv); assert.equal(r.status, 200, 'member live 21 Nov: env answers members'); assert.equal((await r.json()).consent, false, 'member9 has not accepted yet');
+assert.equal(await status(send(buy, token('member9'), sbEnv)), 403, 'journal order test (no src chart) stays admin only');
 // sandbox place: fields whitelisted, unknown fields stripped, qty cap, bad input
 r = await send({ ...buy, evil: 'x', order: { hack: 1 }, orderId: 'zz', limitPrice: 5, accountNumber: '9' }, token('admin1'), sbEnv); assert.equal(r.status, 200);
 let up = upstreamOrders().pop(); assert.equal(up.method, 'POST');

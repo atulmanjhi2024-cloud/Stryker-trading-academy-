@@ -1,4 +1,10 @@
-// ADMIN-ONLY order TEST routes for the Finatic integration (Owner exception 2026-11-04). POST {op, accountId, ...}.
+// Live order routes. MEMBER LIVE (Owner decision 21 Nov 2026): every signed-in member may trade their OWN connected accounts from the
+// chart (src:'chart'); the journal's raw order test (no src) stays admin only. On top of every guard below, for everyone (admins too):
+// the broker-link user comes from the server's record for the uid and the account must be in that user's account list (_owner.js,
+// 403 not_owner otherwise), the one-time "Enable live trading" acceptance (liveConsent/{uid}, current version, 403 consent_needed),
+// and the per-member admin kill settings/liveBlocked {<uid>: true} (403 member_blocked; unreadable = refused). The rate limit below is
+// per uid. Older notes follow ("admin" there now reads "member").
+// ORIGINAL: ADMIN-ONLY order TEST routes for the Finatic integration (Owner exception 2026-11-04). POST {op, accountId, ...}.
 //   schema -> GET  /accounts/{id}/order-schemas?action=place|modify|cancel
 //   place  -> POST /accounts/{id}/orders          cancel -> DELETE /accounts/{id}/orders/{orderId}          modify -> PATCH /accounts/{id}/orders/{orderId}
 // Guards, in order: not configured 503 · origin/JSON/IP limit · unsigned 401 · non-admin 403 · live without FINATIC_LIVE_ORDERS=1 403 "Live orders are off"
@@ -19,6 +25,7 @@
 // in parallel WITH the audit 'attempt' row (both must succeed before anything is sent), and the audit result row is written after the
 // reply (deps.defer = ctx.waitUntil). Every reply carries Server-Timing (rl, auth, admin, gate, sess, read, audit, fin, total).
 import { gate, readBody, cachedSession, finSession, ordersBlocked, envMode, json, fail, needsConnect, methodNotAllowed, safe, pagesEntry, deferOf, listAll, UPSTREAM_MSG, UUID, ID } from './_fin.js';
+import { resolveFinUser, ownsAccount, notYours, hasConsent, saveConsent, memberBlocked, LIVE_TERMS_VERSION } from './_owner.js';
 import { openAudit, liveSwitchOn, getBracket, putBracket, delBracket, logBracket } from './_audit.js';
 import { validContract, workingOrders, netPosition, exposureError, flattenPlan, IDEM, MAX_QTY, groupId, bracketCheck, bracketPlan, contractOf } from '../../../assets/chart-live-core.js';
 
@@ -79,14 +86,26 @@ async function run(request, env, deps) {
   const b = await readBody(request);
   if (!b || typeof b !== 'object') return fail(400, 'Bad request');
   const op = b.op;
-  if (op === 'env') {   // for the badge; admin only (gate above). Also the chart's pre-warm when the panel opens: starts the Finatic
-    // session for this user (cached 2 min) and reads the kill switch (cached 5 s) after the reply, so the first order skips both.
-    const u = typeof b.userId === 'string' && UUID.test(b.userId) ? b.userId : '';
+  // MEMBER LIVE (Owner 21 Nov): the one-time "Enable live trading" acceptance. {op:'consent', accept:true, version} -> stored server-side
+  // (liveConsent/{uid}: uid, time, version). Only the current version is accepted; nothing else in the body is read.
+  if (op === 'consent') {
+    if (b.accept !== true || b.version !== LIVE_TERMS_VERSION) return fail(400, 'Tick the box to accept the current notice first.', 'consent_needed');
+    try { const at = await saveConsent(env, deps, g.uid, request.headers.get('cf-connecting-ip') || ''); return json({ ok: true, consent: true, version: LIVE_TERMS_VERSION, at }); }
+    catch (e) { return fail(503, 'Could not save your acceptance. Try again in a moment.', 'consent_unwritable'); }
+  }
+  if (op === 'env') {   // for the badge. Also the chart's pre-warm when the panel opens: starts the Finatic session for this member's
+    // own user (cached 2 min) and reads the kill switch (cached 5 s) after the reply, so the first order skips both.
+    // consent / blocked: this member's own state (null = could not be read; the order route re-checks and fails closed).
+    const ow = await resolveFinUser(env, deps, g, b);
+    const u = ow instanceof Response ? '' : ow.finUser;
     if (u && ordersBlocked(env) === null) (deps.defer || deferOf(null))(Promise.all([cachedSession(env, deps, u), envMode(env) === 'live' ? liveSwitchOn(env, deps) : null]));
-    return json({ env: envMode(env), enabled: ordersBlocked(env) === null });
+    const [consent, mblocked] = await Promise.all([hasConsent(env, deps, g.uid).catch(() => null), memberBlocked(env, deps, g.uid).catch(() => null)]);
+    return json({ env: envMode(env), enabled: ordersBlocked(env) === null, consent, version: LIVE_TERMS_VERSION, blocked: mblocked });
   }
   const blocked = ordersBlocked(env); if (blocked) return blocked;
   const chart = b.src === 'chart';
+  // the journal's raw order test (no chart guards: exposure, contract list) stays admin only
+  if (!chart && !g.admin) return fail(403, 'Admin only');
   if (op !== 'schema' && op !== 'place' && op !== 'cancel' && op !== 'modify' && !((op === 'flatten' || op === 'bracket') && chart)) return fail(400, 'Not allowed');
   if (!(typeof b.accountId === 'string' && UUID.test(b.accountId))) return fail(400, 'accountId missing');
   if ((op === 'cancel' || op === 'modify') && !(typeof b.orderId === 'string' && ID.test(b.orderId))) return fail(400, 'orderId missing');
@@ -123,13 +142,19 @@ async function run(request, env, deps) {
       if (chk.error) return fail(400, chk.error);
     } else modGroup = null;
   }
-  let userId = typeof b.userId === 'string' && UUID.test(b.userId) ? b.userId : '';
+  // MEMBER LIVE: the broker-link user is the server's record for this uid, never the client's (_owner.js)
+  const ow = await resolveFinUser(env, deps, g, b);
+  if (ow instanceof Response) return ow;
+  const userId = ow.finUser;
   const t = deps.t, defer = deps.defer || deferOf(null), live = envMode(env) === 'live';
-  // independent checks in parallel; each verdict is applied below in the old order (rate limit, kill switch, session)
-  const [limited, sw, s0] = await t.step('gate', Promise.all([
+  const write = op !== 'schema';
+  // independent checks in parallel; each verdict is applied below in the old order (rate limit, kill switch, member gates, session)
+  const [limited, sw, s0, mc, mb] = await t.step('gate', Promise.all([
     op === 'bracket' ? syncLimited(g.uid) : op !== 'schema' ? orderRateLimited(env, g.uid, defer) : false,
     op !== 'schema' && live ? liveSwitchOn(env, deps).then((v) => ({ v }), (e) => ({ err: true, why: String((e && e.reason) || 'unknown error').slice(0, 160) })) : { v: true },   // kill switch, fails closed
     userId ? cachedSession(env, deps, userId) : null,
+    write ? hasConsent(env, deps, g.uid).then((v) => ({ v }), () => ({ err: true })) : { v: true },     // "Enable live trading" accepted
+    write ? memberBlocked(env, deps, g.uid).then((v) => ({ v }), () => ({ err: true })) : { v: false }, // per-member admin kill, fails closed
   ]));
   if (limited) return fail(429, op === 'bracket' ? 'Too many checks, try again in a moment' : 'Order limit: 10 a minute');
   // the bracket sync still runs with the switch off (or unreadable): it may only CANCEL then (the protective one-cancels-other),
@@ -141,6 +166,14 @@ async function run(request, env, deps) {
     return fail(503, 'Live trading switch could not be read (' + sw.why + '), order not sent', 'switch_unreadable');
   }
   if (op !== 'bracket' && !sw.v) return fail(403, 'Live trading is switched off', 'switched_off');
+  // the bracket sync may still CANCEL (one-cancels-other) for a blocked / not-yet-accepted member, never place (killed below)
+  const memberOff = mb.err || mb.v || mc.err || !mc.v;
+  if (op !== 'bracket') {
+    if (mb.err) return fail(503, 'Your live trading status could not be read, order not sent', 'switch_unreadable');
+    if (mb.v) return fail(403, 'Live trading is switched off for your account. Contact support.', 'member_blocked');
+    if (mc.err) return fail(503, 'Your live trading acceptance could not be read, order not sent', 'consent_unreadable');
+    if (!mc.v) return fail(403, 'Enable live trading first: read and accept the notice in the Trade menu.', 'consent_needed');
+  }
   if (!userId) return needsConnect();
   let s = s0;
   if (s.failed) return s.staleUser ? needsConnect() : fail(502, UPSTREAM_MSG, 'upstream');
@@ -149,6 +182,8 @@ async function run(request, env, deps) {
   // one call on the (maybe cached) session; a 401 from a cached session renews it once (finSession)
   let renewFail = false;
   const call = async (method, path, opts) => { const x = await finSession(env, deps, userId, s, method, path, opts); if (x.s !== s) { if (x.s.failed || !x.s.authenticated) renewFail = true; else s = x.s; } return x.r; };
+  // ownership: the account must be one of THIS member's own accounts (cached 60 s per isolate; unreadable = refused, nothing sent)
+  { const own = await t.step('own', ownsAccount(deps, userId, call, b.accountId)); if (renewFail) return needsConnect(); if (own instanceof Response) return own; if (!own) return notYours(); }
 
   if (op === 'schema') {
     const r = await call('GET', A + '/order-schemas', { query: { action: b.action } });
@@ -162,7 +197,7 @@ async function run(request, env, deps) {
   if (op === 'bracket') {
     if (renewFail) return needsConnect();
     const release = await t.step('queue', acquire(b.accountId));
-    try { return await syncBracket(env, deps, { uid: g.uid, account: b.accountId, code: String(b.symbol).toUpperCase(), A, call, read, killed: !!(sw.err || !sw.v), sandbox: envMode(env) === 'sandbox', env: envMode(env) }); }
+    try { return await syncBracket(env, deps, { uid: g.uid, account: b.accountId, code: String(b.symbol).toUpperCase(), A, call, read, killed: !!(sw.err || !sw.v || memberOff), sandbox: envMode(env) === 'sandbox', env: envMode(env) }); }
     finally { release(); }
   }
 

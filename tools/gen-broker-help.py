@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Generates the hidden "Connect your broker" help pages (help/connect-broker*.html).
+"""Generates the public "Connect your broker" help pages (help/connect-broker*.html).
 Run: python3 tools/gen-broker-help.py   (template = head/footer of help/desktop-bridge.html)
-GATE (Owner rules: members see Paper only, no broker names in public): every page is noindex and is not linked
-from nav / help index / sitemap. To make them public see BROKERHELP in the report (help-data.json hidden flag + sitemap + noindex)."""
+PUBLIC since 21 Nov 2026 (Owner decision: every signed-in member may connect their own broker and place live trades after the
+one-time "Enable live trading" step). Listed in help-data.json (category rithmic) and the sitemap. No logo images, names only."""
 import os, re, html
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -10,7 +10,7 @@ tpl = open(os.path.join(ROOT, 'help', 'desktop-bridge.html'), encoding='utf-8').
 head, rest = tpl.split('<main id="main"', 1)
 foot = rest.split('</main>', 1)[1]
 UPDATED = '21 November 2026'
-DISC = '<p class="bh-small">Education only. Not financial advice. Beta: broker connections are being rolled out step by step.</p>'
+DISC = '<p class="bh-small">Education only. Not financial advice. Live orders are real and use your own money. See <a href="/terms#broker-live">Broker connections and live trading</a> in the Terms. Beta.</p>'
 
 STYLE = '''<style>
 .bh-card{ border:1px solid var(--line,#2c2c32); border-radius:12px; padding:16px; margin:0 0 20px; background:var(--bg-2,rgba(255,255,255,.03)); }
@@ -57,7 +57,7 @@ BROKERS = {
          'Prop firm accounts that sit on the NinjaTrader platform and log in with NinjaTrader credentials may show up. If your firm gave you a Rithmic login instead, use the Rithmic guide.'],
   auth=['Open the connect window and pick <strong>NinjaTrader</strong>.','A NinjaTrader sign-in page opens. Log in with your NinjaTrader username and password there.','Approve access when NinjaTrader asks, then choose the accounts to share.'],
   extra='<p><strong>This is not the Data Bridge.</strong> The <a href="/help/desktop-bridge">Data Bridge</a> add-on only sends prices to a chart. Connecting a broker reads your account, positions, balance and fills.</p>',
-  syncs='Accounts, balance, positions, orders and fills. The connection service lists order placing as supported for NinjaTrader; in TradeZoro it only works where it has been switched on for you.',
+  syncs='Accounts, balance, positions, orders and fills. You can also place live orders from the chart once you enable live trading for your account.',
   limits=['If your account list is empty, the login you used has no account the connection can read.','Balance can be a little behind NinjaTrader (see Troubleshooting in the hub).'],
   faq=[('Which login do I use?','The same one you use at NinjaTrader\u2019s own site or platform.'),
        ('My prop firm gave me a NinjaTrader login. Does it work?','Try it. If the sign-in page rejects it, ask your firm which platform login it is.')]),
@@ -69,7 +69,7 @@ BROKERS = {
          'Not sure? Look in your firm\u2019s welcome email or dashboard for \u201cRithmic\u201d, or ask their support.'],
   auth=['Open the connect window and pick <strong>Rithmic</strong>.','Enter your Rithmic username and password in the sign-in form. Rithmic uses a username and password, so this is the one broker here where you type them (in the secure connect window, not in TradeZoro).','Choose the accounts to share and finish.'],
   extra='<p><strong>Rithmic data vs broker connection.</strong> The chart\u2019s <em>Data source</em> then Rithmic gives futures prices. Connecting a broker here reads your account (positions, balance, fills). They are separate.</p>',
-  syncs='Futures accounts: balance, positions, orders and fills. The connection service lists order placing as supported for Rithmic; in TradeZoro it only works where it has been switched on for you.',
+  syncs='Futures accounts: balance, positions, orders and fills. You can also place live orders from the chart once you enable live trading for your account.',
   limits=['Futures only.','A new Rithmic login must first accept the market data agreements in R | Trader Pro, or the sign-in can be refused.','Some firms must allow third-party apps on your login. If the same login works in R | Trader Pro but not here, ask your firm.'],
   faq=[('Is my Rithmic password safe?','TradeZoro never sees it. It goes to our connection service, which keeps it encrypted and uses it only to keep your session open. Disconnect removes the link.'),
        ('Which firms use Rithmic?','Ask your firm. We only know a firm uses Rithmic when it gives you a Rithmic username. We do not publish a list.')]),
@@ -79,7 +79,7 @@ BROKERS = {
   types=['tastytrade brokerage accounts, <strong>live</strong> and <strong>paper</strong> where tastytrade offers them on your login.','Stocks, options, futures, forex and crypto, as listed for tastytrade.'],
   auth=['Open the connect window and pick <strong>tastytrade</strong>.','A tastytrade sign-in page opens. Log in with your tastytrade username and password there.','Approve access when tastytrade asks, then choose the accounts to share.'],
   extra='',
-  syncs='Accounts, balance, positions, orders and fills. The connection service lists order placing as supported; in TradeZoro it only works where it has been switched on for you.',
+  syncs='Accounts, balance, positions, orders and fills. You can also place live orders from the chart once you enable live trading for your account.',
   limits=['Event contracts: tastytrade offers them but they are not available through our connection.','tastytrade needs a funded and approved account before it shows anything to read.'],
   faq=[('Can I connect more than one tastytrade account?','Yes. Tick every account you want on the \u201cchoose accounts\u201d step.'),
        ('The sign-in page asks for a code.','That is tastytrade\u2019s own two-step login. Enter the code it sends or shows.')]),
@@ -89,7 +89,7 @@ BROKERS = {
   types=['Tradovate <strong>live</strong> accounts and <strong>sim</strong> (demo) accounts on your login.','Prop firm accounts that run on Tradovate (they show as accounts under your Tradovate login). Many firms use a Tradovate login; if yours gave you a Rithmic login instead, use the Rithmic guide.','Futures, options and forex, as listed for Tradovate.'],
   auth=['Open the connect window and pick <strong>Tradovate</strong>.','A Tradovate sign-in page opens. Log in with your Tradovate username and password there.','Approve access when Tradovate asks, then choose the accounts to share.'],
   extra='<p><strong>Account names.</strong> Tradovate also has a long number for each account. TradeZoro shows the account <em>name</em> from Tradovate. In the Trade menu you can rename an account with <strong>Edit details</strong> (label, prop firm and type: Evaluation, Funded, Live or Sim). Labels are for you only.</p>',
-  syncs='Accounts, balance, positions, orders and fills. The connection service lists order placing as supported; in TradeZoro it only works where it has been switched on for you.',
+  syncs='Accounts, balance, positions, orders and fills. You can also place live orders from the chart once you enable live trading for your account.',
   limits=['If you have a live and a sim account, both are listed. Check the name before you use one.','Balance is the last figure Tradovate reported plus fills since then, so it can lag a little.'],
   faq=[('Do prop firm accounts show up?','If the firm\u2019s accounts sit under your Tradovate login, yes. Rename them with Edit details.'),
        ('Same login as the Tradovate app?','Yes, the one you use at Tradovate\u2019s own site.')]),
@@ -99,7 +99,7 @@ BROKERS = {
   types=['Webull brokerage accounts on your login.','Stocks, options, crypto, forex and futures, as listed for Webull. We have not checked which of these your own Webull account has switched on.'],
   auth=['Open the connect window and pick <strong>Webull</strong>.','A Webull sign-in page opens. Log in with your Webull login there.','Approve access when Webull asks, then choose the accounts to share.'],
   extra='',
-  syncs='Accounts, balance, positions, orders and fills. The connection service lists order placing as supported; in TradeZoro it only works where it has been switched on for you.',
+  syncs='Accounts, balance, positions, orders and fills. You can also place live orders from the chart once you enable live trading for your account.',
   limits=['The journal import is built around futures round trips. For stocks and options, read the preview carefully before you import.','Balance can be a little behind Webull.'],
   faq=[('Webull asks me to verify.','That is Webull\u2019s own check. Finish it, then continue.'),
        ('Do I need an API application at Webull?','Our connection handles the sign-in. If Webull asks for something extra on its page, follow Webull\u2019s steps.')]),
@@ -117,7 +117,6 @@ def page(slug, title, desc, h1, body):
     h = h.replace('og:url" content="https://tradezoro.com/help/desktop-bridge"', 'og:url" content="https://tradezoro.com/help/%s"' % slug)
     h = h.replace('<link rel="canonical" href="https://tradezoro.com/help/desktop-bridge">', '<link rel="canonical" href="https://tradezoro.com/help/%s">' % slug)
     h = re.sub(r'<title>[^<]*</title>', '<title>%s | TradeZoro</title>' % html.escape(title), h)
-    h = h.replace('<meta name="viewport"', '<meta name="robots" content="noindex,nofollow">\n<meta name="viewport"', 1)
     h = re.sub(r'<style>[\s\S]*?</style>\n</head>', lambda m: STYLE, h)
     return (h + '<main id="main" tabindex="-1">\n<header class="site-page-hero"><div class="container"><h1 id="site-page-title">%s</h1>\n<span class="updated-note">Beta · Last updated %s</span></div></header>\n<div class="container"><div class="article-wrap"><div class="article-body bh">\n%s\n</div></div></div>\n</main>' % (h1, UPDATED, body) + foot)
 
@@ -129,7 +128,7 @@ def hub():
 <div class="bh-card"><strong>In short</strong>
 <ul><li><strong>Your broker password stays with your broker.</strong> You log in on the broker\u2019s own page, not on a TradeZoro form.</li>
 <li><strong>It reads your account.</strong> Trades and fills for the journal, open positions, and your balance.</li>
-<li><strong>Placing orders only where it is switched on.</strong> It is off unless TradeZoro has turned it on for your account.</li></ul>%s</div>
+<li><strong>Live orders after one step.</strong> Live trading is off until you enable it once for your account and accept the risk notice. Until then your broker accounts are view-only.</li></ul>%s</div>
 <h2 id="brokers">Pick your broker</h2>
 <div class="bh-grid">%s</div>
 <h2 id="what">What connecting does</h2>
@@ -138,7 +137,7 @@ def hub():
 <tr><td>Journal sync</td><td>Your fills become journal trades (round trips from flat to flat). Syncing the same days twice adds nothing twice. Trades still open are not imported.</td></tr>
 <tr><td>Positions</td><td>Your open position and working orders are read from the broker and shown on the chart panel.</td></tr>
 <tr><td>Balance</td><td>The broker\u2019s last reported balance. If the broker\u2019s figure is old, TradeZoro adds the profit or loss of fills made after it.</td></tr>
-<tr><td>Orders</td><td>Only where it is enabled for you, and with small limits (a few index futures, small size). Everything else is read only.</td></tr></tbody></table></div>
+<tr><td>Live orders</td><td>From the chart, after you enable live trading once (see below). Small limits apply: NQ, ES, MNQ and MES, at most 2 contracts, 10 orders a minute. Interactive Brokers is read only.</td></tr></tbody></table></div>
 <h2 id="before">Before you start</h2>
 <ul><li>An account at the broker with its login working. Log in once at the broker yourself first.</li>
 <li>A computer or tablet browser is easiest. The broker page opens in a <strong>new tab</strong>, so allow pop-ups for TradeZoro.</li>
@@ -152,12 +151,18 @@ def hub():
 <li>Pick your broker and log in there. Choose the accounts you want to share.</li>
 <li>Come back to TradeZoro and click <strong>Continue</strong>. The window closes and your accounts show in the Trade menu.</li></ol>
 <p>In the journal the same window is the <strong>Broker sync (beta)</strong> button. After connecting you choose an account and dates, click <strong>Load trades</strong>, check the preview and import.</p>
+<h2 id="live">Enable live trading</h2>
+<p>Live orders are real and use your own money at your broker. Before your first live order TradeZoro asks you once:</p>
+<ol><li>In the Trade menu pick one of your broker accounts (Paper stays the default).</li>
+<li>Try your first order, or click <strong>Enable live trading</strong>. A short risk notice opens.</li>
+<li>Read it, tick the box and click <strong>Enable live trading</strong>. We save when you accepted it.</li></ol>
+<p>After that, clicking Buy, Sell, Flatten or the order book sends a real order to your broker. There is no extra confirm step. TradeZoro is not a broker and gives no advice; you are responsible for your orders. If you click <strong>Not now</strong>, the account stays view-only. TradeZoro can switch live trading off for everyone or for one account at any time.</p>
 <h2 id="disconnect">How to disconnect</h2>
 <ol><li>Open the <strong>Trade</strong> menu.</li><li>Click the small gear on the account, then <strong>Disconnect</strong> (or <strong>Manage</strong> to see all accounts), then confirm.</li></ol>
 <p>This removes the link. Trades already imported stay in your journal. You can connect again any time. You can also remove TradeZoro\u2019s access in your broker\u2019s own settings.</p>
 <h2 id="privacy">Privacy</h2>
 <ul><li><strong>We never see your broker password.</strong> You log in on the broker\u2019s own page. For Rithmic, which uses a username and password, you type them in the secure connect window, and TradeZoro does not receive or store them.</li>
-<li>TradeZoro asks only to read your accounts, balance, positions, orders and fills.</li>
+<li>TradeZoro reads your accounts, balance, positions, orders and fills. It sends an order only when you click to trade, after you enabled live trading.</li>
 <li>Your account details stay in your own view. We do not show them to other members.</li></ul>
 <h2 id="fix">Troubleshooting</h2>
 <ul><li><strong>It asks me to log in again.</strong> The saved link expired. Open the Trade menu and click <strong>Reconnect</strong>. If that does not help, click <strong>Connect a broker</strong> and sign in again.</li>

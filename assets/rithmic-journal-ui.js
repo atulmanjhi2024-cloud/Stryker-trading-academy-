@@ -43,6 +43,7 @@ export const CSS = `
 .rjs-x:hover{ background:rgba(150,160,175,.26); color:var(--rz-ink); }
 .rjs button:focus-visible,.rjs input:focus-visible,.rjs select:focus-visible{ outline:none; box-shadow:var(--rz-ring); }
 .rjs-lead{ margin:0 0 16px; font:400 15px/22px var(--rz-font); color:var(--rz-ink-2); }
+.rjs-lead a{ color:inherit; text-decoration:underline; text-underline-offset:2px; }
 .rjs-f{ display:block; margin:0 0 16px; }
 .rjs-f > span{ display:block; margin:0 0 8px; font:500 13px/18px var(--rz-font); color:var(--rz-ink-2); }
 .rjs-in{ display:block; width:100%; height:var(--rz-field-h); padding:0 14px; border:1px solid var(--rz-line); border-radius:var(--rz-field-r); background:var(--rz-field); color:var(--rz-ink); font:400 16px/22px var(--rz-font); -webkit-appearance:none; appearance:none; }

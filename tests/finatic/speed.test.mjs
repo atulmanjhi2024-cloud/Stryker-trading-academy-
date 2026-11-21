@@ -1,3 +1,4 @@
+import { memStore } from './_store.mjs';
 // Order speed (Owner order 2026-11-16): cache TTLs, Server-Timing, parallel pre-send steps, deferred audit, session renew on 401,
 // pre-warm, and the Pages -> placed Worker hand-off. Mocked broker + mocked auth, no network. Run: node tests/finatic/speed.test.mjs
 import assert from 'node:assert/strict';
@@ -21,6 +22,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const finFetch = async (url, init) => {
   const u = new URL(url); B.calls.push({ m: init.method, p: u.pathname, sid: init.headers['x-session-id'], key: init.headers['Idempotency-Key'], at: Date.now() });
   if (B.delay) await sleep(B.delay);
+  if (u.pathname === '/api/v1/accounts' && init.method === 'GET') return new Response(JSON.stringify({ data: [{ accountId: '123e4567-e89b-12d3-a456-426614174000' }, { accountId: 'a' }], errors: [] }), { status: 200 });   // member live: the ownership list
   if (u.pathname === '/api/v1/session/init') return ok({ one_time_token: 'ott' });
   if (u.pathname === '/api/v1/session/start') { B.sess++; return ok({ session_id: 's' + B.sess, company_id: 'c', status: 'active', user_id: US }); }
   if (B.expireNext && init.headers['x-session-id'] === 's1') return new Response(JSON.stringify({ errors: [{ message: 'session expired' }] }), { status: 401 });
@@ -33,7 +35,7 @@ const audits = new Map(); const deferred = [];
 const audit = async (e, id) => { await sleep(B.delay); if (id && audits.has(id)) { const er = new Error('dup'); er.duplicate = true; throw er; } const row = { ...e }; audits.set(id, row); return { id, finish: async (r) => { await sleep(5); Object.assign(row, r); } }; };
 const defer = (p) => { deferred.push(p); return p; };
 let T = Date.parse('2026-11-16T15:00:00Z');
-const deps = { verifyFetch, finFetch, audit, liveSwitch: async () => { await sleep(B.delay); return true; }, sleep: async () => {}, defer, now: () => T };
+const deps = { store: memStore({ consent: ['admin1'] }), verifyFetch, finFetch, audit, liveSwitch: async () => { await sleep(B.delay); return true; }, sleep: async () => {}, defer, now: () => T };
 const live = { FINATIC_API_KEY: 'fntc_live_FAKE', FINATIC_LIVE_ORDERS: '1', DEV: '0' };
 let ip = 1, kn = 0;
 const req = (body, path = 'order') => new Request('https://tradezoro.com/connect/finatic/' + path, { method: 'POST', headers: { 'cf-connecting-ip': '10.7.' + (ip++ % 250) + '.1', origin: 'https://tradezoro.com', 'content-type': 'application/json', authorization: 'Bearer ' + token('admin1') }, body: JSON.stringify(body) });
@@ -162,11 +164,11 @@ O._resetRate(); r = await O.handle(req(place({ idemKey: ka })), live, deps); ass
 
 // ---- 'env' pre-warm: starts the session after the reply, so the first order skips it ----------------------------------------
 F._resetSessions(); deferred.length = 0; const s0 = sessStarts();
-r = await O.handle(req({ op: 'env', userId: US, src: 'chart', accountId: ACC }), live, deps); assert.equal(r.status, 200); assert.deepEqual(await r.json(), { env: 'live', enabled: true });
+r = await O.handle(req({ op: 'env', userId: US, src: 'chart', accountId: ACC }), live, deps); assert.equal(r.status, 200); { const j = await r.json(); assert.equal(j.env, 'live'); assert.equal(j.enabled, true); assert.equal(j.consent, true); }
 await Promise.all(deferred); assert.equal(sessStarts() - s0, 1, 'warmed');
 O._resetRate(); r = await O.handle(req(place()), live, deps); assert.equal(r.status, 200); assert.equal(sessStarts() - s0, 1, 'order used the warm session');
-// non-admin: no warm-up, 403
-r = await O.handle(new Request('https://tradezoro.com/connect/finatic/order', { method: 'POST', headers: { origin: 'https://tradezoro.com', 'content-type': 'application/json', 'cf-connecting-ip': '10.3.3.3', authorization: 'Bearer ' + token('member9') }, body: JSON.stringify({ op: 'env', userId: US }) }), live, deps); assert.equal(r.status, 403);
+// member with no connection of their own: env answers, but never warms the admin's user (the client-sent id is ignored)
+{ const s1 = sessStarts(); deferred.length = 0; r = await O.handle(new Request('https://tradezoro.com/connect/finatic/order', { method: 'POST', headers: { origin: 'https://tradezoro.com', 'content-type': 'application/json', 'cf-connecting-ip': '10.3.3.3', authorization: 'Bearer ' + token('member9') }, body: JSON.stringify({ op: 'env', userId: US }) }), live, deps); assert.equal(r.status, 200); await Promise.all(deferred); assert.equal(sessStarts(), s1, 'no warm-up for a borrowed id'); }
 // data 'live' poll keeps the same cached session (parallel GETs)
 const s1 = sessStarts(); r = await D.handle(req({ op: 'live', accountId: ACC, userId: US }, 'data'), live, deps); assert.equal(r.status, 200); assert.equal(sessStarts(), s1, 'poll reuses the session');
 

@@ -1,4 +1,4 @@
-// ZoroCharts LIVE broker orders (admin only, 2026-11-15) browser test. EVERY /connect/finatic/* call is answered by a local mock in this
+// ZoroCharts LIVE broker orders (admin only 2026-11-15; every signed-in member since 21 Nov 2026) browser test. EVERY /connect/finatic/* call is answered by a local mock in this
 // file: no request ever leaves 127.0.0.1, no real order can be sent. Runs 1440 / 412 / 390, dark + light.
 //   node tools/tests/chart-dev-server.mjs 8031 &   CHART_BASE=http://127.0.0.1:8031 node tools/tests/chart-live-browser.js <shotsDir>
 // ORDER PANEL (2026-11-16): the floating panel (assets/chart-order-panel.js) replaces the bottom live strip: Scalp Buy/Sell + qty cap,
@@ -21,7 +21,7 @@ const check = (ok, msg, x) => { if (!ok) fail++; console.log((ok ? 'PASS ' : 'FA
 const globex = (s) => { const d = new Date((s - 5 * 3600) * 1000), wd = d.getUTCDay(), h = d.getUTCHours(); return !(wd === 6 || (wd === 5 && h >= 17) || (wd === 0 && h < 18) || h === 17); };   // EST approx (fixture)
 const ACC = '123e4567-e89b-12d3-a456-426614174000', US = '0aaa1111-2222-3333-4444-555566667777';
 
-async function open(b, { w, h, mobile, theme, admin = true, connected = true, flat = false, stops = false, envFail = 0 }) {
+async function open(b, { w, h, mobile, theme, admin = true, connected = true, flat = false, stops = false, envFail = 0, consent = true }) {
   const ctx = await b.newContext({ viewport: { width: w, height: h }, deviceScaleFactor: mobile ? 2 : 1, isMobile: !!mobile, hasTouch: !!mobile });
   await ctx.addInitScript(stub);
   await ctx.addInitScript(({ t, admin, connected, US }) => {
@@ -46,14 +46,15 @@ async function open(b, { w, h, mobile, theme, admin = true, connected = true, fl
     if (process.env.DBG) console.log('DBG route', u.pathname + u.search, bars.length);
     return r.fulfill({ json: { s: 'NQ', tf: '1', page, bars, rt: true } });
   });
-  const M = { calls: [], positions: [], orders: [], failRead: false, modify: true, n: 0, delay: 0, stops, envFail, group: null };
+  const M = { calls: [], positions: [], orders: [], failRead: false, modify: true, n: 0, delay: 0, stops, envFail, group: null, consent, blocked: false, connected };
   ctx.M = M;
   const j = (o, status = 200) => ({ status, contentType: 'application/json', body: JSON.stringify(o) });
   await ctx.route('**/connect/finatic/**', async (r) => {
     const u = new URL(r.request().url()); let body = {}; try { body = JSON.parse(r.request().postData() || '{}'); } catch (e) {}
     M.calls.push({ path: u.pathname, body, at: Date.now() });
     if (M.delay && u.pathname.endsWith('/order') && ['place', 'cancel', 'modify', 'flatten'].includes(body.op)) await sleep(M.delay);
-    if (!admin) return r.fulfill(j({ error: 'Admins only' }, 403));
+    // member live (21 Nov): the mock plays functions/connect/finatic/_owner.js: never connected = 409 needsConnect; consent gate
+    if (!M.connected && !u.pathname.endsWith('/session') && !(u.pathname.endsWith('/order') && ['env', 'consent'].includes(body.op))) return r.fulfill(j({ error: 'Connect a broker first.', code: 'needs_connect', needsConnect: true }, 409));
     if (u.pathname.endsWith('/session') && r.request().method() === 'GET') return r.fulfill(j({ configured: true }));
     if (u.pathname.endsWith('/session')) return r.fulfill(j({ portalUrl: 'http://127.0.0.1:1/portal', sessionId: 's1', userId: body.userId || '' }));
     if (u.pathname.endsWith('/data')) {
@@ -63,7 +64,10 @@ async function open(b, { w, h, mobile, theme, admin = true, connected = true, fl
     }
     if (u.pathname.endsWith('/order')) {
       // env: M.envFail answers fail first (429 / 503 / network), M.envOff = the server really says enabled:false
-      if (body.op === 'env') { if (M.envFail > 0) { M.envFail--; return M.envFail % 2 ? r.fulfill(j({ error: 'Too many requests' }, 429)) : r.abort(); } return r.fulfill(j({ env: 'live', enabled: !M.envOff })); }
+      if (body.op === 'env') { if (M.envFail > 0) { M.envFail--; return M.envFail % 2 ? r.fulfill(j({ error: 'Too many requests' }, 429)) : r.abort(); } return r.fulfill(j({ env: 'live', enabled: !M.envOff, consent: M.consent, blocked: M.blocked, version: '2026-11-21' })); }
+      if (body.op === 'consent') { if (body.accept !== true || body.version !== '2026-11-21') return r.fulfill(j({ error: 'Tick the box', code: 'consent_needed' }, 400)); if (M.consentFail) return r.fulfill(j({ error: 'Could not save your acceptance. Try again in a moment.', code: 'consent_unwritable' }, 503)); M.consent = true; return r.fulfill(j({ ok: true, consent: true })); }
+      if (['place', 'modify', 'flatten'].includes(body.op) && M.blocked) return r.fulfill(j({ error: 'Live trading is switched off for your account. Contact support.', code: 'member_blocked' }, 403));
+      if (['place', 'modify', 'flatten'].includes(body.op) && !M.consent) return r.fulfill(j({ error: 'Enable live trading first', code: 'consent_needed' }, 403));
       if (body.op === 'schema') return body.action === 'modify' && !M.modify ? r.fulfill(j({ error: 'not supported', code: 'upstream' }, 503)) : r.fulfill(j({ data: Object.assign({ fields: { symbol: {}, orderQty: {} } }, M.stops ? { supportedOrderTypesByAssetClass: { future: ['market', 'limit', 'stop', 'stop_limit'] } } : {}), env: 'live' }));
       // stop loss / take profit sync (server: order.js syncBracket): the mock plays the server's record
       if (body.op === 'bracket') return r.fulfill(j({ ok: true, group: M.group, did: 'ok' }));
@@ -355,7 +359,7 @@ function alignChecks(A, tag, mobile) {
 // ---- member (non-admin): the same panel for PAPER, no broker words; SL/TP bracket, Join Bid/Ask, Stop, Trail, Flatten
 async function memberPaper(b, w, h, mobile, theme) {
   const tag = 'member-' + w + '-' + theme;
-  const { ctx, p, errors, M } = await open(b, { w, h, mobile, theme, admin: false, flat: true });
+  const { ctx, p, errors, M } = await open(b, { w, h, mobile, theme, admin: false, flat: true, connected: false });
   await p.waitForFunction(() => window.__stkPaper.account, null, { timeout: 20000 });
   await p.evaluate(() => { const MH = window.StrykerMarketHours; MH.futuresStatus = () => ({ open: true, until: Date.now() + 3600e3 }); window.__stkPaper.setEnabled(true); window.__stkPaper.account.setLast('futures:NQ1!', 28750); });
   check(await openOP(p, mobile), tag + ': Trade opens the order panel');
@@ -445,7 +449,7 @@ async function memberPaper(b, w, h, mobile, theme) {
     const sh = await p.evaluate(() => { const o = document.getElementById('stkop'), r = o.getBoundingClientRect(); return { sheet: o.classList.contains('is-sheet'), l: r.left, r: r.right, b: Math.round(r.bottom), vh: innerHeight, vw: innerWidth, dom: getComputedStyle(o.querySelector('[data-tab=dom]')).display }; });
     check(sh.sheet && sh.l === 0 && Math.abs(sh.r - sh.vw) <= 1 && sh.dom === 'none', tag + ': phone = bottom sheet, Scalp + Order only', sh);
   }
-  check(M.calls.length === 0, tag + ': member: no broker calls at all', M.calls.length);
+  check(!writes(M).length && M.calls.every((c) => c.body.op === 'accounts' || c.body.op === 'env'), tag + ': member without a broker: no order call (only the accounts read)', M.calls.map((c) => c.body.op));
   check(await p.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), tag + ': no horizontal page scroll');
   check(errors.length === 0, tag + ': no console errors ' + errors.slice(0, 2).join(' | '));
   await ctx.close();
@@ -453,7 +457,7 @@ async function memberPaper(b, w, h, mobile, theme) {
 // ---- 2026-11-17: Dock right / Float (remembered), symbol bar, Trade menu Paper disconnect (off, then on again), right rail button
 async function memberDock(b, w, h, mobile, theme) {
   const tag = 'dock-' + w + '-' + theme;
-  const { ctx, p, errors, M } = await open(b, { w, h, mobile, theme, admin: false, flat: true });
+  const { ctx, p, errors, M } = await open(b, { w, h, mobile, theme, admin: false, flat: true, connected: false });
   await p.waitForFunction(() => window.__stkPaper.account, null, { timeout: 20000 });
   await p.evaluate(() => { const MH = window.StrykerMarketHours; MH.futuresStatus = () => ({ open: true, until: Date.now() + 3600e3 }); window.__stkPaper.setEnabled(true); window.__stkPaper.account.setLast('futures:NQ1!', 28750); });
   const railSel = '.stkw-rail .stkop-railbtn';
@@ -520,11 +524,11 @@ async function memberDock(b, w, h, mobile, theme) {
   // Trade menu: Paper row has the disconnect (always visible) and a reserved edit slot; columns line up
   await p.evaluate(() => window.__stkPaper.openTradeMenu());
   await p.waitForSelector('#stkc-trade-pop:not([hidden]) [data-x=gear][data-id=paper]', { timeout: 5000 });
-  const tm = await p.evaluate(() => { const r = document.querySelector('#stkc-trade-pop .stktm-row[data-row=paper]'), R = r.getBoundingClientRect(); const bx = (e) => e.getBoundingClientRect(); const off = r.querySelector('[data-x=gear][data-id=paper]'), ph = r.querySelector('.stktm-ph'), tick = r.querySelector('.stktm-tick'), logo = r.querySelector('.stktm-logo'); const cy = [logo, ph, off, tick].map((e) => bx(e).top + bx(e).height / 2); return { op: getComputedStyle(off).opacity, offWH: [bx(off).width, bx(off).height], phWH: [bx(ph).width, bx(ph).height], offR: Math.round(R.right - bx(off).right), tickR: Math.round(R.right - bx(tick).right), logoL: Math.round(bx(logo).left - R.left), cySpread: Math.round((Math.max(...cy) - Math.min(...cy)) * 10) / 10, txt: document.getElementById('stkc-trade-pop').innerText }; });
+  const tm = await p.evaluate(() => { const r = document.querySelector('#stkc-trade-pop .stktm-row[data-row=paper]'), R = r.getBoundingClientRect(); const bx = (e) => e.getBoundingClientRect(); const off = r.querySelector('[data-x=gear][data-id=paper]'), ph = r.querySelector('.stktm-ph'), tick = r.querySelector('.stktm-tick'), logo = r.querySelector('.stktm-logo'); const cy = [logo, ph, off, tick].filter(Boolean).map((e) => bx(e).top + bx(e).height / 2); return { op: getComputedStyle(off).opacity, offWH: [bx(off).width, bx(off).height], phWH: ph ? [bx(ph).width, bx(ph).height] : [bx(off).width, bx(off).height], offR: Math.round(R.right - bx(off).right), tickR: Math.round(R.right - bx(tick).right), logoL: Math.round(bx(logo).left - R.left), cySpread: Math.round((Math.max(...cy) - Math.min(...cy)) * 10) / 10, txt: document.getElementById('stkc-trade-pop').innerText }; });
   console.log('TMENU ' + tag + ' ' + JSON.stringify(tm));
   check(tm.op === '1' && tm.cySpread <= 1, tag + ': Paper card: gear always visible, logo / text / slots / tick on one centre', tm);
   check(tm.offWH.map(Math.round).join() === tm.phWH.map(Math.round).join(), tag + ': reserved edit slot = disconnect size (same column grid as broker rows)', [tm.offWH, tm.phWH]);
-  check(!/tradovate|rithmic|broker|finatic|disconnect/i.test(tm.txt), tag + ': member menu: Paper only, no broker words', tm.txt);
+  check(/Paper/.test(tm.txt) && /Connect a broker/.test(tm.txt) && !/finatic/i.test(tm.txt) && !(await p.$('#stkc-trade-pop img')), tag + ': member menu: Paper + Connect a broker, no logo images, no vendor name', tm.txt);
   const pop = await p.$('#stkc-trade-pop'); await pop.screenshot({ path: OUT + '/crop-tmenu-' + tag + '.png' });
   // disconnect: confirm first; Cancel keeps it on
   await p.evaluate(() => { document.querySelector('#stkc-trade-pop [data-x=gear][data-id=paper]').click(); document.querySelector('#stktm-gm [data-g=paperoff]').click(); });
@@ -557,7 +561,7 @@ async function memberDock(b, w, h, mobile, theme) {
   await p.evaluate(() => document.querySelector('#stkc-trade-pop [data-a=paper]').click());
   check(await opWait(p, () => window.__stkPaper.enabled && !document.getElementById('stkop').hidden && document.querySelector('#stkc-paper-btn .stkc-btn-l').textContent === 'Paper'), tag + ': picking Paper trading turns it back on and opens the panel');
   check(!chips0 || await opWait(p, () => document.querySelectorAll('.stkpt-chip').length > 0, null, 5000), tag + ': paper order line back on the chart', chips0);
-  check(M.calls.length === 0, tag + ': member: no broker calls at all', M.calls.length);
+  check(!writes(M).length && M.calls.every((c) => c.body.op === 'accounts' || c.body.op === 'env'), tag + ': member without a broker: no order call (only the accounts read)', M.calls.map((c) => c.body.op));
   check(await p.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), tag + ': no horizontal page scroll');
   check(errors.length === 0, tag + ': no console errors ' + errors.slice(0, 2).join(' | '));
   await ctx.close();
@@ -653,12 +657,80 @@ async function envAndBrackets(b, w, h, mobile, theme) {
   await ctx.close();
 }
 async function nonAdmin(b) {
-  const { ctx, p, errors, M } = await open(b, { w: 1440, h: 900, theme: 'dark', admin: false });
-  await sleep(2500);
+  // since 21 Nov 2026 a member gets the live module too (Connect a broker), but never the global kill switch
+  const { ctx, p, errors, M } = await open(b, { w: 1440, h: 900, theme: 'dark', admin: false, connected: false });
+  await p.waitForFunction(() => window.__stkLive && window.__stkLive.state.loaded, null, { timeout: 20000 });
   await openOP(p, false);
-  const r = await p.evaluate(() => ({ pick: !!document.querySelector('.stklv-pick, #stkop select'), mod: !!(window.__stkLive && window.__stkLive.pick), live: [...document.scripts].some((s) => /chart-live/.test(s.src)) }));
-  check(!r.pick && !r.mod, 'non-admin: no account picker, live module never loaded', r);
-  check(M.calls.length === 0, 'non-admin: no broker calls at all', M.calls.length);
+  const r = await p.evaluate(() => ({ mod: !!(window.__stkLive && window.__stkLive.pick), admin: window.__stkLive.admin, kill: !!document.querySelector('[data-a=kill],[data-a=killon]') }));
+  check(r.mod && r.admin === false && !r.kill, 'member: live module loaded, no kill switch buttons', r);
+  check(!writes(M).length, 'member: no order call', M.calls.map((c) => c.body.op));
+  await ctx.close();
+}
+// ---- member live (21 Nov 2026): connected member, NOT yet accepted -> view-only, the first order opens "Enable live trading"
+async function memberLive(b, w, h, mobile, theme) {
+  const tag = 'memberlive-' + w + '-' + theme;
+  const { ctx, p, errors, M } = await open(b, { w, h, mobile, theme, admin: false, consent: false });
+  await p.waitForFunction(() => window.__stkLive && window.__stkLive.pick && window.__stkLive.state.accounts.length, null, { timeout: 20000 });
+  check(await p.evaluate(() => !window.__stkLive.state.acct), tag + ': Paper is the default account');
+  await openOP(p, mobile);
+  await pickAcct(p, ACC);
+  const sh = await p.waitForSelector('.stklv-en', { timeout: 8000 }).then(() => true, () => false);
+  check(sh, tag + ': picking a live account before accepting opens "Enable live trading"');
+  if (!sh) { await ctx.close(); return; }
+  await sleep(250);
+  const m = await p.evaluate(() => {
+    const box = document.querySelector('.stklv-en .stklv-cf-box'), B = box.getBoundingClientRect(), cs = getComputedStyle(box);
+    const ck = document.querySelector('.stklv-en-ck'), C = ck.getBoundingClientRect(), cc = getComputedStyle(ck), inp = ck.querySelector('input').getBoundingClientRect(), sp = ck.querySelector('span').getBoundingClientRect();
+    const btns = [...document.querySelectorAll('.stklv-en .stklv-cf-btns .stklv-btn')].map((e) => e.getBoundingClientRect());
+    const head = document.querySelector('.stklv-en .stklv-cf-head'), hb = [...head.children].map((e) => e.getBoundingClientRect());
+    const over = [...box.querySelectorAll('*')].filter((e) => e.scrollWidth > e.clientWidth + 1 && getComputedStyle(e).overflowX !== 'auto').map((e) => e.className || e.tagName);
+    return { box: [Math.round(B.left), Math.round(B.right), Math.round(B.top), Math.round(B.bottom)], vw: innerWidth, vh: innerHeight, pad: [cs.paddingLeft, cs.paddingRight], ckPad: [cc.paddingLeft, cc.paddingRight, cc.paddingTop, cc.paddingBottom],
+      ckBox: Math.round((inp.top - C.top) * 10) / 10, txt: box.innerText, yesDisabled: document.querySelector('.stklv-en [data-k=yes]').disabled,
+      btnCy: btns.map((r) => Math.round((r.top + r.height / 2) * 10) / 10), btnH: btns.map((r) => Math.round(r.height)), headCy: hb.map((r) => Math.round((r.top + r.height / 2) * 10) / 10), over, hscroll: document.documentElement.scrollWidth > innerWidth + 1,
+      fit: B.bottom <= innerHeight + 1 && B.top >= -1, terms: (document.querySelector('.stklv-en-ck a') || {}).getAttribute && document.querySelector('.stklv-en-ck a').getAttribute('href') };
+  });
+  console.log('ENABLE ' + tag + ' ' + JSON.stringify(Object.assign({}, m, { txt: undefined })));
+  check(/real money/i.test(m.txt) && /go straight to your broker/i.test(m.txt) && /not a broker and gives no advice/i.test(m.txt) && /responsible for your orders/i.test(m.txt) && m.terms === '/terms#broker-live', tag + ': notice: real money, orders go to your broker, not a broker / no advice, you are responsible, Terms link', m.txt);
+  check(m.yesDisabled, tag + ': Enable is disabled until the box is ticked');
+  check(m.pad[0] === m.pad[1] && m.ckPad[0] === m.ckPad[1] && m.ckPad[2] === m.ckPad[3], tag + ': even padding (sheet + checkbox card)', [m.pad, m.ckPad]);
+  check(Math.max(...m.btnCy) - Math.min(...m.btnCy) <= 1 && m.btnH.every((x) => x >= 44), tag + ': buttons on one centre, >= 44 px', [m.btnCy, m.btnH]);
+  check(Math.max(...m.headCy) - Math.min(...m.headCy) <= 1, tag + ': header badge and close on one centre', m.headCy);
+  check(!m.over.length && !m.hscroll && m.fit, tag + ': no clipped text, no horizontal scroll, sheet fits the screen', [m.over, m.box, m.vh]);
+  await p.screenshot({ path: OUT + '/enable-' + w + '-' + theme + '.png' });
+  // view-only: an order is refused on the client (no request) and re-opens the step
+  await tap(p, '.stklv-en [data-k=no]', mobile);
+  await opWait(p, () => !document.querySelector('.stklv-en'));
+  check(await p.evaluate(() => /Enable live trading first/.test(window.__stkLive.blockReason)), tag + ': Not now = view-only (block reason shown)', await p.evaluate(() => window.__stkLive.blockReason));
+  await opTab(p, 'scalp', mobile);
+  check(await opWait(p, () => document.querySelector('#stkop .stkop-scalp [data-a=buy]').disabled), tag + ': view-only: Buy is disabled');
+  check(!writes(M).length, tag + ': no order request while not accepted', writes(M));
+  const al = await p.evaluate(() => { const b = document.querySelector('#stkop [data-k=alert]'), e = b.querySelector('[data-a=enable]'); return { shown: !b.hidden && !e.hidden, t: b.innerText }; });
+  check(al.shown && /View only/.test(al.t), tag + ': the panel shows "View only" + Enable live trading', al);
+  if (!mobile || theme === 'dark') await p.screenshot({ path: OUT + '/viewonly-' + w + '-' + theme + '.png' });
+  // accept: the panel button, tick + Enable -> consent op with the version, then orders are allowed
+  await tap(p, '#stkop [data-a=enable]', mobile);
+  await p.waitForSelector('.stklv-en', { timeout: 5000 });
+  await tap(p, '.stklv-en [data-k=ck]', mobile);
+  check(await p.evaluate(() => !document.querySelector('.stklv-en [data-k=yes]').disabled), tag + ': ticking the box enables the button');
+  await p.screenshot({ path: OUT + '/enable-ticked-' + w + '-' + theme + '.png' });
+  await tap(p, '.stklv-en [data-k=yes]', mobile);
+  check(await opWait(p, () => !document.querySelector('.stklv-en')), tag + ': sheet closes after Enable');
+  const cs = M.calls.filter((c) => c.body.op === 'consent');
+  check(cs.length === 1 && cs[0].body.accept === true && cs[0].body.version === '2026-11-21', tag + ': acceptance sent once to the server with the notice version', cs.map((c) => c.body));
+  check(await blockFree(p), tag + ': after accepting, live orders are allowed', await p.evaluate(() => window.__stkLive.blockReason));
+  check(await p.evaluate(() => !document.querySelector('[data-a=kill],[data-a=killon]')), tag + ': member never sees the global kill switch');
+  check(!writes(M).length, tag + ': still no order sent by the test (stub broker only)');
+  check(errors.length === 0, tag + ': no console errors ' + errors.slice(0, 2).join(' | '));
+  await ctx.close();
+}
+// ---- per-member admin kill: blocked member = no enable step, clear reason, no order
+async function memberBlocked(b) {
+  const { ctx, p, M } = await open(b, { w: 1440, h: 900, theme: 'dark', admin: false, consent: true });
+  M.blocked = true;
+  await p.waitForFunction(() => window.__stkLive && window.__stkLive.pick && window.__stkLive.state.accounts.length, null, { timeout: 20000 });
+  await openOP(p, false); await pickAcct(p, ACC);
+  check(await opWait(p, () => /switched off for your account/.test(window.__stkLive.blockReason)), 'blocked member: "switched off for your account"', await p.evaluate(() => window.__stkLive.blockReason));
+  check(!(await p.$('.stklv-en')) && !writes(M).length, 'blocked member: no enable step, no order');
   await ctx.close();
 }
 async function notConnected(b) {
@@ -708,7 +780,8 @@ async function connectAlways(b) {
   const b = await launch({ args: ['--js-flags=--max-old-space-size=768'] });
   try {
     const only = process.env.ONLY || '';
-    if (!only || only === 'base') { await nonAdmin(b); await notConnected(b); await connectAlways(b); }
+    if (!only || only === 'base') { await nonAdmin(b); await notConnected(b); await connectAlways(b); await memberBlocked(b); }
+    for (const [w, h, mobile, theme] of [[1440, 900, false, 'dark'], [1440, 900, false, 'light'], [390, 844, true, 'dark'], [390, 844, true, 'light']]) if (!only || only === 'memberlive-' + w + '-' + theme) await memberLive(b, w, h, mobile, theme);
     const sizes = [[1440, 900, false, 'dark'], [1440, 900, false, 'light'], [412, 915, true, 'dark'], [412, 915, true, 'light'], [390, 844, true, 'dark'], [390, 844, true, 'light']];
     for (const [w, h, mobile, theme] of sizes) if (!only || only === w + '-' + theme) await run(b, w, h, mobile, theme);
     for (const [w, h, mobile, theme] of sizes) if (!only || only === 'sltp-' + w + '-' + theme) await envAndBrackets(b, w, h, mobile, theme);

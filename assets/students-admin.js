@@ -9,6 +9,9 @@
 // admin write those three keys. Filter "Live data on" + the "Live data: N users" count live in the filter row.
 
 let ALL_STUDENTS = [];
+// Per-member live trading kill (21 Nov 2026): settings/liveBlocked { <uid>: true } = the broker order route refuses that member's live
+// orders (functions/connect/finatic/_owner.js memberBlocked, read at most every 5 s). Admin-only doc. Loaded once for the list.
+let LIVE_BLOCKED = {};
 
 function initials(name){
   if (!name) return '?';
@@ -92,6 +95,12 @@ function renderStudentsTable(students){
         '<span class="live-feed-saved" aria-live="polite"></span>' +
         '<span class="live-feed-note">' + (isAdminUser ? 'Admins always get live data.' : (s.demo === true ? 'Demo account: always live.' : (liveNote(s, liveOn, liveWhyList)))) + '</span>' +
       '</div>' +
+      '<div class="live-feed-row">' +
+        '<label class="live-feed-switch"><input type="checkbox" role="switch" data-live-block="' + s.uid + '"' + (LIVE_BLOCKED[s.uid] === true ? ' checked' : '') + '>' +
+          '<span class="live-feed-track" aria-hidden="true"></span><span class="live-feed-label">Block live trading</span></label>' +
+        '<span class="live-block-saved live-feed-saved" aria-live="polite"></span>' +
+        '<span class="live-feed-note">On: this member’s live broker orders are refused (within about 5 s). Their broker stays connected and readable.</span>' +
+      '</div>' +
       '<div style="display:flex; gap:8px; flex-wrap:wrap;">' +
         '<button class="btn btn-sm ' + (isAdminUser ? 'btn-ghost' : 'btn-primary') + '" data-toggle-admin="' + s.uid + '">' + (isAdminUser ? 'Revoke admin' : 'Grant admin') + '</button>' +
         '<button class="btn btn-sm btn-ghost" data-toggle-moderator="' + s.uid + '">' + (isModeratorUser ? 'Revoke moderator' : 'Grant moderator') + '</button>' +
@@ -104,6 +113,15 @@ function renderStudentsTable(students){
     head.addEventListener('click', () => {
       const open = card.classList.toggle('open');
       head.setAttribute('aria-expanded', open ? 'true' : 'false');
+    });
+
+    card.querySelector('[data-live-block]').addEventListener('change', (e) => {
+      const box = e.currentTarget, want = box.checked, saved = card.querySelector('.live-block-saved');
+      if (want && !confirm('Block live trading for ' + name + '? Their live broker orders will be refused until you switch this off.')) { box.checked = false; return; }
+      box.disabled = true; saved.className = 'live-block-saved live-feed-saved'; saved.textContent = 'Saving…';
+      db.collection('settings').doc('liveBlocked').set({ [s.uid]: want }, { merge: true })
+        .then(() => { LIVE_BLOCKED[s.uid] = want; box.disabled = false; saved.className = 'live-block-saved live-feed-saved is-ok'; saved.textContent = '✓ Saved'; setTimeout(() => { if (saved.textContent === '✓ Saved') saved.textContent = ''; }, 2500); })
+        .catch((err) => { box.checked = !want; box.disabled = false; saved.className = 'live-block-saved live-feed-saved is-err'; saved.textContent = 'Not saved'; showToast('error', 'Could not change live trading: ' + (err.message || err)); });
     });
 
     card.querySelector('[data-live-feed]').addEventListener('change', (e) => {
@@ -406,7 +424,8 @@ function loadStudents(){
     loadAdminList(),
     loadModeratorList(),
     (typeof loadStaffList === 'function') ? loadStaffList() : Promise.resolve(),
-    (typeof loadPlansForRoles === 'function') ? loadPlansForRoles() : Promise.resolve()
+    (typeof loadPlansForRoles === 'function') ? loadPlansForRoles() : Promise.resolve(),
+    db.collection('settings').doc('liveBlocked').get().then((d) => { LIVE_BLOCKED = (d.exists && d.data()) || {}; }).catch(() => {})
   ])
     .then(([snap]) => {
       ALL_STUDENTS = [];

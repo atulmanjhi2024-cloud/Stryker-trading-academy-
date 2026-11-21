@@ -1,3 +1,5 @@
+import * as OW from '../../functions/connect/finatic/_owner.js';
+import { memStore } from './_store.mjs';
 import assert from 'node:assert/strict';
 import * as S from '../../functions/connect/finatic/session.js';
 import * as D from '../../functions/connect/finatic/data.js';
@@ -26,14 +28,16 @@ const calls = []; const envHdr = [];
 const finFetch = async (url, init) => {
   const u = new URL(url); envHdr.push(init.headers['X-Finatic-Environment']); calls.push({ method: init.method, path: u.pathname, key: init.headers['x-api-key'] });
   const ok = (data) => new Response(JSON.stringify({ data, errors: [] }), { status: 200 });
+  if (u.pathname === '/api/v1/accounts' && init.method === 'GET') return new Response(JSON.stringify({ data: [{ accountId: '123e4567-e89b-12d3-a456-426614174000' }, { accountId: 'a' }], errors: [] }), { status: 200 });   // member live: the ownership list
   if (u.pathname === '/api/v1/session/init') return ok({ one_time_token: 'ott' });
   if (u.pathname === '/api/v1/session/start') return ok({ session_id: 'sess1', company_id: 'c1', csrf_token: 'x', status: 'active', user_id: JSON.parse(init.body || '{}').user_id || 'u-new' });
   if (u.pathname === '/api/v1/session/portal') return ok({ portal_url: 'https://portal.finatic.dev/?t=secret' });
   if (u.pathname.endsWith('/user')) return ok({ userId: '0aaa1111-2222-3333-4444-555566667777' });
+  if (u.pathname === '/api/v1/account-grants') return ok([{ id: '123e4567-e89b-12d3-a456-426614174000' }]);
   if (u.pathname.endsWith('/fills')) return ok([{ fillId: 'f1' }]);
   return ok([{ accountId: 'a' }]);
 };
-const deps = { verifyFetch, finFetch };
+const deps = { store: memStore({ consent: ['admin1'] }), verifyFetch, finFetch };
 const env = { FINATIC_API_KEY: 'fk_test_SECRET', DEV: '0' };
 let ipn = 1;
 const ACC = '123e4567-e89b-12d3-a456-426614174000';
@@ -51,10 +55,9 @@ assert.equal(await status(S.handle(req({}, token('admin1')), {}, deps)), 503);
 // unsigned 401, non-admin 403, bad origin 403
 assert.equal(await status(S.handle(req({}, null), env, deps)), 401);
 assert.equal(await status(S.handle(req({}, 'a.b.c'), env, deps)), 401);
-assert.equal(await status(S.handle(req({}, token('member9')), env, deps)), 403);
-assert.equal(await status(D.handle(req({ op: 'accounts' }, token('member9')), env, deps)), 403);
+assert.equal(await status(D.handle(req({ op: 'accounts', userId: '0aaa1111-2222-3333-4444-555566667777' }, token('member9')), env, deps)), 409, 'member live 21 Nov: a member never borrows a client-sent user id');
 assert.equal(await status(D.handle(req({ op: 'accounts' }, null), env, deps)), 401);
-assert.equal(calls.length, 0, 'non-admin never reaches the vendor');
+assert.equal(calls.length, 0, 'a member with no connection of their own never reaches the vendor');
 assert.equal(await status(S.handle(new Request('https://tradezoro.com/x', { method: 'POST', headers: { origin: 'https://evil.example', 'content-type': 'application/json', authorization: 'Bearer ' + token('admin1') }, body: '{}' }), env, deps)), 403);
 
 // admin: session -> portal url (+ parent_origin), key never in the reply
@@ -87,8 +90,8 @@ assert.equal(await status(D.handle(req({ op: 'orders', accountId: '../../x', use
 const n1 = calls.length;
 assert.equal(await status(D.handle(req({ op: 'revoke', grantId: ACC, userId: '0aaa1111-2222-3333-4444-555566667777' }, token('admin1')), env, deps)), 200);
 const rv = calls.slice(n1).find((c) => c.path.endsWith('/revoke')); assert.equal(rv.method, 'POST');
-// no Finatic user known -> needsConnect
-assert.equal(await status(D.handle(req({ op: 'accounts' }, token('admin1')), env, deps)), 409);
+// no Finatic user known -> needsConnect (a fresh record; admin1's legacy id was claimed above)
+OW._resetOwner(); assert.equal(await status(D.handle(req({ op: 'accounts' }, token('admin1')), env, { ...deps, store: memStore() })), 409); OW._resetOwner();
 // session id from the portal run resolves the user
 r = await D.handle(req({ op: 'accounts', sessionId: 'sess1' }, token('admin1')), env, deps); assert.equal(r.status, 200); assert.equal((await r.json()).userId, '0aaa1111-2222-3333-4444-555566667777');
 // GET on data refused

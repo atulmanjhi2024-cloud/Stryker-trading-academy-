@@ -1,3 +1,4 @@
+import { memStore } from './_store.mjs';
 // Owner bugs 21 Nov (AUTO-LIVEFIX2): (1) live balance "updated 4 days ago", (2) "No clear answer from the broker" on a place.
 // Every broker call is a STUB: nothing here reaches a real broker. Sample data only. Run: node tests/finatic/livefix2.test.mjs
 import assert from 'node:assert/strict';
@@ -53,6 +54,7 @@ const finFetch = async (url, init) => {
   if (u.pathname === '/api/v1/session/init') return ok({ one_time_token: 'ott' });
   if (u.pathname === '/api/v1/session/start') return ok({ session_id: 's', company_id: 'c', status: 'active', user_id: US });
   const page = (list) => { const off = +u.searchParams.get('offset') || 0, lim = +u.searchParams.get('limit') || 100; return ok(list.slice(off, off + lim)); };
+  if (u.pathname === '/api/v1/accounts') return ok([{ accountId: ACC }]);   // member live (21 Nov): ownership check reads the account list
   if (u.pathname.endsWith('/balances')) return page(B.bal);
   if (u.pathname.endsWith('/positions')) return ok([]);
   if (u.pathname.endsWith('/orders') && init.method === 'GET') {
@@ -67,7 +69,7 @@ const finFetch = async (url, init) => {
 };
 const audits = new Map();
 const audit = async (e, id) => { if (id && audits.has(id)) { const er = new Error('dup'); er.duplicate = true; throw er; } const row = { ...e }; audits.set(id || 'r' + audits.size, row); return { finish: async (x) => Object.assign(row, x) }; };
-const deps = { verifyFetch, finFetch, audit, brackets: new Map(), liveSwitch: async () => true, now: () => N, sleep: async () => {} };
+const deps = { store: memStore({ consent: ['admin1'] }), verifyFetch, finFetch, audit, brackets: new Map(), liveSwitch: async () => true, now: () => N, sleep: async () => {} };
 const live = { FINATIC_API_KEY: 'fntc_live_FAKE', FINATIC_LIVE_ORDERS: '1', DEV: '0' };
 let ip = 1;
 const req = (body, url) => new Request(url, { method: 'POST', headers: { 'cf-connecting-ip': '10.8.' + (ip++ % 250) + '.1', origin: 'https://tradezoro.com', 'content-type': 'application/json', authorization: 'Bearer ' + token('admin1') }, body: JSON.stringify(body) });

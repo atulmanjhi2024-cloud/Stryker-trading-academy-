@@ -63,7 +63,7 @@ import { normFutures } from './chart-sym.js?v=1179';   // one futures test for e
 // now records the review fields (first stop, MAE/MFE, run, leverage) and tags Replay-account
 // trades src='replay' (deps.source) so they can never be mixed in.
 //
-// LIVE BROKER ORDERS (Owner order 2026-11-15, ADMIN ONLY): for an admin, assets/chart-live.js is loaded and registers a hook with
+// LIVE BROKER ORDERS (Owner order 2026-11-15; every signed-in member since 21 Nov 2026): assets/chart-live.js is loaded and registers a hook with
 // setLiveHook(). The panel then gets an account picker (Paper, the default, + the admin's connected broker accounts). While a live
 // account is picked (LIVE.active()) this module hands over: the panel view, the on-chart lines/chips (same layer, live data), the
 // ticket, chip ×/drag; and it switches OFF every paper surface that could be mistaken for a live one (one-click box, right-click paper
@@ -98,7 +98,7 @@ const tracks = new Map();          // key -> { t, h, l, c } last bar seen per ce
 let ui = loadUi();
 let panel = null, ticket = null;
 const drag = { on: false };
-let LIVE = null;                     // assets/chart-live.js hook (admins only), see setLiveHook
+let LIVE = null;                     // assets/chart-live.js hook (signed-in members), see setLiveHook
 const liveOn = () => !!(LIVE && LIVE.active());
 const legendMut = (ms) => ms.every((m) => { const t = m.target, e = t.nodeType === 1 ? t : t.parentElement; return !e || [].every.call(m.addedNodes, (n) => n.nodeType === 3) && [].every.call(m.removedNodes, (n) => n.nodeType === 3) || !!e.closest('title,.vela-statusline,.vela-widget-bottombar,.stklat-chip'); });   // SMOOTH: the legend / bottom-bar readouts change on every pointer move while panning; they never hold a dialog or menu
 export function setLiveHook(hk){ LIVE = hk; applyEnabled(); renderPanel(); }
@@ -195,7 +195,7 @@ function applyEnabled(){
   const on = paperOn();
   document.documentElement.classList.toggle('stkpt-on', on);
   document.documentElement.classList.toggle('stklv-on', liveOn());
-  if (panel) panel.hidden = !(on || LIVE) || liveOn();   // an admin sees it for the Paper / live picker; LIVE: replaced by the order panel + its chart chip
+  if (panel) panel.hidden = !(on || LIVE) || liveOn();   // a signed-in member sees it for the Paper / live picker; LIVE: replaced by the order panel + its chart chip
     if (!on && !liveOn()) {
     closeTicket();
     document.documentElement.classList.remove('stkpt-sheet-open');
@@ -2241,16 +2241,18 @@ html:not(.stkpt-on) .stkpt-1c,html:not(.stkpt-on):not(.stklv-on) .stkpt-chip,htm
 `;
 
 // ------------------------------------------------------------------ install / mount
-// Admins only: the live-broker module (assets/chart-live.js). Non-admins never download it; the server refuses them regardless.
+// The live-broker module (assets/chart-live.js): every signed-in (non-anonymous) member since 21 Nov 2026 (Owner decision; was admins
+// only). The server scopes every call to the member's own connection and refuses live writes until "Enable live trading" is accepted.
+// admin = only the global kill switch buttons (settings/liveTrading is admin-writable).
 let liveLoaded = false;
 function maybeLive(u){
   if (liveLoaded || !u || u.isAnonymous) return;
+  liveLoaded = true;
   const local = /^(127\.0\.0\.1|localhost)$/.test(location.hostname);
   const check = (local && window.__stkLiveTest && window.__stkLiveTest.isAdmin) ? Promise.resolve(window.__stkLiveTest.isAdmin(u)) : firebase.firestore().collection('admins').doc(u.uid).get().then((d) => d.exists).catch(() => false);
-  check.then((yes) => {
-    if (!yes || liveLoaded) return; liveLoaded = true;
+  check.then((admin) => {
     const b = (document.querySelector('meta[name="stryker-build"]') || {}).content || '0';
-    import('./chart-live.js?v=' + b).then((m) => m.mountLive(window.__stkPaper, { uid: u.uid, toast: toastFn })).catch((e) => console.warn('TradeZoro: live module', e));
+    import('./chart-live.js?v=' + b).then((m) => m.mountLive(window.__stkPaper, { uid: u.uid, toast: toastFn, admin: !!admin })).catch((e) => console.warn('TradeZoro: live module', e));
   });
 }
 export function installPaper(Core){

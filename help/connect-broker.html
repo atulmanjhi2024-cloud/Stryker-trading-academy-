@@ -3,7 +3,6 @@
 <head>
 <meta charset="UTF-8">
 <meta name="stryker-build" content="1179">
-<meta name="robots" content="noindex,nofollow">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="description" content="What connecting a broker does in TradeZoro, what you need, how to disconnect, privacy and fixes.">
 <meta property="og:type" content="website">
@@ -126,7 +125,7 @@
 <div class="bh-card"><strong>In short</strong>
 <ul><li><strong>Your broker password stays with your broker.</strong> You log in on the broker’s own page, not on a TradeZoro form.</li>
 <li><strong>It reads your account.</strong> Trades and fills for the journal, open positions, and your balance.</li>
-<li><strong>Placing orders only where it is switched on.</strong> It is off unless TradeZoro has turned it on for your account.</li></ul><p class="bh-small">Education only. Not financial advice. Beta: broker connections are being rolled out step by step.</p></div>
+<li><strong>Live orders after one step.</strong> Live trading is off until you enable it once for your account and accept the risk notice. Until then your broker accounts are view-only.</li></ul><p class="bh-small">Education only. Not financial advice. Live orders are real and use your own money. See <a href="/terms#broker-live">Broker connections and live trading</a> in the Terms. Beta.</p></div>
 <h2 id="brokers">Pick your broker</h2>
 <div class="bh-grid"><a href="/help/connect-broker-interactive-brokers"><b>Interactive Brokers</b><span>What you need, steps, what syncs.</span></a><a href="/help/connect-broker-ninjatrader"><b>NinjaTrader</b><span>Logins, steps, what syncs.</span></a><a href="/help/connect-broker-rithmic"><b>Rithmic</b><span>Which logins work, steps, what syncs.</span></a><a href="/help/connect-broker-tastytrade"><b>tastytrade</b><span>Login, steps, what syncs.</span></a><a href="/help/connect-broker-tradovate"><b>Tradovate</b><span>Logins, prop firm accounts, steps, what syncs.</span></a><a href="/help/connect-broker-webull"><b>Webull</b><span>Login, steps, what syncs.</span></a></div>
 <h2 id="what">What connecting does</h2>
@@ -135,7 +134,7 @@
 <tr><td>Journal sync</td><td>Your fills become journal trades (round trips from flat to flat). Syncing the same days twice adds nothing twice. Trades still open are not imported.</td></tr>
 <tr><td>Positions</td><td>Your open position and working orders are read from the broker and shown on the chart panel.</td></tr>
 <tr><td>Balance</td><td>The broker’s last reported balance. If the broker’s figure is old, TradeZoro adds the profit or loss of fills made after it.</td></tr>
-<tr><td>Orders</td><td>Only where it is enabled for you, and with small limits (a few index futures, small size). Everything else is read only.</td></tr></tbody></table></div>
+<tr><td>Live orders</td><td>From the chart, after you enable live trading once (see below). Small limits apply: NQ, ES, MNQ and MES, at most 2 contracts, 10 orders a minute. Interactive Brokers is read only.</td></tr></tbody></table></div>
 <h2 id="before">Before you start</h2>
 <ul><li>An account at the broker with its login working. Log in once at the broker yourself first.</li>
 <li>A computer or tablet browser is easiest. The broker page opens in a <strong>new tab</strong>, so allow pop-ups for TradeZoro.</li>
@@ -149,12 +148,18 @@
 <li>Pick your broker and log in there. Choose the accounts you want to share.</li>
 <li>Come back to TradeZoro and click <strong>Continue</strong>. The window closes and your accounts show in the Trade menu.</li></ol>
 <p>In the journal the same window is the <strong>Broker sync (beta)</strong> button. After connecting you choose an account and dates, click <strong>Load trades</strong>, check the preview and import.</p>
+<h2 id="live">Enable live trading</h2>
+<p>Live orders are real and use your own money at your broker. Before your first live order TradeZoro asks you once:</p>
+<ol><li>In the Trade menu pick one of your broker accounts (Paper stays the default).</li>
+<li>Try your first order, or click <strong>Enable live trading</strong>. A short risk notice opens.</li>
+<li>Read it, tick the box and click <strong>Enable live trading</strong>. We save when you accepted it.</li></ol>
+<p>After that, clicking Buy, Sell, Flatten or the order book sends a real order to your broker. There is no extra confirm step. TradeZoro is not a broker and gives no advice; you are responsible for your orders. If you click <strong>Not now</strong>, the account stays view-only. TradeZoro can switch live trading off for everyone or for one account at any time.</p>
 <h2 id="disconnect">How to disconnect</h2>
 <ol><li>Open the <strong>Trade</strong> menu.</li><li>Click the small gear on the account, then <strong>Disconnect</strong> (or <strong>Manage</strong> to see all accounts), then confirm.</li></ol>
 <p>This removes the link. Trades already imported stay in your journal. You can connect again any time. You can also remove TradeZoro’s access in your broker’s own settings.</p>
 <h2 id="privacy">Privacy</h2>
 <ul><li><strong>We never see your broker password.</strong> You log in on the broker’s own page. For Rithmic, which uses a username and password, you type them in the secure connect window, and TradeZoro does not receive or store them.</li>
-<li>TradeZoro asks only to read your accounts, balance, positions, orders and fills.</li>
+<li>TradeZoro reads your accounts, balance, positions, orders and fills. It sends an order only when you click to trade, after you enabled live trading.</li>
 <li>Your account details stay in your own view. We do not show them to other members.</li></ul>
 <h2 id="fix">Troubleshooting</h2>
 <ul><li><strong>It asks me to log in again.</strong> The saved link expired. Open the Trade menu and click <strong>Reconnect</strong>. If that does not help, click <strong>Connect a broker</strong> and sign in again.</li>
@@ -165,7 +170,7 @@
 <li><strong>“Broker data is unavailable right now.”</strong> The connection service or the broker is down for a moment. Wait a minute and try again.</li>
 <li><strong>Journal import found no trades.</strong> Widen the dates. Only closed trades are imported.</li></ul>
 <p>Still stuck? <a href="https://discord.gg/M4d4gTr5c3" target="_blank" rel="noopener">Get help on Discord</a> (#help-and-support channel) or <a href="/contact">contact us</a>.</p>
-<p class="bh-small">Education only. Not financial advice. Beta: broker connections are being rolled out step by step.</p>
+<p class="bh-small">Education only. Not financial advice. Live orders are real and use your own money. See <a href="/terms#broker-live">Broker connections and live trading</a> in the Terms. Beta.</p>
 </div></div></div>
 </main>
 <footer>

@@ -1,3 +1,5 @@
+import * as OW from '../../functions/connect/finatic/_owner.js';
+import { memStore } from './_store.mjs';
 // Broker sync failure paths (Owner bug 15 Nov: red "Request failed" after the sandbox -> live key switch).
 // Every reply must be JSON {error, code}; a stale (sandbox) user id must give 409 needsConnect; a live key must
 // never send X-Finatic-Environment: sandbox; nothing secret in any reply or log line.
@@ -42,6 +44,7 @@ const finFetch = async (url, init) => {
   if (mode === 'html502') return new Response('<html>error code: 1101</html>', { status: 502 });
   if (mode === 'cf502') return new Response('<!DOCTYPE html>\n<!--[if lt IE 7]> <html class="no-js ie6 oldie" lang="en-US"> <![endif]--><title>502: Bad gateway</title>', { status: 502, headers: { 'content-type': 'text/html; charset=UTF-8', server: 'cloudflare' } });
   if (mode === 'redirect') return new Response(null, { status: 302, headers: { location: 'https://evil.example/' } });
+  if (u.pathname === '/api/v1/accounts' && init.method === 'GET') return new Response(JSON.stringify({ data: [{ accountId: '123e4567-e89b-12d3-a456-426614174000' }, { accountId: 'a' }], errors: [] }), { status: 200 });   // member live: the ownership list
   if (u.pathname === '/api/v1/session/init') return ok({ one_time_token: 'ott' });
   if (u.pathname === '/api/v1/session/start') {
     const uid = JSON.parse(init.body || '{}').user_id;
@@ -53,7 +56,7 @@ const finFetch = async (url, init) => {
   if (u.pathname === '/api/v1/session/portal') return ok({ portal_url: 'https://portal.finatic.dev/?t=x' });
   return ok([{ accountId: 'a' }]);
 };
-const deps = { verifyFetch, finFetch, audit: async () => ({ finish: async () => {} }) };
+const deps = { store: memStore({ consent: ['admin1'] }), verifyFetch, finFetch, audit: async () => ({ finish: async () => {} }) };
 const body = async (r) => { const t = await r.text(); assert.ok(!t.includes(KEY), 'key never in a reply'); return JSON.parse(t); };   // throws on non-JSON
 
 // 1. stale sandbox user id on live -> 409 needsConnect (data + order), not an error page
@@ -73,12 +76,12 @@ assert.equal(r.status, 200); assert.ok((await body(r)).portalUrl.startsWith('htt
 { const starts = []; const d2 = { ...deps, finFetch: async (url, init) => { if (new URL(url).pathname === '/api/v1/session/start') starts.push(JSON.parse(init.body || '{}').user_id || ''); return finFetch(url, init); } };
   mode = 'ok';
   const KNOWN = '0bbb1111-2222-3333-4444-555566667777';
-  r = await S.handle(req({ mode: 'dark', userId: KNOWN }, 'https://tradezoro.com/connect/finatic/session'), env, d2);
+  r = await S.handle(req({ mode: 'dark', userId: KNOWN }, 'https://tradezoro.com/connect/finatic/session'), env, (OW._resetOwner(), { ...d2, store: memStore() }));   // fresh record: the admin's legacy id is claimed
   let jj = await body(r); assert.equal(r.status, 200); assert.ok(jj.portalUrl.startsWith('https://portal.finatic.dev/')); assert.equal(jj.userId, KNOWN); assert.deepEqual(starts, [KNOWN]);
   mode = 'stale'; starts.length = 0;
-  r = await S.handle(req({ mode: 'dark', userId: STALE }, 'https://tradezoro.com/connect/finatic/session'), env, d2);
+  r = await S.handle(req({ mode: 'dark', userId: STALE }, 'https://tradezoro.com/connect/finatic/session'), env, (OW._resetOwner(), { ...d2, store: memStore() }));
   jj = await body(r); assert.equal(r.status, 200); assert.ok(jj.portalUrl); assert.equal(jj.userId, ''); assert.deepEqual(starts, [STALE, ''], 'stale user -> one clean retry');
-  r = await S.handle(req({ mode: 'dark', userId: 'not-a-uuid!' }, 'https://tradezoro.com/connect/finatic/session'), env, d2);
+  r = await S.handle(req({ mode: 'dark', userId: 'not-a-uuid!' }, 'https://tradezoro.com/connect/finatic/session'), env, (OW._resetOwner(), { ...d2, store: memStore() }));
   assert.equal(r.status, 200); assert.equal((await body(r)).userId, '', 'junk user id ignored');
   mode = 'stale'; }
 

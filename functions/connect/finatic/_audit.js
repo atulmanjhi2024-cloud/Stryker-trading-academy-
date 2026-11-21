@@ -42,9 +42,9 @@ async function mintToken(env, fetchImpl) {
   if (!at) throw why('Google sign-in gave no token');
   return at;
 }
-const val = (v) => (v === null || v === undefined ? { nullValue: null } : typeof v === 'number' ? (Number.isInteger(v) ? { integerValue: String(v) } : { doubleValue: v }) : { stringValue: String(v).slice(0, 300) });
-const fields = (o) => Object.fromEntries(Object.entries(o).map(([k, v]) => [k, val(v)]));
-const DOCS = 'https://firestore.googleapis.com/v1/projects/' + PROJECT + '/databases/(default)/documents/';
+export const val = (v) => (v === null || v === undefined ? { nullValue: null } : typeof v === 'number' ? (Number.isInteger(v) ? { integerValue: String(v) } : { doubleValue: v }) : { stringValue: String(v).slice(0, 300) });
+export const fields = (o) => Object.fromEntries(Object.entries(o).map(([k, v]) => [k, val(v)]));
+export const DOCS = 'https://firestore.googleapis.com/v1/projects/' + PROJECT + '/databases/(default)/documents/';
 const base = DOCS + 'brokerOrderAudit';
 
 // -> { id, finish(result) } or throws (caller refuses the order: no audit, no order). docId (optional) = the idempotency key.
@@ -109,9 +109,9 @@ export async function liveSwitchOn(env, deps) {
 // brokerBrackets/{account_CONTRACT}: the server's own record of which broker order ids are the entry, the stop loss and the take
 // profit of one bracket. Server-written only (no client rule: the catch-all denies). order.js only ever modifies / cancels ids
 // that are recorded here, so a client can't pass arbitrary ids to the OCO logic. Fields are flat strings / numbers.
-const unval = (v) => (!v ? null : 'stringValue' in v ? v.stringValue : 'integerValue' in v ? Number(v.integerValue) : 'doubleValue' in v ? v.doubleValue : null);
+export const unval = (v) => (!v ? null : 'stringValue' in v ? v.stringValue : 'integerValue' in v ? Number(v.integerValue) : 'doubleValue' in v ? v.doubleValue : null);
 const BR = DOCS + 'brokerBrackets/';
-async function fsCall(env, deps, method, url, body) {
+export async function fsCall(env, deps, method, url, body) {
   const f = deps.auditFetch || fetch;
   const go = async (at) => f(url, { method, headers: { authorization: 'Bearer ' + at, 'content-type': 'application/json' }, ...(body ? { body: JSON.stringify(body) } : {}) });
   let at = await accessToken(env, f);

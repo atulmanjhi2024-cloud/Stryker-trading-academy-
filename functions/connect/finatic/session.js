@@ -1,11 +1,12 @@
-// Admin-only broker sync (beta): start a Finatic Connect session and hand back the portal URL (redirect flow).
+// Broker sync (every signed-in member since 21 Nov): start a Finatic Connect session and hand back the portal URL (redirect flow).
 //   GET  ?probe=1 -> {configured}      (flag only, nothing else)
-//   POST {userId?}                   -> {portalUrl, sessionId, userId}   (admin ID token required: 401 unsigned, 403 non-admin)
+//   POST {userId?}                   -> {portalUrl, sessionId, userId}   (member ID token required: 401 unsigned)
 // userId (Owner 19 Nov, "always open the connect page, I want to add a new broker"): the Finatic user the admin already linked
 // brokers under. The portal session is started FOR that user, so a broker added in the portal joins the same user and the accounts
 // already linked stay linked and listed. Unknown / stale user id -> an anonymous session (as before) and userId '' in the reply.
-// The portal URL is a secret: it goes only to the admin who asked. The API key never leaves this server.
+// The portal URL is a secret: it goes only to the member who asked. The API key never leaves this server.
 import { gate, readBody, fin, startSession, sessionHeaders, json, fail, configured, methodNotAllowed, safe, pagesEntry, deferOf, UUID } from './_fin.js';
+import { resolveFinUser, rememberSession } from './_owner.js';
 
 async function run(request, env, deps) {
   if (request.method === 'GET') {
@@ -17,7 +18,10 @@ async function run(request, env, deps) {
   if (g instanceof Response) return g;
   const b = await readBody(request);
   if (!b || typeof b !== 'object') return fail(400, 'Bad request');
-  const want = typeof b.userId === 'string' && UUID.test(b.userId) ? b.userId : '';
+  // MEMBER LIVE (21 Nov): the user is the server's record for this uid (_owner.js), never a client-sent id (except an admin's legacy claim)
+  const ow = await resolveFinUser(env, deps, g, b);
+  if (ow instanceof Response) return ow;
+  const want = ow.finUser;
   let s = await startSession(env, deps, want || null), user = want;
   if (s.failed && want && s.staleUser) { s = await startSession(env, deps, null); user = ''; }   // that user is gone: start clean
   const DOWN = 'Broker sync could not start: the connection service answered with an error. Try again in a minute; if it keeps happening, tell support.';
@@ -26,6 +30,8 @@ async function run(request, env, deps) {
   let url = p.ok && p.data && (p.data.portal_url || p.data.portalUrl);
   try { url = new URL(url); } catch (e) { url = null; }
   if (!url || url.protocol !== 'https:') { console.warn('finatic: portal url missing, status ' + p.status); return fail(502, DOWN + (p.status ? ' (code ' + p.status + ')' : ''), 'upstream'); }
+  // only a portal session this server started for THIS uid may later claim a new broker-link user (data.js, sessionId)
+  try { await rememberSession(env, deps, g.uid, s.sessionId); } catch (e) { return fail(503, 'Could not save the connection start. Try again in a moment.', 'owner_unwritable'); }
   url.searchParams.set('parent_origin', 'https://tradezoro.com');
   url.searchParams.set('mode', b.mode === 'light' ? 'light' : 'dark');
   return json({ portalUrl: url.toString(), sessionId: s.sessionId, userId: user && (!s.userId || s.userId === user) ? user : '' });

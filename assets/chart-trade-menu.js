@@ -1,8 +1,8 @@
 // TradeZoro — Charts "Trade" button + connection menu (Owner orders 2026-11-16: logo of the connection, better button; then "make it
 // more proper, add proper logo, account number is wrong, add total money, add a pencil button (label / prop firm) and a disconnect icon").
 // Pure view code: chart-paper.js owns the pick actions (data-a = paper | live | connect) and calls draw()/button()/keys() below.
-// Broker names, logos, balances and the edit / disconnect buttons only ever appear when `live` is passed, which only the admin-only live
-// module provides (window.__stkLive: balance(), metaOf(), saveMeta(), disconnect(), L = chart-live-core.js). Members see Paper only.
+// Broker names, balances and the edit / disconnect buttons appear when `live` is passed: the live module (every signed-in member since
+// 21 Nov 2026; window.__stkLive: balance(), metaOf(), saveMeta(), disconnect(), L = chart-live-core.js). Text tiles only, no logo images.
 //
 // Redesign (Owner 2026-11-17, mock): every account is a CARD (tile | name + number / dot + broker · type | divider | Balance | pencil + gear | tick).
 // Gear menu: Edit details / Manage / Disconnect (paper: Turn off paper trading). Footer: Connect a broker + Manage (opens the in-chart Manage accounts sheet, no page change).
@@ -13,18 +13,16 @@
 // Keys: Up/Down/Home/End move between rows, Right/Left move into / out of a row's buttons, Esc closes an open editor first.
 // Education only. Not financial advice.
 const ALIAS = { interactivebrokers: 'ibkr', interactivebroker: 'ibkr', ib: 'ibkr', tasty: 'tastytrade', tastyworks: 'tastytrade', ninja: 'ninjatrader', topstep: 'topstepx', coinbaseadvanced: 'coinbase', binanceus: 'binance' };
-const KNOWN = new Set(['tradovate', 'rithmic', 'ninjatrader', 'ibkr', 'tastytrade', 'alpaca', 'tradier', 'schwab', 'tradestation', 'webull', 'robinhood', 'coinbase', 'binance', 'kraken', 'topstepx', 'projectx']);
 const HUES = ['#2563eb', '#7c3aed', '#db2777', '#ea580c', '#0d9488', '#4f46e5'];
 const esc = (t) => String(t == null ? '' : t).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const cssId = (s) => (window.CSS && CSS.escape ? CSS.escape(s) : String(s).replace(/["\\]/g, '\\$&'));
 export const brokerKey = (name) => { const k = String(name || '').toLowerCase().replace(/[^a-z0-9]/g, ''); return ALIAS[k] || k; };
-// Rounded-square brand mark (assets/img/brokers/<key>.png: the broker's own favicon / app icon, 56px, shown at 16-28px); a coloured
-// square with the initial when we have no mark or it fails to load.
+// Broker tile: a coloured rounded square with the broker's initial (text only). Owner decision 21 Nov 2026: broker NAMES and simple text
+// labels are allowed for members, third-party logo images are not, so the old assets/img/brokers/*.png marks are no longer used.
 export function logo(name, size) {
   const k = brokerKey(name), ini = esc((String(name || '?').trim()[0] || '?').toUpperCase());
   const hue = HUES[[...k].reduce((n, c) => n + c.charCodeAt(0), 0) % HUES.length];
-  const fb = '<span class="stktm-fb" style="background:' + hue + '">' + ini + '</span>';
-  return '<span class="stktm-logo ' + (size === 16 ? 'stktm-s16' : size === 24 ? 'stktm-s24' : size === 40 ? 'stktm-s40' : 'stktm-s28') + '" aria-hidden="true">' + (KNOWN.has(k) ? '<img src="assets/img/brokers/' + k + '.png" alt="" width="' + (size === 40 ? 28 : size) + '" height="' + (size === 40 ? 28 : size) + '" decoding="async" data-fb="' + esc(fb) + '">' : fb) + '</span>';
+  return '<span class="stktm-logo ' + (size === 16 ? 'stktm-s16' : size === 24 ? 'stktm-s24' : size === 40 ? 'stktm-s40' : 'stktm-s28') + '" aria-hidden="true"><span class="stktm-fb" style="background:' + hue + '">' + ini + '</span></span>';
 }
 const SV = (w, d, sw) => '<svg width="' + w + '" height="' + w + '" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="' + (sw || 1.8) + '" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + d + '</svg>';
 const PAPER_IC = '<span class="stktm-logo stktm-s40 stktm-paper" aria-hidden="true">' + SV(20, '<path d="M7 3h7l5 5v13H7z"/><path d="M14 3v5h5M10 13h6M10 17h4"/>') + '</span>';
@@ -108,7 +106,6 @@ export function draw(pop, live, paper) {
   }
   pop.innerHTML = h;
   pop.classList.toggle('stktm-admin', !!live || !!(paper && paper.off));
-  pop.querySelectorAll('img[data-fb]').forEach((i) => i.addEventListener('error', () => { i.parentNode.innerHTML = i.dataset.fb; }, { once: true }));
   wire(pop);
 }
 // in-place refresh after a balance / label read, keeping focus; never while the editor or the dialog is open
@@ -246,7 +243,6 @@ function askDisconnect(pop, id) {
     '<p id="stktm-dlg-d">' + (t.name !== a.broker ? esc(t.name) + '. ' : '') + 'You can connect it again any time.' + (live.acct && live.acct.id === id ? ' The chart goes back to Paper.' : '') + '</p><p class="stktm-dlg-err" role="alert" hidden></p>' +
     '<div class="stktm-dlg-btns"><button type="button" class="stktm-pill" data-k="no">Cancel</button><button type="button" class="stktm-pill stktm-danger" data-k="yes">Disconnect</button></div></div>';
   document.body.appendChild(d);
-  d.querySelectorAll('img[data-fb]').forEach((i) => i.addEventListener('error', () => { i.parentNode.innerHTML = i.dataset.fb; }, { once: true }));
   pop.hidden = true; if (opener) opener.setAttribute('aria-expanded', 'false');   // the menu closes behind the dialog
   const close = () => { d.remove(); document.removeEventListener('keydown', key, true); if (opener) opener.focus(); };
   const yes = d.querySelector('[data-k=yes]'), err = d.querySelector('.stktm-dlg-err');
@@ -322,7 +318,6 @@ function drawSheet(d) {
   const act = live.acct, body = d.querySelector('.stktm-mg-body');
   body.innerHTML = (live.accounts.length ? live.accounts.map((a) => liveRow(a, live, act && act.id === a.id, 'sheet')).join('') : '<div class="stktm-empty">No broker connected yet.</div>');
   d.querySelector('[data-cnt]').textContent = live.accounts.length;
-  d.querySelectorAll('img[data-fb]').forEach((i) => i.addEventListener('error', () => { i.parentNode.innerHTML = i.dataset.fb; }, { once: true }));
 }
 
 // Trade button face: logo/icon + name (+ live dot). Returns the text for aria/phone label.
@@ -333,7 +328,6 @@ export function button(b, live, paperOn) {
   if (b.dataset.tmSig !== sig) {
     b.dataset.tmSig = sig;
     b.innerHTML = (act ? logo(act.broker, 16) + '<i class="stktm-live" aria-hidden="true"></i>' : SV(16, '<path d="M7 17 17 7M9 7h8v8"/>')) + '<span class="stkc-btn-l">' + esc(name) + '</span><svg class="stktm-caret" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>';
-    b.querySelectorAll('img[data-fb]').forEach((i) => i.addEventListener('error', () => { i.parentNode.innerHTML = i.dataset.fb; }, { once: true }));
     b.title = act ? 'Trading on ' + t.full : off ? 'Trade: paper trading is off. Pick Paper trading to turn it on' : 'Trade: pick paper or a live account';
   }
   b.classList.toggle('stktm-off', off);

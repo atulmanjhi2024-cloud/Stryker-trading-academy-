@@ -1,10 +1,13 @@
-// Admin-only READ pass-through to Finatic for the journal's broker sync (beta). POST {op, ...}.
+// READ pass-through to Finatic for the journal's broker sync and the chart's live panel. Every signed-in member since 21 Nov (Owner):
+// each call is scoped to the member's OWN broker-link user and accounts (_owner.js: the user comes from the server's record, an
+// account id must be in that user's account list, a grant id in that user's grants). Cross-user access = 403 not_owner. POST {op, ...}.
 // Allow-list below is the whole surface: every op maps to a fixed GET path (plus the grant revoke used by "Disconnect").
 // There is deliberately NO order create / modify / cancel path, and the client never supplies a path. Stores and logs nothing.
 // op 'live' (chart live orders, 2026-11-15): positions + orders of one account in ONE session (two GETs), for the chart's live lines.
 // SPEED (2026-11-16): the Finatic session is cached per isolate (_fin.js cachedSession, 2 min; a 401 renews it once), so the chart's
 // 10 s poll keeps it warm for the order route, and 'live' reads positions + orders in parallel. 'revoke' always uses a fresh session
 // and drops the cached one afterwards.
+import { requireFinUser, ownsAccount, notYours } from './_owner.js';
 import { gate, readBody, fin, startSession, cachedSession, finSession, dropSession, pagesEntry, json, fail, needsConnect, methodNotAllowed, safe, listAll, UPSTREAM_MSG, UUID, ID } from './_fin.js';
 
 const A = (id) => '/api/v1/accounts/' + encodeURIComponent(id);
@@ -32,20 +35,28 @@ async function run(request, env, deps) {
   if (op === 'revoke' && !(typeof b.grantId === 'string' && UUID.test(b.grantId))) return fail(400, 'grantId missing');
   if (op === 'fills' && !(Array.isArray(b.orderIds) && b.orderIds.length >= 1 && b.orderIds.length <= MAX_ORDERS_PER_CALL && b.orderIds.every((x) => typeof x === 'string' && ID.test(x)))) return fail(400, 'orderIds missing');
 
-  // Finatic user: the id the Connect portal created for this admin. Known id (kept by the admin's browser) or the session that just ran the portal.
-  let finUser = typeof b.userId === 'string' && UUID.test(b.userId) ? b.userId : '';
-  if (!finUser && typeof b.sessionId === 'string' && ID.test(b.sessionId)) {
-    const u = await fin(env, deps, 'GET', '/api/v1/sessions/' + encodeURIComponent(b.sessionId) + '/user');
-    if (!u.ok && (u.status === 0 || u.status >= 500 || u.bad)) return fail(502, UPSTREAM_MSG, 'upstream');
-    finUser = (u.ok && u.data && (u.data.userId || u.data.user_id)) || '';   // 4xx = that session has no user (yet)
-    if (finUser && !(typeof finUser === 'string' && UUID.test(finUser))) finUser = '';
-  }
-  if (!finUser) return needsConnect();
+  // Finatic user (MEMBER LIVE, 21 Nov): the server's record for this uid (_owner.js). A finished portal connect (sessionId) claims the
+  // new user only when the portal session was started by this server for this uid. A client-sent userId is ignored (admin legacy claim aside).
+  const ow = await requireFinUser(env, deps, g, b, { session: true });
+  if (ow instanceof Response) return ow;
+  const finUser = ow.finUser;
   let s = op === 'revoke' ? await startSession(env, deps, finUser) : await cachedSession(env, deps, finUser);
   if (s.failed) return s.staleUser ? needsConnect() : fail(502, UPSTREAM_MSG, 'upstream');   // stale id (e.g. sandbox user on live): connect again
   if (!s.authenticated) return needsConnect();
   let renewFail = false;
   const call = async (method, path, opts) => { const x = await finSession(env, deps, finUser, s, method, path, opts); if (x.s !== s) { if (x.s.failed || !x.s.authenticated) renewFail = true; else s = x.s; } return x.r; };
+  // ownership: an account id must be in this user's own account list; a grant id must be one of this user's grants
+  if (op !== 'accounts' && op !== 'grants' && op !== 'revoke') {
+    const own = await ownsAccount(deps, finUser, call, b.accountId);
+    if (own instanceof Response) return renewFail ? needsConnect() : own;
+    if (!own) return renewFail ? needsConnect() : notYours();
+  }
+  if (op === 'revoke') {
+    const gr = await call('GET', '/api/v1/account-grants', { query: { limit: 1000, offset: 0 } });
+    if (renewFail) return needsConnect();
+    if (!gr.ok) return fail(502, 'Could not check your connections right now. Nothing was changed.', 'upstream');
+    if (!(Array.isArray(gr.data) ? gr.data : []).some((x) => x && String(x.id || x.grantId || '') === b.grantId)) return notYours();
+  }
   const page = { limit: Math.min(Math.max(parseInt(b.limit, 10) || 100, 1), 1000), offset: Math.max(parseInt(b.offset, 10) || 0, 0) };
 
   if (op === 'revoke') {

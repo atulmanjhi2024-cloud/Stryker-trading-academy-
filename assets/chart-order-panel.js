@@ -1,7 +1,7 @@
 // TradeZoro — ZoroCharts ORDER PANEL (ES module, charts.html). Owner order 2026-11-16: "create better order panel".
 // Lazy-loaded by assets/chart-paper.js (Trade button in the chart's top bar, openOrder(), the live module's openTicket).
 //
-// ONE floating panel for PAPER (every member) and LIVE broker orders (admins, assets/chart-live.js). It replaces the old bottom
+// ONE floating panel for PAPER (every member) and LIVE broker orders (every signed-in member since 21 Nov, assets/chart-live.js). It replaces the old bottom
 // "Live trading" strip; while a live account is picked only a small status chip stays on the chart (click = open the panel).
 //   Header (Owner order 2026-11-17): row 1 = tabs Scalp | DOM | Order (segmented) left, window buttons right (Dock right, Float,
 //           expand, minimise, close). Row 2 = symbol details bar: root + full name ("MNQ · Micro Nasdaq-100 E-mini", never cut),
@@ -22,7 +22,7 @@
 //           a limit, through the live confirm), the same code path as the side panel.
 //   Footer: the account picked in the Trade menu as a read-only label ("Paper · DEMO"; admins live: "LIVE · Tradovate …2029" in red)
 //           + "Change" (opens the Trade menu; no account picker in the panel), position + open P&L, working orders, Flatten, and
-//           (live) "Turn off live trading" (the kill switch). Members never see a broker name.
+//           (live, admins only) "Turn off live trading" (the global kill switch). Broker names as plain text are allowed since 21 Nov.
 //   Phone (<= 700 px): a bottom sheet with Scalp + Order only.
 // SAFETY: every live order goes through chart-live.js place(): admin-only module, sent on the click like paper (no confirm, 19 Nov),
 // 2-contract cap + worst-case exposure, 10 orders a minute (client + server), fresh-read gate, kill switch, back to Paper after 15 min
@@ -299,7 +299,7 @@ function build() {
       '<div class="stkop-il"><span class="stkop-last" data-k="last">—</span><span class="stkop-chg" data-k="chg"></span><span class="stkop-sp"></span>' +
         '<span class="stkop-ba"><span>Bid <b class="bid" data-k="bid">—</b></span><span>Ask <b class="ask" data-k="ask">—</b></span></span></div>' +
     '</div>' +
-    '<div class="stkop-alert" data-k="alert" role="status" hidden><p class="stkop-alt" data-k="alt"></p><button type="button" class="stkop-b" data-a="retry" hidden>Retry</button></div>' +
+    '<div class="stkop-alert" data-k="alert" role="status" hidden><p class="stkop-alt" data-k="alt"></p><button type="button" class="stkop-b" data-a="retry" hidden>Retry</button><button type="button" class="stkop-b" data-a="enable" hidden>Enable live trading</button></div>' +
     '<div class="stkop-body"></div><div class="stkop-ft"></div>' +
     '<i class="stkop-rs" aria-hidden="true" title="Resize"></i><i class="stkop-dl" aria-hidden="true" title="Drag to resize"></i>';
   document.body.appendChild(el);
@@ -337,6 +337,7 @@ function onClick(e) {
   if (a === 'flat') { flatten(); return; }
   if (a === 'kill') { const x = c(); if (x.lv) x.lv.kill(); return; }
   if (a === 'retry') { const x = c(); if (x.lv && x.lv.retryEnv) x.lv.retryEnv(); return; }
+  if (a === 'enable') { const x = c(); if (x.lv && x.lv.enableLive) x.lv.enableLive(); return; }
   if (a === 'killon') { const x = c(); if (x.lv) x.lv.killOn(); return; }
   if (a === 'paperon') { P.setEnabled(true); viewSig = ''; update(); return; }
   if (a === 'dom-here') { viewSig = ''; update(); return; }
@@ -592,7 +593,7 @@ function acctLabel(c) {
 function renderFoot(c) {
   const al = acctLabel(c);
   const ai = prefs.adv ? prefs.ai : [];
-  const sig = JSON.stringify([al.t, al.full, c.live, c.li && c.li.killed, !!P.openTradeMenu, ai]);
+  const sig = JSON.stringify([al.t, al.full, c.live, c.li && c.li.killed, c.li && c.li.admin, !!P.openTradeMenu, ai]);
   if (footSig === sig) return; footSig = sig;
   footEl.innerHTML =
     '<div class="stkop-fr">' +
@@ -602,7 +603,7 @@ function renderFoot(c) {
     '</div>' +
     '<div class="stkop-fr">' +
       '<span class="stkop-pos" data-k="pos">Flat</span><span class="stkop-pnl" data-k="pnl"></span><span class="stkop-wk" data-k="wk"></span><span class="stkop-sp"></span>' +
-      (c.live ? (c.li && c.li.killed ? '<button type="button" class="stkop-b" data-a="killon">Switch live trading on</button>' : '<button type="button" class="stkop-b warn" data-a="kill">Turn off live trading</button>') : '') +
+      (c.live && c.li && c.li.admin ? (c.li.killed ? '<button type="button" class="stkop-b" data-a="killon">Switch live trading on</button>' : '<button type="button" class="stkop-b warn" data-a="kill">Turn off live trading</button>') : '') +
     '</div>' +
     (ai.length ? '<dl class="stkop-ai" data-n="' + ai.length + '">' + AI.filter((a) => ai.includes(a[0])).map((a) => '<div><dt>' + esc(a[1]) + '</dt><dd data-ai-v="' + a[0] + '">—</dd></div>').join('') + '</dl>' : '') +
     '<p class="stkop-fine" data-k="fine"></p>';
@@ -773,8 +774,9 @@ export function update() {
 function renderAlert(c) {
   const box = el.querySelector('[data-k=alert]'); if (!box) return;
   const li = c.live ? c.li : null, g = li && li.group;
-  let t = '', kind = '', retry = false;
+  let t = '', kind = '', retry = false, enable = false;
   if (li && li.retry) { t = li.block; kind = 'bad'; retry = true; }
+  else if (li && li.needsEnable) { t = 'View only. Enable live trading to send orders from this account.'; kind = 'warn'; enable = true; }   // member live, 21 Nov
   else if (li && li.alarm) { t = li.alarm; kind = 'bad'; }
   else if (g) {
     const p = (v) => (v == null ? '' : fmt(c, v));
@@ -785,6 +787,7 @@ function renderAlert(c) {
   box.hidden = !t; box.className = 'stkop-alert' + (kind ? ' ' + kind : '');
   setText('alt', t);
   const rb = box.querySelector('[data-a=retry]'); rb.hidden = !retry;
+  const eb = box.querySelector('[data-a=enable]'); if (eb) eb.hidden = !enable;
 }
 
 // LIVE status chip on the chart (replaces the old bottom strip): click = open the panel

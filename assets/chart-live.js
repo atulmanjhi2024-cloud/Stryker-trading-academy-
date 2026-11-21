@@ -1,6 +1,9 @@
-// TradeZoro — LIVE broker orders from ZoroCharts (ES module). ADMIN ONLY (Owner order 2026-11-15: "why we testing on journalX, why not
-// on charts?"). Loaded by assets/chart-paper.js only after the signed-in user's admins/{uid} doc exists; the server
-// (functions/connect/finatic/order.js + data.js) re-checks admin on every call and refuses everyone else with 403.
+// TradeZoro — LIVE broker orders from ZoroCharts (ES module). EVERY SIGNED-IN MEMBER since 21 Nov 2026 (Owner decision: members may
+// connect their own broker and place live trades; was admin only, Owner order 2026-11-15). Loaded by assets/chart-paper.js for any
+// non-anonymous member. The server (functions/connect/finatic/*, _owner.js) scopes every call to the member's OWN broker connection
+// and accounts, and refuses every write until the member has accepted the one-time "Enable live trading" notice (enableSheet below).
+// Until then a live account can be picked and viewed (position, orders, balance) but not traded. Paper stays the default account.
+// The global kill switch buttons ("Turn off live trading") are admin only (settings/liveTrading is admin-writable).
 //
 // What it adds to the Paper trading panel: an account picker (Paper = default, every reload starts on Paper; plus the admin's connected
 // broker accounts, "Tradovate …1234"; plus "Connect a broker…", which opens the SAME connect flow as Nemesis: finatic-journal-ui.js).
@@ -37,7 +40,8 @@ const uuid = () => (crypto.randomUUID ? crypto.randomUUID() : 'k' + Date.now().t
 const TEST = /^(127\.0\.0\.1|localhost)$/.test(location.hostname) ? window.__stkLiveTest : null;   // test hooks: localhost only
 const now = () => (TEST && TEST.now ? TEST.now() : Date.now());
 
-let P = null, uid = '', toastFn = null;
+let P = null, uid = '', toastFn = null, isAdmin = false;
+export const TERMS_VERSION = '2026-11-21';   // = functions/connect/finatic/_owner.js LIVE_TERMS_VERSION
 const S = {
   accounts: [], acct: null, userId: '', env: null, loaded: false, loadErr: '',
   data: { positions: [], orders: [] }, lastOkStart: 0, lastWriteAt: 0, unknown: false, readErr: '', reading: false,
@@ -75,7 +79,8 @@ const order = (b, timing) => call('/connect/finatic/order', Object.assign({ src:
 const ACCT_MS = 120000;
 async function loadAccounts() {
   S.userId = lsUser(); S.loadErr = ''; S.acctAt = now();
-  if (!S.userId) { S.accounts = []; S.loaded = true; render(); return; }
+  // the server knows this member's connection (functions/connect/finatic/_owner.js); a stored id is only an admin's legacy hint.
+  // Never connected = 409 needs_connect = an empty list, no broker call.
   try {
     const r = await data('accounts');
     if (r.userId && r.userId !== S.userId) { S.userId = r.userId; try { localStorage.setItem(lsUserKey(), r.userId); } catch (e) {} }
@@ -272,6 +277,7 @@ async function pick(id) {
   await envCheck();
   schemaCheck();
   render();
+  if (S.acct && S.acct.id === id && S.env && S.env.consent === false && S.env.blocked !== true) enableLive();
 }
 // Owner bug 2026-11-17: any failure of this check (expired token, 429, network blip, cold start) used to read as "Live orders are off
 // on the server". Now: S.env is only set from a real answer; failures are retried 3 times with backoff (call() renews the token on a
@@ -324,6 +330,7 @@ async function readKill() {
   render();
 }
 async function setKill(off) {
+  if (!isAdmin) return;
   try { await firebase.firestore().collection('settings').doc('liveTrading').set({ enabled: !off, by: uid, at: firebase.firestore.FieldValue.serverTimestamp() }, { merge: true }); S.killed = off; toast(off ? 'Live trading is switched off. The server refuses every live order until it is switched back on.' : 'Live trading switched back on.', off ? 'info' : 'success'); }
   catch (e) { toast('Could not change the live trading switch: ' + (e && e.message || e), 'error'); }
   render();
@@ -362,6 +369,8 @@ function blockReason() {
   if (!S.acct) return 'No live account picked.';
   if (S.env && S.env.enabled === false) return 'Live orders are off on the server.';   // only when the server SAID so
   if (!S.env) return S.envErr || 'Checking the broker link…';
+  if (S.env.blocked === true) return 'Live trading is switched off for your account. Contact support.';
+  if (S.env.consent === false) return 'Enable live trading first. This account is view-only until then.';
   if (S.killed) return 'Live trading is switched off.';
   if (S.placeErr) return S.placeErr + '. New orders are blocked.';
   if (!S.placeSchema) return 'Loading the broker’s order fields…';
@@ -430,6 +439,53 @@ function confirmSheet(d) {
   });
 }
 
+// ---- "Enable live trading" (Owner decision 21 Nov 2026): one time per member, before the first live order. Plain risk notice,
+// a checkbox, then Enable. The server stores the acceptance (liveConsent/{uid}: uid, time, version; order.js op 'consent') and
+// refuses every live write until it is there. Cancel = the account stays view-only. Same sheet styles as the confirm (#stklv-cf).
+let enOpen = false;
+export function enableLive() {
+  if (enOpen || !S.acct) return Promise.resolve(false);
+  enOpen = true; closeConfirm(false);
+  return new Promise((resolve) => {
+    const prev = document.activeElement;
+    const el = document.createElement('div'); el.id = 'stklv-cf'; el.className = 'stklv-en';
+    el.innerHTML = '<div class="stklv-cf-box" role="dialog" aria-modal="true" aria-labelledby="stklv-en-h" aria-describedby="stklv-en-d">' +
+      '<div class="stklv-grab" aria-hidden="true"></div>' +
+      '<div class="stklv-cf-head"><span class="stklv-badge">' + esc(envWord() + ' ' + S.acct.label) + '</span><button type="button" class="stklv-x" data-k="no" aria-label="Close">×</button></div>' +
+      '<h2 id="stklv-en-h">Enable live trading</h2>' +
+      '<div id="stklv-en-d" class="stklv-cf-lines stklv-en-list"><p>Before your first live order, please read this.</p><ul>' +
+        '<li><b>This is real money.</b> Live orders use your own broker account, and you can lose money.</li>' +
+        '<li><b>Orders go straight to your broker.</b> A click on Buy, Sell, Flatten or the order book sends a real order. There is no extra confirm step.</li>' +
+        '<li><b>TradeZoro is not a broker and gives no advice.</b> We pass your orders to your broker. We don’t hold your money or tell you what to trade.</li>' +
+        '<li><b>You are responsible for your orders</b> and your positions, including when a connection or a page fails. Check your broker if anything looks wrong.</li>' +
+        '<li><b>TradeZoro is not liable for trading issues.</b> We are not responsible for any loss or damage from failed, delayed, rejected or duplicate orders, wrong or old data, outages, bugs or anything else that goes wrong while trading through TradeZoro. You trade at your own risk.</li>' +
+      '</ul><p>Limits apply: NQ, ES, MNQ and MES only, at most 2 contracts, 10 orders a minute. Every order is logged. ' + DISCLAIMER + '</p></div>' +
+      '<label class="stklv-en-ck"><input type="checkbox" data-k="ck"><span>I have read this and the <a href="/terms#broker-live" target="_blank" rel="noopener">Terms</a>, and I accept the risk of live trading.</span></label>' +
+      '<p class="stklv-en-err" role="alert" hidden></p>' +
+      '<div class="stklv-cf-btns"><button type="button" class="stklv-btn" data-k="no">Not now</button><button type="button" class="stklv-btn stklv-go buy" data-k="yes" disabled>Enable live trading</button></div>' +
+      '<p class="stklv-fine">Until you enable it, this account is view-only. Paper trading is not affected.</p></div>';
+    document.body.appendChild(el);
+    const ck = el.querySelector('[data-k=ck]'), yes = el.querySelector('[data-k=yes]'), er = el.querySelector('.stklv-en-err');
+    const done = (v) => { el.remove(); document.removeEventListener('keydown', k, true); enOpen = false; try { prev && prev.focus && prev.focus(); } catch (e) {} render(); resolve(v); };
+    const k = (e) => { if (e.key === 'Escape') { e.stopPropagation(); done(false); } else e.stopPropagation(); };
+    document.addEventListener('keydown', k, true);
+    el.addEventListener('mousedown', (e) => { if (e.target === el) done(false); });
+    el.querySelectorAll('[data-k=no]').forEach((b) => b.addEventListener('click', () => done(false)));
+    ck.addEventListener('change', () => { yes.disabled = !ck.checked; });
+    yes.addEventListener('click', async () => {
+      if (!ck.checked || yes.disabled) return;
+      yes.disabled = true; yes.textContent = 'Saving…'; er.hidden = true;
+      try {
+        await call('/connect/finatic/order', { op: 'consent', accept: true, version: TERMS_VERSION });
+        if (S.env) S.env = Object.assign({}, S.env, { consent: true });
+        toast('Live trading enabled for your account.', 'success');
+        done(true);
+      } catch (e) { er.textContent = e.message || 'Could not save. Try again.'; er.hidden = false; yes.disabled = !ck.checked; yes.textContent = 'Enable live trading'; }
+    });
+    setTimeout(() => ck.focus(), 30);
+  });
+}
+
 // ------------------------------------------------------------------------------------------ writes
 // pending: optional "sending" line drawn on the chart right away (L.pendingLine), removed when the answer arrives
 async function write(body, what, pending) {
@@ -453,6 +509,7 @@ const sideWord = (s) => (s === 'buy' ? 'BUY' : 'SELL');
 function contractLine(i) { return 'Contract <b>' + esc(i.code) + '</b>' + (i.held ? ' (your open position’s month; front month is ' + esc(i.front) + ')' : ' (front month of ' + esc(i.root) + ')'); }
 async function place(sym, o, src) {
   if (S.acct && !S.envBusy && (!S.env || now() - S.envAt > ENV_MAX_AGE)) await envCheck();   // re-check right before a confirm if older than 60 s
+  if (S.env && S.env.consent === false && S.env.blocked !== true) { enableLive(); return null; }   // one-time step; the order is not sent
   const why = blockReason(); if (why) { toast(why, 'error'); return null; }
   const i = info(sym); if (!i) { toast('Live orders work on NQ, ES, MNQ and MES charts only.', 'error'); return null; }
   // 10 new orders a minute (the server refuses the 11th too: order.js orderRateLimited); counted when sent, not when refused here
@@ -613,15 +670,15 @@ export function opInfo(sym) {
   const i = info(sym); if (!i) return null;
   const g = S.group && S.group.code === i.code ? S.group : null;
   return { code: i.code, root: i.root, tick: i.tick || L.ROOTS[i.root].tick, pv: i.pv, last: i.last, pos: i.pos, working: i.working, pnl: i.pnl, held: i.held, env: envWord(), killed: !!S.killed, block: blockReason(), busy: S.busy, rtt: L.rttText(S.rtt),
-    retry: !S.env && !!S.envErr && !S.envBusy, group: g, alarm: g && g.state === 'unprotected' ? g.why : '' };
+    retry: !S.env && !!S.envErr && !S.envBusy, admin: isAdmin, needsEnable: !!(S.env && S.env.consent === false && S.env.blocked !== true), group: g, alarm: g && g.state === 'unprotected' ? g.why : '' };
 }
 // one entry point for the panel's Buy / Sell / Join / Confirm: place() keeps every guard (cap, exposure, band, gate); no confirm sheet
 export function placeTicket(sym, o, src) {
   if (o.type !== 'market' && o.type !== 'limit' && !(o.type === 'stop' && caps().stop)) { toast(o.type === 'stop' ? caps().why : 'Market, limit or stop only from the chart.', 'error'); return Promise.resolve(null); }
   return place(sym, { side: o.side, type: o.type, qty: o.qty, price: o.type !== 'market' ? Number(o.price) : undefined, marketable: !!o.marketable, sl: o.sl, tp: o.tp }, src || 'panel');
 }
-export function kill() { if (window.confirm('Turn off live trading? The server will refuse every live order (all tabs, all devices) until it is switched back on.')) setKill(true); }
-export function killOn() { const t = window.prompt('Type LIVE to switch live trading back on.'); if (t && t.trim().toUpperCase() === 'LIVE') setKill(false); }
+export function kill() { if (!isAdmin) return; if (window.confirm('Turn off live trading? The server will refuse every live order (all tabs, all devices) until it is switched back on.')) setKill(true); }
+export function killOn() { if (!isAdmin) return; const t = window.prompt('Type LIVE to switch live trading back on.'); if (t && t.trim().toUpperCase() === 'LIVE') setKill(false); }
 
 // ------------------------------------------------------------------------------------------ panel rendering (called by chart-paper.js)
 export function renderHead(slot) {
@@ -667,7 +724,7 @@ export function renderView(v) {
       '<p class="stklv-status' + (why ? ' bad' : '') + '" role="status">' + esc(why || 'Ready. Positions and orders read ' + Math.max(0, Math.round((now() - S.lastOkStart) / 1000)) + ' s ago.') + '</p>' +
     '</form>' +
     '<div class="stklv-lists"><h3 class="stklv-h3">Position</h3>' + posRows + '<h3 class="stklv-h3">Working orders</h3>' + ordRows +
-      '<div class="stklv-tools"><button type="button" class="stklv-btn sm" data-a="refresh">Refresh</button>' + (S.killed ? '<button type="button" class="stklv-btn sm" data-a="killon">Switch live trading back on</button>' : '<button type="button" class="stklv-btn sm warn" data-a="kill">Turn off live trading</button>') + '<button type="button" class="stklv-btn sm" data-a="paper">Back to Paper</button></div></div>' +
+      '<div class="stklv-tools"><button type="button" class="stklv-btn sm" data-a="refresh">Refresh</button>' + (!isAdmin ? '' : S.killed ? '<button type="button" class="stklv-btn sm" data-a="killon">Switch live trading back on</button>' : '<button type="button" class="stklv-btn sm warn" data-a="kill">Turn off live trading</button>') + '<button type="button" class="stklv-btn sm" data-a="paper">Back to Paper</button></div></div>' +
   '</div>';
   const root = v.querySelector('.stklv-view');
   for (const ev of ['keydown', 'pointerdown']) root.addEventListener(ev, (e) => e.stopPropagation());
@@ -679,8 +736,8 @@ export function renderView(v) {
   root.querySelectorAll('[data-cancel]').forEach((b) => b.addEventListener('click', () => cancel(b.dataset.cancel)));
   const act = (a, fn) => { const b = root.querySelector('[data-a=' + a + ']'); if (b) b.addEventListener('click', fn); };
   act('flat', () => flatten(sym)); act('refresh', () => read()); act('paper', () => leave());
-  act('kill', () => { if (window.confirm('Turn off live trading? The server will refuse every live order (all tabs, all devices) until it is switched back on.')) setKill(true); });
-  act('killon', () => { const t = window.prompt('Type LIVE to switch live trading back on.'); if (t && t.trim().toUpperCase() === 'LIVE') setKill(false); });
+  act('kill', () => { if (isAdmin && window.confirm('Turn off live trading? The server will refuse every live order (all tabs, all devices) until it is switched back on.')) setKill(true); });
+  act('killon', () => { if (!isAdmin) return; const t = window.prompt('Type LIVE to switch live trading back on.'); if (t && t.trim().toUpperCase() === 'LIVE') setKill(false); });
 }
 function render() { try { P.renderAll(); } catch (e) {} }
 
@@ -742,6 +799,18 @@ const CSS = `
 .stklv-cf-lines p{ margin:0; font-size:14px; line-height:20px; } .stklv-cf-lines b{ color:var(--ink-0); }
 .stklv-cf-btns{ display:grid; grid-template-columns:1fr 1.4fr; gap:8px; } .stklv-cf-btns .stklv-btn{ height:48px; font-size:15px; }
 .stklv-fine{ margin:0; font-size:12px; line-height:16px; color:var(--ink-3); }
+.stklv-en .stklv-cf-box{ width:min(480px,100%); gap:16px; padding:24px; }
+.stklv-en-list{ gap:8px; }
+.stklv-en-list ul{ margin:0; padding:0 0 0 20px; display:flex; flex-direction:column; gap:8px; list-style:disc; }
+.stklv-en-list li::marker{ color:var(--ink-3); }
+.stklv-en-list li{ font-size:14px; line-height:20px; } .stklv-en-list li b{ color:var(--ink-0); }
+.stklv-en-ck{ display:flex; align-items:flex-start; gap:12px; padding:12px 16px; border:1px solid var(--line); border-radius:12px; background:var(--bg-2); font:500 14px/20px var(--font-body, sans-serif); color:var(--ink-1); cursor:pointer; -webkit-tap-highlight-color:transparent; }
+.stklv-en-ck:has(input:checked){ border-color:#03c988; }
+.stklv-en-ck input{ flex:none; width:20px; height:20px; margin:0; accent-color:#03c988; cursor:pointer; }
+.stklv-en-ck a{ color:var(--gold, #03c988); text-decoration:underline; text-underline-offset:2px; }
+.stklv-en-ck:has(input:focus-visible){ outline:2px solid #03c988; outline-offset:2px; }
+.stklv-en-err{ margin:0; font:600 13px/18px var(--font-body, sans-serif); color:#f23645; }
+.stklv-en-err[hidden]{ display:none; }
 @media (max-width:980px){ .stklv-view{ grid-template-columns:1fr; } }
 @media (max-width:700px){
   .stklv-pick select{ max-width:132px; height:32px; } .stklv-pick{ height:32px; }
@@ -755,17 +824,18 @@ const CSS = `
   .stklv-row{ grid-template-columns:56px 64px minmax(0,1fr) auto; } .stklv-row .m:nth-of-type(4){ display:none; }
   #stklv-cf{ align-items:flex-end; padding:0; }
   .stklv-cf-box{ width:100%; border-radius:20px 20px 0 0; border-width:2px 0 0; max-height:92dvh; padding:8px 16px calc(16px + env(safe-area-inset-bottom)); }
+  .stklv-en .stklv-cf-box{ padding:8px 16px calc(16px + env(safe-area-inset-bottom)); }
   .stklv-grab{ display:block; width:36px; height:4px; margin:0 auto 4px; border-radius:2px; background:var(--line); }
   .stklv-cbadge{ top:120px; right:auto; left:50%; transform:translateX(-50%); height:32px; max-width:calc(100% - 32px); }
 }
 `;
 
 export function mountLive(paperApi, opts) {
-  P = paperApi; uid = opts.uid; toastFn = opts.toast || null;
+  P = paperApi; uid = opts.uid; toastFn = opts.toast || null; isAdmin = !!opts.admin;
   if (!document.getElementById('stklv-css')) { const st = document.createElement('style'); st.id = 'stklv-css'; st.textContent = CSS; document.head.appendChild(st); }
-  P.setLiveHook({ active, lines, chipText, badgeFor, tickOf, chipX, drag, flattenActive, openTicket, renderHead, renderSummary, renderView, foot, dock, dockTrades, ladder, domState, cancel, flatten, caps, opInfo, placeTicket, kill, killOn, retryEnv });
+  P.setLiveHook({ active, lines, chipText, badgeFor, tickOf, chipX, drag, flattenActive, openTicket, renderHead, renderSummary, renderView, foot, dock, dockTrades, ladder, domState, cancel, flatten, caps, opInfo, placeTicket, kill, killOn, retryEnv, enableLive });
   loadMeta(); loadAccounts();
   window.addEventListener('storage', (e) => { if (e.key === lsUserKey()) loadAccounts(); });
-  Object.assign(window.__stkLive, { connect, reconnect, pick, leave, read, loadAccounts, info, confirmSheet, balance, summary, metaOf, saveMeta, disconnect, L, envCheck, retryEnv, syncGroup });
+  Object.assign(window.__stkLive, { connect, reconnect, pick, leave, read, loadAccounts, info, confirmSheet, balance, summary, metaOf, saveMeta, disconnect, L, envCheck, retryEnv, syncGroup, enableLive, get admin() { return isAdmin; } });
   Object.defineProperty(window.__stkLive, 'blockReason', { configurable: true, get: () => blockReason() });   // a getter (Object.assign would copy one frozen value)
 }

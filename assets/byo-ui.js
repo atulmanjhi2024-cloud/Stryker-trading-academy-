@@ -2,12 +2,12 @@
 // Depends on: assets/byo-core.js (SOURCES, connect, forget, onByoChange, statusOf). Mounted by assets/vela-chart.js into
 // the chart toolbar (.stkc-bar-r). Rithmic is listed here and opens its own existing flow (window.STRYKER_RITHMIC.open).
 // Design: docs/DESIGN-STANDARD.md (bottom sheet + grabber on phones, centred dialog on desktop; 44 px taps; day + dark).
-import { pair, loopbackState, HELPER_DOWNLOADS, HOWTO_URL } from './byo-bridge.js?v=1188';
-import { SOURCES, connect, forget, onByoChange, statusOf, connectedIds, srcById, saveKeys, loadKeys, enableSchwabIfConfigured, schwabAuthUrl } from './byo-core.js?v=1188';
+import { pair, loopbackState, HELPER_DOWNLOADS, HOWTO_URL } from './byo-bridge.js?v=1189';
+import { SOURCES, connect, forget, onByoChange, statusOf, connectedIds, srcById, saveKeys, loadKeys, enableSchwabIfConfigured, schwabAuthUrl } from './byo-core.js?v=1189';
 let CTR = null;   // byo-ctrader.js, loaded with the chart
-const OAUTH = () => import('./byo-oauth.js?v=1188');
-const DHAN = () => import('./byo-dhan.js?v=1188');
-const ctr = () => CTR || import('./byo-ctrader.js?v=1188').then((m) => (CTR = m));
+const OAUTH = () => import('./byo-oauth.js?v=1189');
+const DHAN = () => import('./byo-dhan.js?v=1189');
+const ctr = () => CTR || import('./byo-ctrader.js?v=1189').then((m) => (CTR = m));
 
 const CSS = `
 .byo-btn svg{ flex:none; }

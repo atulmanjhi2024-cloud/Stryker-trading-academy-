@@ -14,8 +14,8 @@
 // dir: +1 = green (buyers in control of the read: sellers absorbed / sellers exhausted / buy imbalance / low unfinished / bullish
 // divergence / sellers trapped), -1 = red (the opposite).
 // Education only. Not financial advice.
-import { rows, imbalances, stacked, unfinished } from './chart-footprint-data.js?v=1192';
-import { swingPivots } from './chart-of-pro-data.js?v=1192';
+import { rows, imbalances, stacked, unfinished } from './chart-footprint-data.js?v=1193';
+import { swingPivots } from './chart-of-pro-data.js?v=1193';
 
 export const DEFAULTS = {
   rowTicks: 1,

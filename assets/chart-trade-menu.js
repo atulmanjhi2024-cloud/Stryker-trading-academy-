@@ -69,7 +69,7 @@ function paperRow(paper, on, admin) {
   return '<div class="stktm-row" data-row="paper">' + pickBtn('data-a="paper"', on, 'Paper trading' + (p.bal ? ', balance ' + p.bal : ''), PAPER_IC +
     '<span class="stktm-tx"><span class="stktm-l1"><span class="stktm-nm">Paper Trading</span></span><span class="stktm-l2"><span class="stktm-chip">Simulated</span></span></span>' + VD +
     (p.bal ? balCell(esc(p.bal), ' title="Paper balance"', upl) : balCell('—', '')) ) +
-    (admin ? '<span class="stktm-acts">' + gear + '</span>' : '') + (on ? CHK : NOCHK) + '</div>';
+    (admin ? '<span class="stktm-acts">' + gear + '</span>' : '') + '</div>';   // Owner 22 Nov: no tick, the green highlight box alone marks the active account
 }
 // mode 'sheet' = Manage accounts sheet: no pick / tick, Disconnect shown instead of the gear
 function liveRow(a, live, on, mode) {
@@ -84,7 +84,7 @@ function liveRow(a, live, on, mode) {
   return '<div class="stktm-row" data-row="' + esc(a.id) + '">' +
     (sheet ? '<div class="stktm-pick stktm-static">' + info + '</div>' : pickBtn('data-a="live" data-id="' + esc(a.id) + '"', on, t.full + ', ' + s.t, info)) +
     '<span class="stktm-acts">' + (sheet ? pen : '') + (sheet ? iconBtn('off', a.id, 'Disconnect ' + a.text, UNPLUG, 'stktm-act-off') : iconBtn('gear', a.id, 'Settings for ' + t.full, GEAR)) + '</span>' +
-    (sheet ? '' : on ? CHK : NOCHK) + '</div>';
+    '</div>';
 }
 
 // live = window.__stkLive.state or null (members); paper = { bal: "$100,022.00", upl: "+$12.00" | '' } (a plain string = bal)

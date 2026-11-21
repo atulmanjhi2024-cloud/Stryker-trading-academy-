@@ -57,7 +57,7 @@ const US = '0aaa1111-2222-3333-4444-555566667777';
 const buy = { op: 'place', accountId: ACC, userId: US, symbol: 'mesz6', side: 'buy', qty: 1, type: 'market' };
 const send = (b, tok, e) => O.handle(req(b, tok, { url: 'https://tradezoro.com/connect/finatic/order' }), e, deps);
 const upstreamOrders = () => calls.filter((c) => /\/orders/.test(c.path) && c.method !== 'GET');
-O._resetRate();
+
 // unsigned 401, non-admin 403, bad origin 403, not set up 503, GET 405 — no upstream, no audit
 assert.equal(await status(send(buy, null, sbEnv)), 401);
 assert.equal(await status(send(buy, token('member9'), sbEnv)), 403);
@@ -80,9 +80,9 @@ let up = upstreamOrders().pop(); assert.equal(up.method, 'POST');
 const sent = JSON.parse(calls._lastBody);
 assert.deepEqual(Object.keys(sent).sort(), ['order', 'paperTradeConfirmed']); assert.equal(sent.paperTradeConfirmed, true);
 assert.deepEqual(sent.order, { assetType: 'future', symbol: 'MESZ6', action: 'buy', orderType: 'market', orderQty: 1, timeInForce: 'day' });
-for (const q of [3, 0, -1, 1.5, '2x', null]) assert.equal(await status(send({ ...buy, qty: q }, token('admin1'), sbEnv)), 400, 'qty ' + q);
-assert.equal(await status(send({ ...buy, assetType: 'equity', qty: 101 }, token('admin1'), sbEnv)), 400);
-assert.equal(await status(send({ ...buy, assetType: 'equity', qty: 100 }, token('admin1'), sbEnv)), 200);
+for (const q of [0, -1, 1.5, '2x', null]) assert.equal(await status(send({ ...buy, qty: q }, token('admin1'), sbEnv)), 400, 'qty ' + q);
+assert.equal(await status(send({ ...buy, qty: 3 }, token('admin1'), sbEnv)), 200, 'no size cap (21 Nov)');
+assert.equal(await status(send({ ...buy, assetType: 'equity', qty: 101 }, token('admin1'), sbEnv)), 200);
 assert.equal(await status(send({ ...buy, qty: 2 }, token('admin1'), sbEnv)), 200);
 for (const bad of [{ side: 'hold' }, { type: 'trailing' }, { symbol: '../x' }, { type: 'limit' }, { type: 'stop' }, { timeInForce: 'forever' }, { limitPrice: -1, type: 'limit' }]) assert.equal(await status(send({ ...buy, ...bad }, token('admin1'), sbEnv)), 400, JSON.stringify(bad));
 // unit: only whitelisted keys leave cleanOrder
@@ -110,8 +110,7 @@ assert.ok(!JSON.stringify(audits).includes('FAKE') && !JSON.stringify(audits).in
 // rejected by broker -> audited as rejected, 403 text for "trading not enabled"
 { const d3 = { ...deps, finFetch: async (url, init) => { const u = new URL(url); if (u.pathname.endsWith('/orders') && init.method === 'POST') return new Response(JSON.stringify({ error: { code: 'TRADE_ACCESS_DENIED' } }), { status: 403 }); return finFetch(url, init); } };
   const rr = await O.handle(req(buy, token('admin1'), { url: 'https://tradezoro.com/connect/finatic/order' }), sbEnv, d3); assert.equal(rr.status, 403); assert.equal(audits.at(-1).result, 'rejected'); }
-// rate limit: 10 orders a minute per admin, others unaffected
-O._resetRate();
+// no orders-a-minute limit (Owner 21 Nov): 13 in a row all go through
 let ok = 0, lim = 0; for (let i = 0; i < 13; i++) { const st = await status(send(buy, token('admin1'), sbEnv)); if (st === 200) ok++; else if (st === 429) lim++; }
-assert.equal(ok, 10); assert.equal(lim, 3);
+assert.equal(ok, 13); assert.equal(lim, 0);
 console.log('finatic orders: ok');

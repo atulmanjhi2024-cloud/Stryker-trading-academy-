@@ -1,34 +1,59 @@
-// TradeZoro — LIVE broker orders from ZoroCharts: pure logic (ES module, no DOM, no network). ADMIN ONLY feature (Owner order 2026-11-15).
-// Used by the browser (assets/chart-live.js) AND the server (functions/connect/finatic/order.js), so the contract whitelist, the
-// exposure cap and the flatten plan are the same code on both sides. Unit tests: tests/finatic/chart-live-core.test.mjs.
+// TradeZoro — LIVE broker orders from ZoroCharts: pure logic (ES module, no DOM, no network). Every signed-in member (21 Nov 2026).
+// Used by the browser (assets/chart-live.js) AND the server (functions/connect/finatic/order.js), so the symbol mapping and the
+// flatten plan are the same code on both sides. Unit tests: tests/finatic/chart-live.test.mjs.
 //
-// Symbols: only the four CME equity-index futures charts NQ1! / ES1! / MNQ1! / MES1! (any exchange prefix) can route live.
-// Contract = the quarterly front month (H M U Z), rolled 8 days before the third-Friday expiry, written root + month + one-digit
-// year (NQZ6), the form the broker test accepted (MESZ6). If the account already holds a position in that root, that contract
-// is used instead (so a flatten / add never lands in a different month). Point values are the exchange contract specs.
+// NO LIMITS (Owner decision 21 Nov 2026, "No limits from our end"): TradeZoro no longer restricts WHAT or HOW MUCH is traded. There is
+// no contract whitelist, no size cap, no exposure cap and no orders-per-minute cap; the member's broker accepts or rejects (its message
+// is shown). What stays are the safety switches (kill switch, per-member block, Enable live trading, audit, idempotency, 'unknown').
+//
+// Symbols: a futures chart (any root, any form: CME_MINI:NQ1!, futures:CL1!, rithmic:MNQ1!, GC1!) maps to a contract month, written
+// root + month + one-digit year (NQZ6, CLF7), the form the broker test accepted (MESZ6). CME equity-index roots use the quarterly
+// rule below (rolled 8 days before the third-Friday expiry); every other root uses the front contract from the symbol-info feed
+// (`fronts`, see frontsOf). If the account already holds a position in that root, that contract is used instead (so a flatten / add
+// never lands in a different month). A stock chart (stocks:NASDAQ:AAPL, idx:SPY) maps to the plain ticker as an equity order.
+// Tick and point value: the exchange contract specs below when known; otherwise 0.01 / 1 (the broker rejects an off-tick price).
 // Education only. Not financial advice.
 
-export const ROOTS = { NQ: { pv: 20, tick: 0.25 }, MNQ: { pv: 2, tick: 0.25 }, ES: { pv: 50, tick: 0.25 }, MES: { pv: 5, tick: 0.25 } };
-export const MAX_QTY = 2;                       // contracts per order AND max net exposure (position + working orders), server-checked
+// futures specs (tick, point value): the exchange contract specs, same table as assets/paper-engine.js FUTURES
+export const ROOTS = {
+  NQ: { pv: 20, tick: 0.25 }, MNQ: { pv: 2, tick: 0.25 }, ES: { pv: 50, tick: 0.25 }, MES: { pv: 5, tick: 0.25 }, YM: { pv: 5, tick: 1 }, MYM: { pv: 0.5, tick: 1 },
+  RTY: { pv: 50, tick: 0.1 }, M2K: { pv: 5, tick: 0.1 }, GC: { pv: 100, tick: 0.1 }, MGC: { pv: 10, tick: 0.1 }, SI: { pv: 5000, tick: 0.005 }, SIL: { pv: 1000, tick: 0.005 },
+  CL: { pv: 1000, tick: 0.01 }, MCL: { pv: 100, tick: 0.01 }, NG: { pv: 10000, tick: 0.001 }, HG: { pv: 25000, tick: 0.0005 }, MHG: { pv: 2500, tick: 0.0005 },
+  ZN: { pv: 1000, tick: 0.015625 }, ZB: { pv: 1000, tick: 0.03125 }, '6E': { pv: 125000, tick: 0.00005 }
+};
+const QUARTERLY = new Set(['NQ', 'MNQ', 'ES', 'MES', 'YM', 'MYM', 'RTY', 'M2K']);   // CME equity-index: H M U Z, third Friday
+const FRONT_KEY = { MNQ: 'NQ', MES: 'ES', MYM: 'YM', M2K: 'RTY', MGC: 'GC', SIL: 'SI', MCL: 'CL', MHG: 'HG' };   // micro -> its mini's calendar
 const MONTHS = [[3, 'H'], [6, 'M'], [9, 'U'], [12, 'Z']];
-const CODE = /^(MNQ|MES|NQ|ES)([HMUZ])(\d{1,2})$/;
+const FUT_PREFIX = /^(futures|rithmic|cme|cme_mini|cbot|cbot_mini|comex|comex_mini|nymex|nymex_mini)$/i;
+const EQ_PREFIX = /^(stocks|idx)$/i;
+const FUT_CODE = /^([A-Z0-9]{1,4}?)([FGHJKMNQUVXZ])(\d{1,2})$/;     // NQZ6, CLF27, 6EZ6
+const EQ_SYM = /^[A-Z][A-Z0-9.\-]{0,9}$/;                         // AAPL, BRK.B
 const WORKING = /^(CREATED|SUBMITTED|RECEIVED|NEW|PARTIALLY_FILLED|PENDING_CANCEL|PENDING|OPEN|WORKING|ACCEPTED|PENDING_NEW|PENDING_REPLACE)$/;
 export const ROLL_DAYS = 8;
+export const DUP_MS = 500;   // double-click guard: the same order again within 500 ms is ignored (chart-live.js)
 
-// "CME_MINI:NQ1!", "rithmic:MNQ1!", "futures:ES1!", "NQ1!" -> "NQ" ; anything else -> ''
-export function chartRoot(sym) {
-  const s = String(sym || '').replace(/^[^:]+:/, '').toUpperCase().trim();
-  const m = /^(MNQ|MES|NQ|ES)1!$/.exec(s);
-  return m ? m[1] : '';
+// what a chart symbol trades: { asset:'future', root } | { asset:'equity', code } | null (crypto, forex, unknown)
+export function instrumentOf(sym) {
+  const raw = String(sym || '').trim(), m = /^([a-z0-9_]+):(.+)$/i.exec(raw);
+  const pre = m ? m[1] : '', rest = (m ? m[2] : raw).toUpperCase();
+  if (EQ_PREFIX.test(pre)) { const t = rest.split(':').pop(); return EQ_SYM.test(t) ? { asset: 'equity', code: t } : null; }
+  if (pre && !FUT_PREFIX.test(pre)) return null;
+  let f = /^([A-Z0-9]{1,4}?)[12]!$/.exec(rest);
+  if (f && (pre || ROOTS[f[1]])) return { asset: 'future', root: f[1] };
+  f = /^([A-Z0-9]{1,4}?)[FGHJKMNQUVXZ](\d|\d\d|\d{4})$/.exec(rest);
+  if (f && (pre || ROOTS[f[1]])) return { asset: 'future', root: f[1] };
+  return null;
 }
+// "CME_MINI:NQ1!", "futures:CL1!", "NQ1!" -> "NQ" / "CL" ; not futures -> ''
+export function chartRoot(sym) { const i = instrumentOf(sym); return i && i.asset === 'future' ? i.root : ''; }
 // third Friday of month m (1-12) in year y, 00:00 UTC
 export function thirdFriday(y, m) {
   const d = new Date(Date.UTC(y, m - 1, 1)); const dow = d.getUTCDay();
   return Date.UTC(y, m - 1, 1 + ((5 - dow + 7) % 7) + 14);
 }
-// quarterly contracts still trading at `now`, nearest first: [{ code, month, year, expiry, rollAt }]
+// quarterly contracts still trading at `now`, nearest first (equity-index roots only): [{ code, month, year, expiry, rollAt }]
 export function liveContracts(root, now, n = 2) {
-  if (!ROOTS[root]) return [];
+  if (!QUARTERLY.has(root)) return [];
   const out = []; const y0 = new Date(now).getUTCFullYear();
   for (let y = y0; y <= y0 + 2 && out.length < n; y++) for (const [m, L] of MONTHS) {
     const expiry = thirdFriday(y, m) + 14.5 * 3600000;    // CME equity-index last trade 09:30 ET on the third Friday (~13:30-14:30 UTC)
@@ -38,17 +63,43 @@ export function liveContracts(root, now, n = 2) {
   }
   return out;
 }
-// front month: the nearest contract unless we are inside its roll window, then the next one
-export function frontMonth(root, now) {
-  const c = liveContracts(root, now, 2); if (!c.length) return null;
-  return now >= c[0].rollAt && c[1] ? c[1] : c[0];
+// symbol-info feed (chart-symbol-info.js getInfo().syms) -> { NQ: 'NQZ6', CL: 'CLF7', ... } (its front contract, short form)
+export function frontsOf(syms) {
+  const out = {};
+  for (const k of Object.keys(syms || {})) { const c = shortCode(syms[k] && syms[k].contract); if (c && c.startsWith(k)) out[k] = c; }
+  return out;
 }
-// server whitelist: a contract code that is one of the two nearest live quarters of the four roots
-export function validContract(code, now) {
-  const m = CODE.exec(String(code || '').toUpperCase()); if (!m) return false;
-  return liveContracts(m[1], now, 2).some((c) => c.code === m[0]);
+// front month: equity-index roots by the quarterly rule (the nearest unless inside its roll window, then the next one); other roots
+// from `fronts` (the micro uses its mini's month). -> { code } | null when no month is known
+export function frontMonth(root, now, fronts) {
+  if (QUARTERLY.has(root)) {
+    const c = liveContracts(root, now, 2); if (!c.length) return null;
+    return now >= c[0].rollAt && c[1] ? c[1] : c[0];
+  }
+  const f = fronts && fronts[FRONT_KEY[root] || root]; if (!f) return null;
+  const m = FUT_CODE.exec(f); return m ? { code: root + m[2] + m[3] } : null;
 }
-export const rootOfCode = (code) => { const m = CODE.exec(String(code || '').toUpperCase()); return m ? m[1] : ''; };
+// "NQZ2026" / "NQZ26" / "nqz6" -> "NQZ6" ; '' when not a contract code
+function shortCode(s) {
+  const m = /^([A-Z0-9]{1,4}?)([FGHJKMNQUVXZ])(\d{4}|\d{1,2})$/.exec(String(s || '').toUpperCase().trim());
+  return m ? m[1] + m[2] + m[3].slice(-1) : '';
+}
+// what the server sends on: a well-formed contract code (future) or ticker (equity). The broker decides whether it trades it.
+export function validContract(code, now, asset = 'future') {
+  const s = String(code || '').toUpperCase();
+  return asset === 'equity' ? EQ_SYM.test(s) : FUT_CODE.test(s);
+}
+// "MNQZ6" -> "MNQ" (a known root wins, so MNQZ6 is never "M" + ...); not a contract code -> ''
+export const rootOfCode = (code) => { const m = FUT_CODE.exec(String(code || '').toUpperCase()); return m ? m[1] : ''; };
+// tick / point value of a contract code or ticker (unknown -> 0.01 / 1)
+export const tickOfCode = (code) => (ROOTS[rootOfCode(code)] || {}).tick || 0.01;
+export const pvOfCode = (code) => (ROOTS[rootOfCode(code)] || {}).pv || (rootOfCode(code) ? 0 : 1);
+const decOf = (t) => { const s = String(t); if (/e-/.test(s)) return Number(s.split('e-')[1]); const i = s.indexOf('.'); return i < 0 ? 0 : s.length - i - 1; };
+// a chart symbol for a contract / ticker (the dock's Close button): NQZ6 -> 'NQ1!', AAPL -> 'stocks:AAPL'
+// asset class of a code the chart sends: a contract month = future, else equity.
+// shortcut: decided from the code's shape; a stock ticker that looks like a contract month (root + month letter + digit) would be read as a future.
+export const assetOf = (code) => (rootOfCode(code) ? 'future' : 'equity');
+export const chartSymOf = (code) => (rootOfCode(code) ? rootOfCode(code) + '1!' : 'stocks:' + code);
 
 // ---- reading the broker's (normalised) records ---------------------------------------------------------------------------
 const num = (v) => { const n = Number(v); return Number.isFinite(n) ? n : 0; };
@@ -59,12 +110,15 @@ function symsOf(o) {
   const ins = o.instrument || {}; add(ins.displaySymbol); add(ins.providerSymbol); add(ins.future && ins.future.contractCode);
   return out;
 }
-// a record's contract in our short form when it is one of ours (NQZ6 / NQZ26 / "NQZ6.CME" -> NQZ6), else ''
+// a record's contract in our short form (NQZ6 / NQZ26 / NQZ2026 / "NQZ6.CME" -> NQZ6; CLF27 -> CLF7), or an equity's ticker (AAPL), else ''
+const isFutRec = (o) => /futur/i.test(String((o && (o.assetType || o.assetClass || o.securityType || (o.instrument && o.instrument.assetType))) || ''));
 export function contractOf(rec) {
-  for (const s of symsOf(rec)) {
-    const m = /^(MNQ|MES|NQ|ES)([HMUZ])(\d{1,2})\b/.exec(s.replace(/^[^:]+:/, ''));
-    if (m) return m[1] + m[2] + (m[3].length === 2 ? m[3][1] : m[3]);
+  const syms = symsOf(rec);
+  for (const s of syms) {
+    const m = /^([A-Z0-9]{1,4}?)([FGHJKMNQUVXZ])(\d{4}|\d{1,2})(?![A-Z0-9])/.exec(s.replace(/^[^:]+:/, ''));
+    if (m) return m[1] + m[2] + m[3].slice(-1);
   }
+  if (!isFutRec(rec)) for (const s of syms) { const t = s.replace(/^[^:]+:/, ''); if (EQ_SYM.test(t)) return t; }
   return '';
 }
 // signed net position (contracts) for one contract, from Finatic positions (quantity may be signed, or side=SHORT with a positive qty)
@@ -91,12 +145,14 @@ export function heldContract(positions, root) {
   for (const c of seen) if (netPosition(positions, c).qty) return c;
   return '';
 }
-// contract to trade for a chart: held position's contract, else the front month
-export function contractFor(sym, positions, now) {
-  const root = chartRoot(sym); if (!root) return null;
-  const fm = frontMonth(root, now); if (!fm) return null;
-  const held = heldContract(positions, root);
-  return { root, code: held || fm.code, front: fm.code, held: !!held && held !== fm.code, pv: ROOTS[root].pv, tick: ROOTS[root].tick };
+// what to trade for a chart: the held position's contract, else the front month (futures); the ticker (equities). null = can't map.
+// -> { root, code, front, held, pv, tick, asset }
+export function contractFor(sym, positions, now, fronts) {
+  const ins = instrumentOf(sym); if (!ins) return null;
+  if (ins.asset === 'equity') return { root: ins.code, code: ins.code, front: ins.code, held: false, pv: 1, tick: 0.01, asset: 'equity' };
+  const root = ins.root, fm = frontMonth(root, now, fronts), held = heldContract(positions, root), sp = ROOTS[root] || {};
+  if (!fm && !held) return null;   // an open position's contract is enough to manage / flatten it
+  return { root, code: held || fm.code, front: fm ? fm.code : held, held: !!held && !!fm && held !== fm.code, pv: sp.pv || 0, tick: sp.tick || 0.01, asset: 'future' };
 }
 // working (not final) orders for a contract -> [{ id, side, qty, type, price, status }]
 export function workingOrders(orders, code) {
@@ -112,28 +168,17 @@ export function workingOrders(orders, code) {
   }
   return out.filter((o) => o.id);
 }
-// Exposure cap: the worst-case net position if every working order AND the new one filled must stay within MAX_QTY.
-// -> null when allowed, else a plain reason.
-export function exposureError(pos, working, side, qty, cap = MAX_QTY) {
-  let longW = 0, shortW = 0;
-  for (const o of working || []) { if (o.side === 'buy') longW += o.qty; else shortW += o.qty; }
-  if (side === 'buy') longW += qty; else shortW += qty;
-  const worstLong = pos + longW, worstShort = pos - shortW;
-  if (worstLong > cap || worstShort < -cap) return 'That would allow more than ' + cap + ' contracts (position plus working orders). Cancel an order or reduce the position first.';
-  if ((working || []).length + 1 > 2 * cap) return 'Too many working orders on this contract.';
-  return null;
-}
-
 // ---- building commands ---------------------------------------------------------------------------------------------------
 export const roundTick = (p, tick) => Math.round(p / tick) * tick;
 // panel / ladder order -> body for POST /connect/finatic/order. -> { body } | { error }
-export function buildPlace({ code, side, qty, type, price, stopPrice, limitPrice, sl, tp, last }, now) {
-  if (!validContract(code, now)) return { error: 'No live contract for this chart.' };
+// No size or symbol limits (Owner 21 Nov): qty = a positive whole number; the broker applies its own minimum, step and limits.
+export function buildPlace({ code, side, qty, type, price, stopPrice, limitPrice, sl, tp, last, asset = 'future', tick: tk }, now) {
+  if (!validContract(code, now, asset)) return { error: 'No live symbol for this chart.' };
   if (side !== 'buy' && side !== 'sell') return { error: 'Pick Buy or Sell.' };
-  if (!Number.isInteger(qty) || qty < 1 || qty > MAX_QTY) return { error: 'Quantity is 1 or 2 contracts.' };
+  if (!Number.isInteger(qty) || qty < 1) return { error: 'Quantity must be a whole number of 1 or more.' };
   if (!['market', 'limit', 'stop', 'stop_limit'].includes(type)) return { error: 'Market, limit or stop only.' };
-  const body = { op: 'place', symbol: code, side, qty, type, assetType: 'future', timeInForce: 'day' };
-  const tick = ROOTS[rootOfCode(code)].tick, r = (v) => Number(roundTick(Number(v), tick).toFixed(2));
+  const body = { op: 'place', symbol: code, side, qty, type, assetType: asset, timeInForce: 'day' };
+  const tick = tk > 0 ? tk : tickOfCode(code), dec = Math.max(2, decOf(tick)), r = (v) => Number(roundTick(Number(v), tick).toFixed(dec));
   if (type === 'limit' || type === 'stop_limit') { const lp = type === 'limit' ? price : limitPrice; if (!(Number(lp) > 0)) return { error: 'Enter a limit price.' }; body.limitPrice = r(lp); }
   if (type === 'stop' || type === 'stop_limit') { const sp = type === 'stop' ? price : stopPrice; if (!(Number(sp) > 0)) return { error: 'Enter a stop price.' }; body.stopPrice = r(sp); }
   if (sl != null || tp != null) {   // stop loss / take profit: market entries only (placed by the server after the fill)
@@ -147,9 +192,9 @@ export function buildPlace({ code, side, qty, type, price, stopPrice, limitPrice
 // match a stop loss / take profit of a bracket group)
 export function buildModify({ id, price, code, type = 'limit' }) {
   if (!id) return { error: 'Order missing.' };
-  const tick = ROOTS[rootOfCode(code)] ? ROOTS[rootOfCode(code)].tick : 0.25;
+  const tick = tickOfCode(code);
   if (!(Number(price) > 0)) return { error: 'Price invalid.' };
-  const p = Number(roundTick(Number(price), tick).toFixed(2));
+  const p = Number(roundTick(Number(price), tick).toFixed(Math.max(2, decOf(tick))));
   if (type === 'stop') return { body: { op: 'modify', orderId: id, type: 'stop', stopPrice: p, symbol: code } };
   if (type !== 'limit') return { error: 'Only limit and stop orders can be moved.' };
   return { body: { op: 'modify', orderId: id, type: 'limit', limitPrice: p, symbol: code } };
@@ -168,10 +213,10 @@ export function priceBandError(price, last, pct = 0.02) {
   return Math.abs(price - last) / last > pct ? 'Price is more than ' + Math.round(pct * 100) + '% away from the market.' : null;
 }
 // flatten plan from a FRESH read: cancel every working order of the contract, then close the net position at market
-export function flattenPlan(pos, working, cap = MAX_QTY) {
+// (no size cap since 21 Nov: any position is closed in one market order; the broker splits or rejects as it does)
+export function flattenPlan(pos, working) {
   const cancel = (working || []).filter((o) => !o.cancelling).map((o) => o.id);
   if (!pos) return { cancel, close: null };
-  if (Math.abs(pos) > cap) return { cancel, close: null, tooBig: true };
   return { cancel, close: { side: pos > 0 ? 'sell' : 'buy', qty: Math.abs(pos) } };
 }
 // deterministic key for one flatten of one position snapshot: a double tap / second tab maps to the same key (deduped server-side)
@@ -394,7 +439,7 @@ export function dayRealized(fills, positions, dayStartMs) {
     if (seen.has(id)) continue; seen.add(id);
     const t = fillTime(f); if (t == null) { unknown++; continue; }
     if (t < dayStartMs) continue;
-    const code = contractOf(f), pv = (ROOTS[rootOfCode(code)] || {}).pv;
+    const code = contractOf(f), pv = pvOfCode(code);
     const q = Math.abs(num(f.quantity != null ? f.quantity : f.qty)), px = num(f.price != null ? f.price : f.fillPrice);
     if (!code || !pv || !q || !(px > 0)) { unknown++; continue; }
     const side = String(f.side || f.action || '').toLowerCase().startsWith('s') ? -1 : 1;
@@ -439,11 +484,11 @@ export function openTotal(positions, lastOf) {
   let v = 0, open = 0, missing = false;
   for (const code of codes) {
     const n = netPosition(positions, code); if (!n.qty) continue; open++;
-    const root = rootOfCode(code), last = lastOf ? lastOf(root) : undefined;
-    const x = openPnl(n.qty, n.avg, Number.isFinite(last) ? last : null, (ROOTS[root] || {}).pv, n.upl);
+    const root = rootOfCode(code), last = lastOf && root ? lastOf(root) : undefined;   // equities: the broker's own open P&L
+    const x = openPnl(n.qty, n.avg, Number.isFinite(last) ? last : null, pvOfCode(code), n.upl);
     if (x == null || !Number.isFinite(x)) missing = true; else v += x;
   }
-  // positions in symbols we can't map (not one of the four roots) count as missing
+  // positions in symbols we can't map count as missing
   for (const p of Array.isArray(positions) ? positions : []) if (p && !contractOf(p) && num(p.quantity != null ? p.quantity : p.units) && String(p.status || 'OPEN').toUpperCase() !== 'CLOSED') { open++; missing = true; }
   return { value: missing ? null : Math.round(v * 100) / 100, open };
 }
@@ -474,7 +519,7 @@ export function acctTitle(a, meta) {
 }
 // open P&L estimate from the chart's last price (contract spec point value), or the broker's figure when no price
 export function openPnl(pos, avg, last, pv, brokerUpl) {
-  if (pos && avg > 0 && last > 0) return (last - avg) * pos * pv;
+  if (pos && avg > 0 && last > 0 && pv > 0) return (last - avg) * pos * pv;
   return brokerUpl == null ? null : brokerUpl;
 }
 
@@ -523,9 +568,9 @@ export function orderById(orders, id) {
 // SL / TP for an entry: side 'buy' = long (SL below the reference, TP above), 'sell' = short. ref = last price (browser) or the
 // fill price (server). Rounded to the tick; each leg within `pct` of the reference. -> { sl, tp } | { error }
 export function bracketCheck({ side, ref, sl, tp, code, pct = 0.03 }) {
-  const tick = ROOTS[rootOfCode(code)] ? ROOTS[rootOfCode(code)].tick : 0.25;
+  const tick = tickOfCode(code), dec = Math.max(2, decOf(tick));
   const out = {};
-  const r = (v) => (v == null || v === '' ? null : Number(roundTick(Number(v), tick).toFixed(2)));
+  const r = (v) => (v == null || v === '' ? null : Number(roundTick(Number(v), tick).toFixed(dec)));
   out.sl = r(sl); out.tp = r(tp);
   if (out.sl == null && out.tp == null) return { error: 'Set a stop loss or a take profit.' };
   for (const k of ['sl', 'tp']) if (out[k] != null && !(out[k] > 0 && out[k] < 1e7)) return { error: (k === 'sl' ? 'Stop loss' : 'Take profit') + ' price is not valid.' };

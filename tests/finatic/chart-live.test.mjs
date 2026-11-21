@@ -10,7 +10,10 @@ import { generateKeyPairSync, createSign } from 'node:crypto';
 const T = (s) => Date.parse(s);
 // ---- symbol mapping ---------------------------------------------------------------------------------------------------
 assert.equal(L.chartRoot('CME_MINI:NQ1!'), 'NQ'); assert.equal(L.chartRoot('rithmic:MNQ1!'), 'MNQ'); assert.equal(L.chartRoot('futures:ES1!'), 'ES');
-assert.equal(L.chartRoot('MES1!'), 'MES'); assert.equal(L.chartRoot('NQ2!'), ''); assert.equal(L.chartRoot('BTCUSDT'), ''); assert.equal(L.chartRoot('CL1!'), ''); assert.equal(L.chartRoot(''), '');
+assert.equal(L.chartRoot('MES1!'), 'MES'); assert.equal(L.chartRoot('BTCUSDT'), ''); assert.equal(L.chartRoot(''), '');
+// NO LIMITS (21 Nov): every futures root maps, stocks map to their ticker; crypto / forex don't
+assert.equal(L.chartRoot('CL1!'), 'CL'); assert.equal(L.chartRoot('futures:GC1!'), 'GC'); assert.equal(L.chartRoot('NYMEX:CL1!'), 'CL'); assert.equal(L.chartRoot('binance:BTCUSDT'), '');
+assert.deepEqual(L.instrumentOf('stocks:NASDAQ:AAPL'), { asset: 'equity', code: 'AAPL' }); assert.equal(L.instrumentOf('fx:EURUSD'), null); assert.equal(L.instrumentOf('ES'), null, "bare 'ES' is not a futures chart");
 assert.equal(new Date(L.thirdFriday(2026, 12)).toISOString().slice(0, 10), '2026-12-18');
 assert.equal(new Date(L.thirdFriday(2027, 3)).toISOString().slice(0, 10), '2027-03-19');
 assert.equal(L.frontMonth('NQ', T('2026-11-15T12:00:00Z')).code, 'NQZ6');
@@ -20,14 +23,23 @@ assert.equal(L.frontMonth('ES', T('2026-12-19T00:00:00Z')).code, 'ESH7', 'after 
 assert.equal(L.frontMonth('ES', T('2029-11-01T00:00:00Z')).code, 'ESZ9');
 assert.equal(L.frontMonth('NQ', T('2029-12-20T00:00:00Z')).code, 'NQH0', 'decade wrap');
 assert.ok(L.validContract('NQZ6', T('2026-11-15T00:00:00Z'))); assert.ok(L.validContract('nqh7', T('2026-11-15T00:00:00Z')));
-for (const bad of ['NQM7', 'NQZ5', 'CLZ6', 'NQ', 'NQZ6;', '../x', '', 'MNQZ66']) assert.ok(!L.validContract(bad, T('2026-11-15T00:00:00Z')), bad);
+// no contract whitelist: any well-formed code passes (the broker decides); garbage never does
+for (const ok of ['NQM7', 'NQZ5', 'CLZ6', 'GCG7', '6EZ6']) assert.ok(L.validContract(ok, T('2026-11-15T00:00:00Z')), ok);
+for (const bad of ['NQ', 'NQZ6;', '../x', '', 'NQZ66X']) assert.ok(!L.validContract(bad, T('2026-11-15T00:00:00Z')), bad);
+assert.ok(L.validContract('AAPL', 0, 'equity')); assert.ok(!L.validContract('AA PL', 0, 'equity'));
+// non-index roots: the front month comes from the symbol-info feed (micro uses its mini's month); unknown = null
+const FR = L.frontsOf({ CL: { contract: 'CLF2027' }, GC: { contract: 'GCZ2026' }, AAPL: {} }); assert.deepEqual(FR, { CL: 'CLF7', GC: 'GCZ6' });
+assert.equal(L.contractFor('futures:CL1!', [], T('2026-11-21T00:00:00Z'), FR).code, 'CLF7'); assert.equal(L.contractFor('futures:MGC1!', [], T('2026-11-21T00:00:00Z'), FR).code, 'MGCZ6');
+assert.equal(L.contractFor('futures:NG1!', [], T('2026-11-21T00:00:00Z'), FR), null, 'no month known = no live order');
+assert.equal(L.contractFor('futures:NG1!', [{ securityId: 'NGF7', quantity: 2 }], T('2026-11-21T00:00:00Z'), FR).code, 'NGF7', 'a held position is still manageable');
+assert.deepEqual(L.contractFor('stocks:NYSE:JPM', [], 0), { root: 'JPM', code: 'JPM', front: 'JPM', held: false, pv: 1, tick: 0.01, asset: 'equity' });
 // a held position's contract wins over the front month (shown as "held")
 const NOW = T('2026-12-11T15:00:00Z');   // inside the Z6 roll window: front = H7
 const posZ = [{ securityId: 'NQZ6', quantity: 1, averageBuyPrice: 21000, status: 'OPEN' }];
 let c = L.contractFor('CME_MINI:NQ1!', posZ, NOW); assert.deepEqual([c.code, c.front, c.held, c.pv], ['NQZ6', 'NQH7', true, 20]);
 c = L.contractFor('CME_MINI:NQ1!', [], NOW); assert.deepEqual([c.code, c.held], ['NQH7', false]);
 assert.equal(L.contractFor('BTCUSDT', [], NOW), null);
-assert.equal(L.contractOf({ instrument: { displaySymbol: 'MESZ26' } }), 'MESZ6'); assert.equal(L.contractOf({ securityId: 'NQZ6.CME' }), 'NQZ6'); assert.equal(L.contractOf({ securityId: 'AAPL' }), '');
+assert.equal(L.contractOf({ instrument: { displaySymbol: 'MESZ26' } }), 'MESZ6'); assert.equal(L.contractOf({ securityId: 'NQZ6.CME' }), 'NQZ6'); assert.equal(L.contractOf({ securityId: 'AAPL' }), 'AAPL'); assert.equal(L.contractOf({ symbol: 'CLF2027' }), 'CLF7');
 assert.equal(L.contractOf({ securityId: 'MNQZ6' }), 'MNQZ6', 'MNQ never read as NQ');
 // positions: signed qty, SHORT side with positive qty, closed rows ignored, average price
 assert.deepEqual(L.netPosition([{ securityId: 'ESZ6', quantity: -2, averageSellPrice: 6000 }], 'ESZ6').qty, -2);
@@ -42,16 +54,16 @@ const ords = [
   { orderId: 'w4', status: 'SUBMITTED', legs: [{ securityId: 'ESZ6', side: 'SELL', quantity: 1 }] },
 ];
 const w = L.workingOrders(ords, 'NQZ6'); assert.deepEqual(w.map((o) => [o.id, o.side, o.qty, o.price]), [['w1', 'buy', 1, 20900], ['w3', 'sell', 1, 21100]]);
-// exposure: worst case of position + working + new within 2
-assert.equal(L.exposureError(0, [], 'buy', 2), null);
-assert.ok(L.exposureError(1, [], 'buy', 2)); assert.equal(L.exposureError(2, [], 'sell', 2), null, 'closing is fine');
-assert.ok(L.exposureError(0, [{ side: 'buy', qty: 2 }], 'buy', 1), 'working orders count');
-assert.equal(L.exposureError(-2, [], 'buy', 2), null); assert.ok(L.exposureError(-2, [], 'sell', 1));
+// no exposure cap / size cap any more (21 Nov)
+assert.equal(L.exposureError, undefined); assert.equal(L.MAX_QTY, undefined);
 // ---- payload building ---------------------------------------------------------------------------------------------------
 const N = T('2026-11-15T15:00:00Z');
 assert.deepEqual(L.buildPlace({ code: 'NQZ6', side: 'buy', qty: 1, type: 'market' }, N).body, { op: 'place', symbol: 'NQZ6', side: 'buy', qty: 1, type: 'market', assetType: 'future', timeInForce: 'day' });
 assert.equal(L.buildPlace({ code: 'MESZ6', side: 'sell', qty: 2, type: 'limit', price: 6000.13 }, N).body.limitPrice, 6000.25, 'tick rounded');
-for (const bad of [{ qty: 3 }, { qty: 0 }, { qty: 1.5 }, { side: 'hold' }, { type: 'stop' }, { type: 'limit', price: 0 }, { code: 'CLZ6' }, { code: 'NQM7' }])
+assert.equal(L.buildPlace({ code: 'NQZ6', side: 'buy', qty: 250, type: 'market' }, N).body.qty, 250, 'no size cap');
+assert.deepEqual(L.buildPlace({ code: 'CLF7', side: 'buy', qty: 5, type: 'limit', price: 70.123 }, N).body, { op: 'place', symbol: 'CLF7', side: 'buy', qty: 5, type: 'limit', assetType: 'future', timeInForce: 'day', limitPrice: 70.12 }, 'any root, its own tick');
+assert.deepEqual(L.buildPlace({ code: 'AAPL', side: 'sell', qty: 10, type: 'market', asset: 'equity' }, N).body, { op: 'place', symbol: 'AAPL', side: 'sell', qty: 10, type: 'market', assetType: 'equity', timeInForce: 'day' });
+for (const bad of [{ qty: 0 }, { qty: 1.5 }, { qty: -1 }, { side: 'hold' }, { type: 'stop' }, { type: 'limit', price: 0 }, { code: 'NQ' }, { code: '../x' }])
   assert.ok(L.buildPlace(Object.assign({ code: 'NQZ6', side: 'buy', qty: 1, type: 'market' }, bad), N).error, JSON.stringify(bad));
 assert.deepEqual(L.buildModify({ id: 'w1', price: 20901.1, code: 'NQZ6' }).body, { op: 'modify', orderId: 'w1', type: 'limit', limitPrice: 20901, symbol: 'NQZ6' });
 assert.deepEqual(L.buildModify({ id: 's1', price: 20850.1, code: 'NQZ6', type: 'stop' }).body, { op: 'modify', orderId: 's1', type: 'stop', stopPrice: 20850, symbol: 'NQZ6' });
@@ -97,7 +109,7 @@ assert.ok(L.priceBandError(22000, 21000)); assert.equal(L.priceBandError(21100, 
 // flatten plan + deterministic key
 assert.deepEqual(L.flattenPlan(2, [{ id: 'a' }, { id: 'b', cancelling: true }]), { cancel: ['a'], close: { side: 'sell', qty: 2 } });
 assert.deepEqual(L.flattenPlan(-1, []), { cancel: [], close: { side: 'buy', qty: 1 } });
-assert.equal(L.flattenPlan(3, []).tooBig, true); assert.equal(L.flattenPlan(0, []).close, null);
+assert.deepEqual(L.flattenPlan(-30, []), { cancel: [], close: { side: 'buy', qty: 30 } }, 'no too-big cap'); assert.equal(L.flattenPlan(0, []).close, null);
 const k1 = L.flattenKey('acc', 'NQZ6', 2, 'x'); assert.equal(k1, L.flattenKey('acc', 'NQZ6', 2, 'x')); assert.notEqual(k1, L.flattenKey('acc', 'NQZ6', 1, 'x')); assert.ok(L.IDEM.test(k1));
 // read gate
 assert.equal(L.readsOk({ lastOkStart: 1000, lastWriteAt: 0, now: 5000 }).ok, true);
@@ -173,7 +185,7 @@ const b64 = (o) => Buffer.from(JSON.stringify(o)).toString('base64url');
 const token = (uid) => { const now = Math.floor(Date.now() / 1000); const h = b64({ alg: 'RS256', kid: 'k1' }), p = b64({ iss: 'https://securetoken.google.com/strykertrades-e0cd8', aud: 'strykertrades-e0cd8', sub: uid, iat: now - 5, exp: now + 3000 }); return h + '.' + p + '.' + createSign('RSA-SHA256').update(h + '.' + p).sign(privateKey).toString('base64url'); };
 const jwk = { ...publicKey.export({ format: 'jwk' }), kid: 'k1', alg: 'RS256', use: 'sig' };
 const verifyFetch = async (url) => { if (String(url).includes('jwk/securetoken')) return new Response(JSON.stringify({ keys: [jwk] })); return /admins\/admin1$/.test(String(url)) ? new Response('{}') : new Response('{}', { status: 404 }); };
-const B = { positions: [], orders: [], calls: [], fail: '' };
+const B = { positions: [], orders: [], calls: [], fail: '', reject: '' };
 const ok = (data) => new Response(JSON.stringify({ data, errors: [] }), { status: 200 });
 const finFetch = async (url, init) => {
   const u = new URL(url); B.calls.push({ m: init.method, p: u.pathname, key: init.headers['Idempotency-Key'], body: init.body ? JSON.parse(init.body) : null });
@@ -182,7 +194,7 @@ const finFetch = async (url, init) => {
   if (u.pathname === '/api/v1/session/start') return ok({ session_id: 's', company_id: 'c', status: 'active', user_id: US });
   if (u.pathname.endsWith('/positions')) return B.fail === 'read' ? new Response('x', { status: 500 }) : ok(B.positions);
   if (u.pathname.endsWith('/orders') && init.method === 'GET') return ok(B.orders);
-  if (u.pathname.endsWith('/orders') && init.method === 'POST') { if (B.fail === 'timeout') throw new Error('timeout'); if (B.fail === 'reject-sl' && /-sl$/.test(init.headers['Idempotency-Key'])) return new Response(JSON.stringify({ data: { accepted: false, message: 'stop refused' } }), { status: 400 }); return ok({ accepted: true, order: { orderId: B.ids ? 'o-' + init.headers['Idempotency-Key'] : 'new-1', status: 'SUBMITTED' } }); }
+  if (u.pathname.endsWith('/orders') && init.method === 'POST') { if (B.fail === 'timeout') throw new Error('timeout'); if (B.reject) return new Response(JSON.stringify({ data: { accepted: false, message: B.reject } }), { status: 400 }); if (B.fail === 'reject-sl' && /-sl$/.test(init.headers['Idempotency-Key'])) return new Response(JSON.stringify({ data: { accepted: false, message: 'stop refused' } }), { status: 400 }); return ok({ accepted: true, order: { orderId: B.ids ? 'o-' + init.headers['Idempotency-Key'] : 'new-1', status: 'SUBMITTED' } }); }
   if (u.pathname.includes('/orders/') && init.method === 'DELETE') { const id = u.pathname.split('/').pop(); B.orders = B.orders.map((o) => (o.orderId === id ? { ...o, status: 'CANCELLED' } : o)); return ok({ accepted: true, order: { orderId: id, status: 'CANCELLED' } }); }
   if (u.pathname.includes('/orders/') && init.method === 'PATCH') return ok({ accepted: true, executionStrategy: 'NATIVE_MODIFY', order: { orderId: 'w1', status: 'SUBMITTED' } });
   return ok([]);
@@ -196,16 +208,16 @@ const US = '0aaa1111-2222-3333-4444-555566667777', ACC = '123e4567-e89b-12d3-a45
 const live = { FINATIC_API_KEY: 'fntc_live_FAKE', FINATIC_LIVE_ORDERS: '1', DEV: '0' };
 let ip = 1;
 const req = (body, tok, url) => new Request(url || 'https://tradezoro.com/connect/finatic/order', { method: 'POST', headers: { 'cf-connecting-ip': '10.9.' + (ip++ % 250) + '.1', origin: 'https://tradezoro.com', 'content-type': 'application/json', ...(tok ? { authorization: 'Bearer ' + tok } : {}) }, body: JSON.stringify(body) });
-const send = async (b, tok = token('admin1'), env = live) => { O._resetRate(); const r = await O.handle(req({ src: 'chart', accountId: ACC, userId: US, ...b }, tok), env, deps); return { status: r.status, j: await r.json() }; };
+const send = async (b, tok = token('admin1'), env = live) => { const r = await O.handle(req({ src: 'chart', accountId: ACC, userId: US, ...b }, tok), env, deps); return { status: r.status, j: await r.json() }; };
 const writes = () => B.calls.filter((x) => x.m !== 'GET' && !x.p.includes('/session/'));
 const key = (n) => 'k' + String(n).padStart(20, '0');
 
 let r = await send({ op: 'place', symbol: 'NQZ6', side: 'buy', qty: 1, type: 'market', idemKey: key(1) }, token('member9'));
 assert.equal(r.status, 403, 'non-admin refused'); assert.equal(writes().length, 0);
 r = await send({ op: 'place', symbol: 'NQZ6', side: 'buy', qty: 1, type: 'market' }); assert.equal(r.status, 400, 'idemKey required');
-r = await send({ op: 'place', symbol: 'CLZ6', side: 'buy', qty: 1, type: 'market', idemKey: key(2) }); assert.equal(r.status, 400, 'contract whitelist');
+r = await send({ op: 'place', symbol: 'NQ;Z6', side: 'buy', qty: 1, type: 'market', idemKey: key(2) }); assert.equal(r.status, 400, 'malformed symbol refused');
 r = await send({ op: 'place', symbol: 'NQZ6', side: 'buy', qty: 1, type: 'trailing_stop', stopPrice: 1, idemKey: key(3) }); assert.equal(r.status, 400, 'no trailing stops from the chart');
-r = await send({ op: 'place', symbol: 'NQZ6', side: 'buy', qty: 3, type: 'market', idemKey: key(4) }); assert.equal(r.status, 400, 'qty cap stays');
+r = await send({ op: 'place', symbol: 'NQZ6', side: 'buy', qty: 0, type: 'market', idemKey: key(4) }); assert.equal(r.status, 400, 'qty must be 1 or more');
 killOn = false; r = await send({ op: 'place', symbol: 'NQZ6', side: 'buy', qty: 1, type: 'market', idemKey: key(5) }); assert.equal(r.status, 403); assert.equal(r.j.code, 'switched_off');
 killOn = 'err'; r = await send({ op: 'place', symbol: 'NQZ6', side: 'buy', qty: 1, type: 'market', idemKey: key(6) }); assert.equal(r.status, 503, 'kill switch unreadable = refused');
 killOn = true; assert.equal(writes().length, 0, 'nothing reached the broker yet');
@@ -217,9 +229,14 @@ assert.equal(writes().at(-1).body.paperTradeConfirmed, false); assert.equal(audi
 // same key again: 409 duplicate, broker not called
 let n0 = writes().length; r = await send({ op: 'place', symbol: 'NQZ6', side: 'buy', qty: 1, type: 'limit', limitPrice: 20900, idemKey: key(8) });
 assert.equal(r.status, 409); assert.equal(r.j.code, 'duplicate'); assert.equal(writes().length, n0);
-// exposure from a FRESH read: long 1 + working buy 1 -> another buy refused, a sell allowed
+// no exposure cap (21 Nov): long 1 + working buy 1 -> another buy of 5 goes to the broker; any root (CL) and size too
 B.positions = [{ securityId: 'NQZ6', quantity: 1, averageBuyPrice: 21000 }]; B.orders = [{ orderId: 'w1', status: 'SUBMITTED', legs: [{ securityId: 'NQZ6', side: 'BUY', quantity: 1, limitPrice: 20900 }] }];
-r = await send({ op: 'place', symbol: 'NQZ6', side: 'buy', qty: 1, type: 'market', idemKey: key(9) }); assert.equal(r.status, 409); assert.equal(r.j.code, 'exposure');
+r = await send({ op: 'place', symbol: 'NQZ6', side: 'buy', qty: 5, type: 'market', idemKey: key(9) }); assert.equal(r.status, 200, 'exposure no longer capped'); assert.equal(writes().at(-1).body.order.orderQty, 5);
+r = await send({ op: 'place', symbol: 'CLF7', side: 'buy', qty: 12, type: 'market', idemKey: key(91) }); assert.equal(r.status, 200, 'any contract'); assert.equal(writes().at(-1).body.order.symbol, 'CLF7');
+r = await send({ op: 'place', symbol: 'AAPL', assetType: 'equity', side: 'buy', qty: 300, type: 'market', idemKey: key(92) }); assert.equal(r.status, 200, 'equity'); assert.deepEqual([writes().at(-1).body.order.assetType, writes().at(-1).body.order.orderQty], ['equity', 300]);
+// the broker refusing is shown with its own message
+B.reject = 'Symbol not supported by this account'; r = await send({ op: 'place', symbol: 'ZWH7', side: 'buy', qty: 1, type: 'market', idemKey: key(93) }); B.reject = '';
+assert.ok(r.status >= 400, String(r.status)); assert.notEqual(r.j.code, 'unknown'); assert.match(r.j.error, /Symbol not supported/, 'the broker message is passed back');
 r = await send({ op: 'place', symbol: 'NQZ6', side: 'sell', qty: 1, type: 'market', idemKey: key(10) }); assert.equal(r.status, 200);
 B.fail = 'read'; n0 = writes().length; r = await send({ op: 'place', symbol: 'NQZ6', side: 'sell', qty: 1, type: 'market', idemKey: key(11) }); assert.equal(r.status, 503); assert.equal(r.j.code, 'read_failed'); assert.equal(writes().length, n0, 'unreadable = not sent'); B.fail = '';
 // timeout = unknown, audited as unknown
@@ -237,7 +254,8 @@ assert.deepEqual(fw.map((x) => [x.m, x.p.split('/').pop(), x.key]), [['DELETE', 
 assert.deepEqual(fw[1].body.order, { assetType: 'future', symbol: 'NQZ6', action: 'sell', orderType: 'market', orderQty: 2, timeInForce: 'day' });
 assert.equal(B.orders.find((o) => o.orderId === 'w6').status, 'SUBMITTED', 'other contracts untouched');
 n0 = writes().length; r = await send({ op: 'flatten', symbol: 'NQZ6', idemKey: key(16) }); assert.equal(r.status, 409, 'double flatten deduped'); assert.equal(writes().length, n0);
-B.positions = [{ securityId: 'NQZ6', quantity: -3 }]; B.orders = []; r = await send({ op: 'flatten', symbol: 'NQZ6', idemKey: key(17) }); assert.equal(r.status, 409); assert.equal(r.j.code, 'too_big');
+B.positions = [{ securityId: 'NQZ6', quantity: -3 }]; B.orders = []; r = await send({ op: 'flatten', symbol: 'NQZ6', idemKey: key(17) }); assert.equal(r.status, 200, 'any size flattens');
+assert.deepEqual(writes().at(-1).body.order, { assetType: 'future', symbol: 'NQZ6', action: 'buy', orderType: 'market', orderQty: 3, timeInForce: 'day' });
 B.positions = []; n0 = writes().length; r = await send({ op: 'flatten', symbol: 'NQZ6', idemKey: key(18) }); assert.equal(r.status, 200); assert.equal(r.j.closed, null); assert.equal(writes().length, n0, 'flat: nothing sent');
 r = await send({ op: 'flatten', symbol: 'NQZ6', idemKey: key(19), src: 'journal' }); assert.equal(r.status, 400, 'flatten is a chart op only');
 // the read endpoint's new 'live' op: GETs only

@@ -8,30 +8,30 @@
 // What it adds to the Paper trading panel: an account picker (Paper = default, every reload starts on Paper; plus the admin's connected
 // broker accounts, "Tradovate …1234"; plus "Connect a broker…", which opens the SAME connect flow as Nemesis: finatic-journal-ui.js).
 // With a live account picked: a big red LIVE badge in the panel and on every chart; the panel shows an order form (Buy/Sell, Market/
-// Limit, 1 or 2 contracts), the live position (P&L from the chart's last price x the contract's point value) and working orders (Cancel);
+// Limit, quantity), the live position (P&L from the chart's last price x the contract's point value) and working orders (Cancel);
 // the chart draws the position and working-order lines (drag a working order = modify, or cancel + new when the broker can't modify);
 // DOM ladder clicks (assets/chart-book-panel.js) send LIMIT orders at the clicked price (a click at/through the touch is a marketable
 // limit, never a market order). Every paper surface that could be mistaken for live is switched off meanwhile (chart-paper.js).
 //
 // SAFETY (advisor-reviewed design, 2026-11-15):
-// - Symbols: only NQ1!/ES1!/MNQ1!/MES1! charts; front-month contract (assets/chart-live-core.js), the held contract wins; shown in every
-//   confirm. The server re-checks the contract list.
+// - Symbols (NO LIMITS, Owner decision 21 Nov 2026): any futures chart maps to its front-month contract (assets/chart-live-core.js; the
+//   held contract wins), a stock chart to its ticker. TradeZoro no longer limits symbols, size, exposure or orders a minute: the broker
+//   accepts or rejects, and its message is shown. A double-click guard drops the same order again within 500 ms (L.DUP_MS).
 // - Orders send on the click, like paper (Owner order 19 Nov: "REMOVE this first trade confirmation"; the typed-contract step and the
-//   per-order tap are gone). The red LIVE badge, the server guards (admin, kill switch, contract list, 2-contract cap and exposure,
-//   10 a minute, idempotency key, audit row before the order) all stay. Flatten and dragging a working order still ask one tap.
+//   per-order tap are gone). The red LIVE badge, the server guards (kill switch, member block, Enable live trading,
+//   idempotency key, audit row before the order, 'unknown' handling) all stay. Flatten and dragging a working order still ask one tap.
 // - Reads: positions + orders every POLL_MS while live is picked and the tab is visible, and right after every write. New orders are
 //   blocked unless a read STARTED after the last write and is younger than STALE_MS; an unknown write result blocks until a read lands.
 // - One write in flight at a time. Every write carries a fresh idempotency key (= the server's audit doc id: a repeat is refused).
 //   Flatten runs on the server with a key derived from the read it was based on, so a double tap is one flatten.
 // - One live tab per account (Web Locks). Idle 15 min or hidden 2 min -> back to Paper. Kill switch: "Turn off live trading" writes
 //   settings/liveTrading {enabled:false}; the server refuses live writes while it is off.
-// - Qty cap 2 contracts and max 2 contracts worst-case exposure: server-side (order.js), also enforced here. 10 orders a minute: both too.
 // - Order panel (assets/chart-order-panel.js, 2026-11-16) replaces the bottom strip while live; it calls placeTicket() -> place() only.
 // Tests: tests/finatic/chart-live.test.mjs (core + server, mocked broker), tools/tests/chart-live-browser.js (mocked endpoints only).
 // Education only. Not financial advice.
 import * as L from './chart-live-core.js?v=1181';
 
-const POLL_MS = 10000, STALE_MS = 25000, IDLE_MS = 15 * 60000, HIDDEN_MS = 2 * 60000, RATE_MAX = 10;
+const POLL_MS = 10000, STALE_MS = 25000, IDLE_MS = 15 * 60000, HIDDEN_MS = 2 * 60000;
 const DISCLAIMER = 'Education only. Not financial advice.';
 const esc = (s) => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 const money = (n, sign) => { if (n == null || !Number.isFinite(n)) return '—'; const s = Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); return (n < 0 ? '−' : sign && n > 0 ? '+' : '') + '$' + s; };
@@ -46,7 +46,7 @@ const S = {
   accounts: [], acct: null, userId: '', env: null, loaded: false, loadErr: '',
   data: { positions: [], orders: [] }, lastOkStart: 0, lastWriteAt: 0, unknown: false, readErr: '', reading: false,
   busy: false, form: { side: 'buy', type: 'market', qty: 1, price: '' }, modifyOk: null,
-  placeSchema: null, placeErr: '', killed: null, lastAct: Date.now(), hiddenAt: 0, lock: null, msg: '', sentAt: [], rtt: null, pending: null,
+  placeSchema: null, placeErr: '', killed: null, lastAct: Date.now(), hiddenAt: 0, lock: null, msg: '', lastSend: null, fronts: null, rtt: null, pending: null,
   // env check (Owner bug 2026-11-17): S.env stays null until the server ANSWERS; envErr = why it could not be reached (never "off")
   envAt: 0, envErr: '', envBusy: null,
   // stop loss / take profit group of the chart's contract (the server's record, functions/connect/finatic/order.js op 'bracket')
@@ -259,6 +259,12 @@ const connect = () => openSync(true), reconnect = () => openSync(false);
 
 // ------------------------------------------------------------------------------------------ pick / leave live
 export const active = () => !!S.acct;
+// why a chart has no live symbol (crypto / forex, or a futures root whose contract month is not known yet)
+export function noLiveWhy(sym) {
+  const ins = L.instrumentOf(sym);
+  if (ins && ins.asset === 'future') return S.fronts && !Object.keys(S.fronts).length ? 'Finding the contract month for ' + ins.root + '…' : 'The contract month for ' + ins.root + ' isn’t known. Trade it at your broker.';
+  return 'This chart can’t trade live. Live orders work on futures and stock charts.';
+}
 async function pick(id) {
   if (!id) return leave();
   const a = S.accounts.find((x) => x.id === id); if (!a) return;
@@ -273,7 +279,7 @@ async function pick(id) {
   S.env = null; S.envAt = 0; S.envErr = ''; S.group = null; S.groupCode = ''; S.alarmSeen = '';
   S.day = { at: 0, busy: false, key: '', fills: [], truncated: false, sig: '' }; balance(id, true);
   // 'env' also pre-warms the server (Finatic session + kill switch cached) and the browser's connection; reads start in parallel
-  read(); readKill();
+  read(); readKill(); loadFronts();
   await envCheck();
   schemaCheck();
   render();
@@ -380,8 +386,14 @@ function blockReason() {
 }
 
 // ------------------------------------------------------------------------------------------ per chart
+// front contracts of the non-index futures roots (CL, GC, ZN ...), from the symbol-info feed the chart already loads (memoised 1 h)
+function loadFronts() {
+  if (S.fronts) return;
+  S.fronts = {};
+  import('./chart-symbol-info.js?v=1181').then((m) => m.getInfo()).then((d) => { S.fronts = L.frontsOf(d && d.syms); render(); }).catch(() => { S.fronts = null; });
+}
 function info(sym) {
-  const c = L.contractFor(sym, S.data.positions, now()); if (!c) return null;
+  const c = L.contractFor(sym, S.data.positions, now(), S.fronts); if (!c) return null;
   const pos = L.netPosition(S.data.positions, c.code), working = L.workingOrders(S.data.orders, c.code);
   let last = P && P.lastPrice ? P.lastPrice(sym) : undefined;
   if (!Number.isFinite(last) && TEST && TEST.last) last = TEST.last(sym);   // browser test fixture only (localhost)
@@ -410,7 +422,7 @@ export function chipText(sym, l) {
   if (l.role) return ['LIVE ' + (l.role === 'sl' ? 'SL ' : 'TP ') + l.qty, px(l.price)];
   return ['LIVE ' + (l.side === 'buy' ? 'BUY ' : 'SELL ') + (/stop/.test(l.type) ? 'STP ' : 'LMT ') + l.qty, px(l.price)];
 }
-export const tickOf = (sym) => { const r = L.chartRoot(sym); return r ? L.ROOTS[r].tick : 0.25; };
+export const tickOf = (sym) => { const i = L.instrumentOf(sym); return i && i.asset === 'future' ? (L.ROOTS[i.root] || {}).tick || 0.01 : 0.01; };
 
 // ------------------------------------------------------------------------------------------ confirm sheet
 let cf = null;
@@ -426,7 +438,7 @@ function confirmSheet(d) {
       '<h2 id="stklv-cf-h">' + esc(d.title) + '</h2>' +
       '<div id="stklv-cf-d" class="stklv-cf-lines">' + d.lines.map((x) => '<p>' + x + '</p>').join('') + '</div>' +
       '<div class="stklv-cf-btns"><button type="button" class="stklv-btn" data-k="no">Cancel</button><button type="button" class="stklv-btn stklv-go ' + (d.side === 'sell' ? 'sell' : 'buy') + '" data-k="yes">' + esc(d.go) + '</button></div>' +
-      '<p class="stklv-fine">Real order at your broker. Max 2 contracts. Every attempt is logged. ' + DISCLAIMER + '</p></div>';
+      '<p class="stklv-fine">Real order at your broker. Every attempt is logged. ' + DISCLAIMER + '</p></div>';
     document.body.appendChild(el);
     const yes = el.querySelector('[data-k=yes]');
     setTimeout(() => el.querySelector('[data-k=no]').focus(), 30);
@@ -459,7 +471,7 @@ export function enableLive() {
         '<li><b>TradeZoro is not a broker and gives no advice.</b> We pass your orders to your broker. We don’t hold your money or tell you what to trade.</li>' +
         '<li><b>You are responsible for your orders</b> and your positions, including when a connection or a page fails. Check your broker if anything looks wrong.</li>' +
         '<li><b>TradeZoro is not liable for trading issues.</b> We are not responsible for any loss or damage from failed, delayed, rejected or duplicate orders, wrong or old data, outages, bugs or anything else that goes wrong while trading through TradeZoro. You trade at your own risk.</li>' +
-      '</ul><p>Limits apply: NQ, ES, MNQ and MES only, at most 2 contracts, 10 orders a minute. Every order is logged. ' + DISCLAIMER + '</p></div>' +
+      '</ul><p>TradeZoro sets no limits of its own on what or how much you trade: your broker decides what it accepts. We log every order and may switch live trading off for everyone or for one account at any time. ' + DISCLAIMER + '</p></div>' +
       '<label class="stklv-en-ck"><input type="checkbox" data-k="ck"><span>I have read this and the <a href="/terms#broker-live" target="_blank" rel="noopener">Terms</a>, and I accept the risk of live trading.</span></label>' +
       '<p class="stklv-en-err" role="alert" hidden></p>' +
       '<div class="stklv-cf-btns"><button type="button" class="stklv-btn" data-k="no">Not now</button><button type="button" class="stklv-btn stklv-go buy" data-k="yes" disabled>Enable live trading</button></div>' +
@@ -511,20 +523,19 @@ async function place(sym, o, src) {
   if (S.acct && !S.envBusy && (!S.env || now() - S.envAt > ENV_MAX_AGE)) await envCheck();   // re-check right before a confirm if older than 60 s
   if (S.env && S.env.consent === false && S.env.blocked !== true) { enableLive(); return null; }   // one-time step; the order is not sent
   const why = blockReason(); if (why) { toast(why, 'error'); return null; }
-  const i = info(sym); if (!i) { toast('Live orders work on NQ, ES, MNQ and MES charts only.', 'error'); return null; }
-  // 10 new orders a minute (the server refuses the 11th too: order.js orderRateLimited); counted when sent, not when refused here
-  { const t = now(); S.sentAt = S.sentAt.filter((x) => t - x < 60000); if (S.sentAt.length >= RATE_MAX) { toast('Order limit: ' + RATE_MAX + ' a minute. Wait a few seconds.', 'error'); return null; } }
-  const qty = Math.min(L.MAX_QTY, Math.max(1, Math.round(o.qty || 1)));
-  const ex = L.exposureError(i.pos.qty, i.working, o.side, qty); if (ex) { toast(ex, 'error'); return null; }
+  const i = info(sym); if (!i) { toast(noLiveWhy(sym), 'error'); return null; }
+  const qty = Math.round(Number(o.qty));
+  if (!(qty >= 1)) { toast('Enter a quantity of 1 or more.', 'error'); return null; }
   if (o.type !== 'market') { const band = L.priceBandError(Number(o.price), i.last); if (band) { toast(band, 'error'); return null; } }
   if (o.type === 'stop' && i.last > 0 && (o.side === 'buy' ? Number(o.price) <= i.last : Number(o.price) >= i.last)) { toast('A buy stop goes above the price, a sell stop below it.', 'error'); return null; }
   const br = o.sl != null || o.tp != null;
   if (br && !caps().bracket) { toast(caps().why, 'error'); return null; }
   if (br && groupOpen(i.code)) { toast('A stop loss / take profit is already open on ' + i.code + '. Flatten or wait for it to finish first.', 'error'); return null; }
-  const b = L.buildPlace({ code: i.code, side: o.side, qty, type: o.type, price: o.price, sl: o.sl, tp: o.tp, last: i.last }, now()); if (b.error) { toast(b.error, 'error'); return null; }
+  const b = L.buildPlace({ code: i.code, side: o.side, qty, type: o.type, price: o.price, sl: o.sl, tp: o.tp, last: i.last, asset: i.asset, tick: i.tick }, now()); if (b.error) { toast(b.error, 'error'); return null; }
   const desc = sideWord(o.side) + ' ' + qty + ' ' + i.code + ' ' + (o.type === 'market' ? 'MARKET' : o.type === 'stop' ? 'STOP @ ' + px(b.body.stopPrice) : 'LIMIT @ ' + px(b.body.limitPrice));
   // no confirm (Owner order 19 Nov): the order goes out on the click, like paper; every guard above and on the server still applies
-  S.sentAt.push(now());
+  // double-click guard: the identical order again within 500 ms is dropped (not an order limit: a different order goes straight out)
+  { const sig = JSON.stringify(b.body), t = now(); if (S.lastSend && S.lastSend.sig === sig && t - S.lastSend.at < L.DUP_MS) return null; S.lastSend = { sig, at: t }; }
   const body = Object.assign(b.body, { idemKey: uuid() });
   const r = await write(body, desc + (src ? ' (' + src + ')' : ''), L.pendingLine(body, i.last));
   if (r && br) { setGroup(r.bracket || null, i.code); if (r.bracket && r.bracket.state === 'unrecorded') toast(r.bracket.why, 'error'); else toast('Stop loss and take profit go to your broker after the entry fills. Keep this tab open until they are placed.', 'info'); }
@@ -561,7 +572,7 @@ export async function flatten(sym) {
   if (!S.acct || S.busy) return null;
   if (S.env && S.env.enabled === false) { toast('Live orders are off on the server.', 'error'); return null; }
   if (!S.lastOkStart) { toast('Positions are still loading.', 'error'); return null; }
-  const i = info(sym); if (!i) { toast('Open the NQ, ES, MNQ or MES chart of the position to flatten it.', 'error'); return null; }
+  const i = info(sym); if (!i) { toast('Open the chart of the position to flatten it.', 'error'); return null; }
   if (!i.pos.qty && !i.working.length) { toast('Nothing to flatten on ' + i.code + '.', 'info'); return null; }
   const ok = await confirmSheet({ title: 'Flatten ' + i.code, code: i.code, side: i.pos.qty > 0 ? 'sell' : 'buy', go: 'Flatten ' + i.code,
     lines: [contractLine(i), 'Cancels ' + i.working.length + ' working order' + (i.working.length === 1 ? '' : 's') + (groupOpen(i.code) ? ' (including the stop loss and take profit)' : '') + ', then closes the position at market (' + posText(i) + ').', 'The server re-reads the position first and closes what it finds there.'] });
@@ -588,8 +599,8 @@ export function dock() {
   S.data.positions.forEach((p) => add(L.contractOf(p))); S.data.orders.forEach((o) => add(L.contractOf((o.legs || [])[0] || {}) || L.contractOf(o)));
   const pos = [], ord = [];
   for (const code of codes) {
-    const n = L.netPosition(S.data.positions, code), root = L.rootOfCode(code), pv = (L.ROOTS[root] || {}).pv;
-    if (n.qty) { const last = P.lastPrice ? P.lastPrice(root + '1!') : undefined; pos.push({ sym: code, side: n.qty > 0 ? 'Long' : 'Short', buy: n.qty > 0, qty: Math.abs(n.qty), avg: px(n.avg), last: px(last), pnl: pv ? L.openPnl(n.qty, n.avg, Number.isFinite(last) ? last : null, pv, n.upl) : n.upl, close: () => flatten(root + '1!') }); }
+    const n = L.netPosition(S.data.positions, code), root = L.rootOfCode(code), pv = L.pvOfCode(code);
+    if (n.qty) { const last = P.lastPrice && root ? P.lastPrice(root + '1!') : undefined; pos.push({ sym: code, side: n.qty > 0 ? 'Long' : 'Short', buy: n.qty > 0, qty: Math.abs(n.qty), avg: px(n.avg), last: px(last), pnl: pv ? L.openPnl(n.qty, n.avg, Number.isFinite(last) ? last : null, pv, n.upl) : n.upl, close: () => flatten(L.chartSymOf(code)) }); }
     for (const o of L.workingOrders(S.data.orders, code)) ord.push({ sym: code, side: o.side === 'buy' ? 'Buy' : 'Sell', buy: o.side === 'buy', type: (o.type || '').replace(/^./, (c) => c.toUpperCase()), qty: o.qty, price: o.price ? px(o.price) : '—', status: o.cancelling ? 'Cancelling' : 'Working', cancel: o.cancelling ? null : () => cancel(o.id) });
   }
   const done = S.data.orders.filter((o) => !L.workingOrders([o], L.contractOf((o.legs || [])[0] || {}) || L.contractOf(o)).length);
@@ -626,13 +637,13 @@ export async function drag(sym, d) {
     if (r) return;
     if (S.unknown) return;
   }
-  // cancel + new: cancel, wait for a read showing it gone, then the new order (exposure re-checked on the server)
+  // cancel + new: cancel, wait for a read showing it gone, then the new order (the server re-reads first)
   const c = await write({ op: 'cancel', orderId: oid, idemKey: uuid() }, 'Cancel');
   if (!c) return;
   for (let t = 0; t < 5; t++) { await new Promise((r) => setTimeout(r, 1200)); S.reading = false; await read(); const still = L.workingOrders(S.data.orders, i.code).some((x) => x.id === oid); if (!still && S.lastOkStart > S.lastWriteAt) break; if (t === 4) { toast('The cancel is not confirmed yet. No new order was sent.', 'error'); return; } }
   const filled = (S.data.orders.find((x) => String(x.orderId) === oid) || {}).status;
   if (/FILL/i.test(filled || '')) { toast('The order filled before the cancel. No new order was sent.', 'error'); return; }
-  const b = L.buildPlace({ code: i.code, side: o.side, qty: o.qty, type: kind, price: np }, now());
+  const b = L.buildPlace({ code: i.code, side: o.side, qty: o.qty, type: kind, price: np, asset: i.asset, tick: i.tick }, now());
   if (b.error || blockReason()) { toast(b.error || blockReason(), 'error'); return; }
   await write(Object.assign(b.body, { idemKey: uuid() }), 'New ' + sideWord(o.side) + ' ' + kind);
 }
@@ -643,7 +654,7 @@ export function ladder(sym, cell, price, bid, ask, qty) {
 }
 export function domState(sym) {
   const i = info(sym); if (!i) return null;
-  return { live: true, code: i.code, orders: i.working.filter((o) => o.price).map((o) => ({ id: o.id, side: o.side, qty: o.qty, price: o.price })), pos: i.pos.qty ? { side: i.pos.qty > 0 ? 'buy' : 'sell', qty: Math.abs(i.pos.qty), avg: i.pos.avg || 0 } : null, pnl: i.pnl, sp: { ok: true, kind: 'futures', minQty: 1, symbol: i.code }, block: blockReason(), label: envWord() + ' ' + S.acct.label };
+  return { live: true, code: i.code, orders: i.working.filter((o) => o.price).map((o) => ({ id: o.id, side: o.side, qty: o.qty, price: o.price })), pos: i.pos.qty ? { side: i.pos.qty > 0 ? 'buy' : 'sell', qty: Math.abs(i.pos.qty), avg: i.pos.avg || 0 } : null, pnl: i.pnl, sp: { ok: true, kind: i.asset === 'equity' ? 'equity' : 'futures', minQty: 1, symbol: i.code }, block: blockReason(), label: envWord() + ' ' + S.acct.label };
 }
 export function chipX(sym, id) { if (id === 'pos') return flatten(sym); if (/^P/.test(id)) { toast('This order is still being sent. Cancel it once it shows as working.', 'info'); return null; } return cancel(String(id).replace(/^L/, '')); }
 export function flattenActive() { return flatten(P.activeSymbol()); }
@@ -669,10 +680,10 @@ export function opInfo(sym) {
   if (!S.acct) return null;
   const i = info(sym); if (!i) return null;
   const g = S.group && S.group.code === i.code ? S.group : null;
-  return { code: i.code, root: i.root, tick: i.tick || L.ROOTS[i.root].tick, pv: i.pv, last: i.last, pos: i.pos, working: i.working, pnl: i.pnl, held: i.held, env: envWord(), killed: !!S.killed, block: blockReason(), busy: S.busy, rtt: L.rttText(S.rtt),
+  return { code: i.code, root: i.root, tick: i.tick || 0.01, pv: i.pv, asset: i.asset, last: i.last, pos: i.pos, working: i.working, pnl: i.pnl, held: i.held, env: envWord(), killed: !!S.killed, block: blockReason(), busy: S.busy, rtt: L.rttText(S.rtt),
     retry: !S.env && !!S.envErr && !S.envBusy, admin: isAdmin, needsEnable: !!(S.env && S.env.consent === false && S.env.blocked !== true), group: g, alarm: g && g.state === 'unprotected' ? g.why : '' };
 }
-// one entry point for the panel's Buy / Sell / Join / Confirm: place() keeps every guard (cap, exposure, band, gate); no confirm sheet
+// one entry point for the panel's Buy / Sell / Join / Confirm: place() keeps every guard (price band, read gate, double-click guard); no confirm sheet
 export function placeTicket(sym, o, src) {
   if (o.type !== 'market' && o.type !== 'limit' && !(o.type === 'stop' && caps().stop)) { toast(o.type === 'stop' ? caps().why : 'Market, limit or stop only from the chart.', 'error'); return Promise.resolve(null); }
   return place(sym, { side: o.side, type: o.type, qty: o.qty, price: o.type !== 'market' ? Number(o.price) : undefined, marketable: !!o.marketable, sl: o.sl, tp: o.tp }, src || 'panel');
@@ -697,10 +708,10 @@ export function renderHead(slot) {
 export function renderSummary(el) {
   if (!el || !S.acct) return;
   const i = info(P.activeSymbol());
-  const t = i ? i.code + ' · ' + (i.pos.qty ? (i.pos.qty > 0 ? 'Long ' : 'Short ') + Math.abs(i.pos.qty) : 'Flat') + ' · Open P&L ' + money(i.pnl, true) : 'Open an NQ, ES, MNQ or MES chart to trade live';
+  const t = i ? i.code + ' · ' + (i.pos.qty ? (i.pos.qty > 0 ? 'Long ' : 'Short ') + Math.abs(i.pos.qty) : 'Flat') + ' · Open P&L ' + money(i.pnl, true) : noLiveWhy(P.activeSymbol());
   if (el.textContent !== t) { el.textContent = ''; const s = document.createElement('span'); s.className = i && i.pnl > 0 ? 'up' : i && i.pnl < 0 ? 'down' : ''; s.textContent = t; el.appendChild(s); }
 }
-export const foot = () => (S.acct ? (S.busy && S.pending ? 'Sending… ' : L.rttText(S.rtt) ? L.rttText(S.rtt) + ' ' : '') + envWord() + ' account ' + S.acct.label + ': real orders at your broker, max 2 contracts, every attempt logged. Positions refresh every ' + POLL_MS / 1000 + ' s. ' + DISCLAIMER : '');
+export const foot = () => (S.acct ? (S.busy && S.pending ? 'Sending… ' : L.rttText(S.rtt) ? L.rttText(S.rtt) + ' ' : '') + envWord() + ' account ' + S.acct.label + ': real orders at your broker, every attempt logged. Positions refresh every ' + POLL_MS / 1000 + ' s. ' + DISCLAIMER : '');
 let viewSig = '';
 export function renderView(v) {
   if (!v || !S.acct) return;
@@ -716,9 +727,9 @@ export function renderView(v) {
   const ordRows = i ? (i.working.length ? i.working.map((o) => '<div class="stklv-row"><span class="stklv-sym">' + esc(i.code) + '</span><span class="' + (o.side === 'buy' ? 'up' : 'down') + '">' + sideWord(o.side) + ' ' + o.qty + '</span><span class="m">' + (o.type || '').toUpperCase() + (o.price ? ' @ ' + px(o.price) : '') + '</span><span class="m">' + esc(o.status.replace(/_/g, ' ').toLowerCase()) + '</span><button type="button" class="stklv-btn sm" data-cancel="' + esc(o.id) + '">Cancel</button></div>').join('') : '<p class="stklv-empty">No working orders.</p>') : '';
   v.innerHTML = '<div class="stklv-view">' +
     '<form class="stklv-form" novalidate>' +
-      (i ? '<p class="stklv-ctr">' + esc(L.chartRoot(sym) + '1!') + ' → <b>' + esc(i.code) + '</b>' + (i.held ? ' <span class="stklv-warn">(open position’s month)</span>' : '') + '</p>' : '<p class="stklv-ctr stklv-warn">This chart can’t trade live. Open NQ1!, ES1!, MNQ1! or MES1!.</p>') +
+      (i ? '<p class="stklv-ctr">' + esc(i.asset === 'equity' ? i.code : L.chartRoot(sym) + '1!') + ' → <b>' + esc(i.code) + '</b>' + (i.held ? ' <span class="stklv-warn">(open position’s month)</span>' : '') + '</p>' : '<p class="stklv-ctr stklv-warn">' + esc(noLiveWhy(sym)) + '</p>') +
       seg('side', F.side, [['buy', 'Buy', 'buy'], ['sell', 'Sell', 'sell']]) +
-      '<div class="stklv-two">' + seg('type', F.type, [['market', 'Market'], ['limit', 'Limit']]) + seg('qty', F.qty, [[1, '1'], [2, '2']]) + '</div>' +
+      '<div class="stklv-two">' + seg('type', F.type, [['market', 'Market'], ['limit', 'Limit']]) + '<label class="stklv-f"><input data-f="qty" type="number" min="1" step="1" inputmode="numeric" aria-label="Quantity" value="' + esc(F.qty) + '"></label>' + '</div>' +
       (F.type === 'limit' ? '<label class="stklv-f"><span>Limit price</span><input data-f="price" type="text" inputmode="decimal" autocomplete="off" value="' + esc(F.price || (i && Number.isFinite(i.last) ? i.last.toFixed(2) : '')) + '"></label>' : '') +
       '<button type="submit" class="stklv-btn stklv-send ' + F.side + '"' + (blocked ? ' disabled' : '') + '>Review ' + sideWord(F.side) + ' ' + F.qty + (i ? ' ' + esc(i.code) : '') + '</button>' +
       '<p class="stklv-status' + (why ? ' bad' : '') + '" role="status">' + esc(why || 'Ready. Positions and orders read ' + Math.max(0, Math.round((now() - S.lastOkStart) / 1000)) + ' s ago.') + '</p>' +
@@ -730,7 +741,7 @@ export function renderView(v) {
   for (const ev of ['keydown', 'pointerdown']) root.addEventListener(ev, (e) => e.stopPropagation());
   root.querySelectorAll('[data-side]').forEach((b) => b.addEventListener('click', () => { F.side = b.dataset.side; render(); }));
   root.querySelectorAll('[data-type]').forEach((b) => b.addEventListener('click', () => { F.type = b.dataset.type; render(); }));
-  root.querySelectorAll('[data-qty]').forEach((b) => b.addEventListener('click', () => { F.qty = +b.dataset.qty; render(); }));
+  const qin = root.querySelector('[data-f=qty]'); if (qin) qin.addEventListener('change', () => { const q = Math.round(Number(qin.value)); F.qty = q >= 1 ? q : 1; render(); });
   const pin = root.querySelector('[data-f=price]'); if (pin) pin.addEventListener('input', () => { F.price = pin.value; });
   root.querySelector('form').addEventListener('submit', (e) => { e.preventDefault(); if (pin) F.price = pin.value; place(sym, { side: F.side, type: F.type, qty: F.qty, price: F.type === 'limit' ? Number(String(F.price).replace(/[, ]/g, '')) : undefined }, 'panel'); });
   root.querySelectorAll('[data-cancel]').forEach((b) => b.addEventListener('click', () => cancel(b.dataset.cancel)));
@@ -833,7 +844,7 @@ const CSS = `
 export function mountLive(paperApi, opts) {
   P = paperApi; uid = opts.uid; toastFn = opts.toast || null; isAdmin = !!opts.admin;
   if (!document.getElementById('stklv-css')) { const st = document.createElement('style'); st.id = 'stklv-css'; st.textContent = CSS; document.head.appendChild(st); }
-  P.setLiveHook({ active, lines, chipText, badgeFor, tickOf, chipX, drag, flattenActive, openTicket, renderHead, renderSummary, renderView, foot, dock, dockTrades, ladder, domState, cancel, flatten, caps, opInfo, placeTicket, kill, killOn, retryEnv, enableLive });
+  P.setLiveHook({ active, noLiveWhy, lines, chipText, badgeFor, tickOf, chipX, drag, flattenActive, openTicket, renderHead, renderSummary, renderView, foot, dock, dockTrades, ladder, domState, cancel, flatten, caps, opInfo, placeTicket, kill, killOn, retryEnv, enableLive });
   loadMeta(); loadAccounts();
   window.addEventListener('storage', (e) => { if (e.key === lsUserKey()) loadAccounts(); });
   Object.assign(window.__stkLive, { connect, reconnect, pick, leave, read, loadAccounts, info, confirmSheet, balance, summary, metaOf, saveMeta, disconnect, L, envCheck, retryEnv, syncGroup, enableLive, get admin() { return isAdmin; } });

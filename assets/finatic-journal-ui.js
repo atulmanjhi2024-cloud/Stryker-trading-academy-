@@ -190,7 +190,7 @@ export function openBrokerSync({ uid, onConnected, portal, admin } = {}) {
     } catch (e) { console.error('TradeZoro: broker sync import failed', e); btn.disabled = false; btn.textContent = 'Import ' + trips.length + ' trades'; toast('error', 'Import failed: ' + (e && e.message || e)); }
   }
 
-  // ---- ORDER TEST (admin only; sandbox by default). The server enforces admin, env, qty cap, rate limit and audit; this is only the form.
+  // ---- ORDER TEST (admin only; sandbox by default). The server enforces admin, env and audit (no size or rate limits since 21 Nov); this is only the form.
   const orderCall = (b) => call('/connect/finatic/order', Object.assign({ userId: S.userId, accountId: S.account.id }, b));
   const badge = () => (S.envMode === 'live' ? '<span class="fjs-badge lv">LIVE</span>' : S.envMode === 'sandbox' ? '<span class="fjs-badge sb">SANDBOX</span>' : '');
   async function refreshOrders() {
@@ -206,10 +206,10 @@ export function openBrokerSync({ uid, onConnected, portal, admin } = {}) {
     const O = S.ord, off = !S.ordersOn;
     sheet.innerHTML = head('Order test (admin)') + '<p style="margin:0 0 12px">' + badge() + '</p>' + err(error) +
       (off ? '<div class="rjs-err" role="alert">' + (S.envMode === 'live' ? 'Live orders are off.' : 'Orders are not available.') + '</div>' : '') +
-      '<p class="rjs-lead">Testing only. Orders go to a ' + (S.envMode === 'live' ? 'LIVE' : 'sandbox') + ' account, max 2 contracts, and every attempt is logged.</p>' +
+      '<p class="rjs-lead">Testing only. Orders go to a ' + (S.envMode === 'live' ? 'LIVE' : 'sandbox') + ' account, and every attempt is logged.</p>' +
       '<p class="rjs-sub">Account</p><div class="rjs-rows" role="radiogroup" aria-label="Account">' + S.accounts.map((a) => '<button type="button" class="rjs-row" role="radio" aria-checked="' + (a.id === S.account.id) + '" data-acct="' + esc(a.id) + '"><i></i><span><b>' + esc(a.name) + '</b><small>' + esc(a.broker) + '</small></span></button>').join('') + '</div>' +
       '<div class="fjs-seg2" role="radiogroup" aria-label="Side"><button type="button" class="buy" role="radio" aria-checked="' + (O.side === 'buy') + '" data-side="buy">Buy</button><button type="button" class="sell" role="radio" aria-checked="' + (O.side === 'sell') + '" data-side="sell">Sell</button></div>' +
-      '<div class="rjs-two"><label class="rjs-f"><span>Symbol</span><input class="rjs-in" id="fo-sym" value="' + esc(O.symbol) + '" placeholder="MESZ6" autocapitalize="characters" autocomplete="off"></label><label class="rjs-f"><span>Quantity (max 2)</span><input class="rjs-in" id="fo-qty" inputmode="numeric" value="' + esc(O.qty) + '"></label></div>' +
+      '<div class="rjs-two"><label class="rjs-f"><span>Symbol</span><input class="rjs-in" id="fo-sym" value="' + esc(O.symbol) + '" placeholder="MESZ6" autocapitalize="characters" autocomplete="off"></label><label class="rjs-f"><span>Quantity</span><input class="rjs-in" id="fo-qty" inputmode="numeric" value="' + esc(O.qty) + '"></label></div>' +
       '<div class="rjs-two"><label class="rjs-f"><span>Type</span><select class="rjs-in" id="fo-type"><option value="market"' + (O.type === 'market' ? ' selected' : '') + '>Market</option><option value="limit"' + (O.type === 'limit' ? ' selected' : '') + '>Limit</option><option value="stop"' + (O.type === 'stop' ? ' selected' : '') + '>Stop</option></select></label>' +
       '<label class="rjs-f"><span>Time in force</span><select class="rjs-in" id="fo-tif"><option value="day"' + (O.tif === 'day' ? ' selected' : '') + '>Day</option><option value="gtc"' + (O.tif === 'gtc' ? ' selected' : '') + '>GTC</option></select></label></div>' +
       (O.type === 'limit' ? '<label class="rjs-f"><span>Limit price</span><input class="rjs-in" id="fo-lim" inputmode="decimal" value="' + esc(O.limit) + '"></label>' : '') + (O.type === 'stop' ? '<label class="rjs-f"><span>Stop price</span><input class="rjs-in" id="fo-stp" inputmode="decimal" value="' + esc(O.stop) + '"></label>' : '') +
@@ -226,7 +226,7 @@ export function openBrokerSync({ uid, onConnected, portal, admin } = {}) {
     q('#fo-back').addEventListener('click', () => { S.step = 'pick'; draw(); });
     q('#fo-refresh').addEventListener('click', async (e) => { rd(); busy(e.currentTarget, 'Refreshing'); await refreshOrders(); drawOrder(); });
     sheet.querySelectorAll('[data-cancel]').forEach((b) => b.addEventListener('click', async () => { busy(b, '...'); try { await orderCall({ op: 'cancel', orderId: b.dataset.cancel }); toast('success', 'Cancel sent.'); await refreshOrders(); drawOrder(); } catch (e) { drawOrder(e.message); } }));
-    const pl = q('#fo-place'); if (pl) pl.addEventListener('click', () => { rd(); const n = Number(O.qty); if (!/^[A-Za-z0-9._-]{1,20}$/.test(O.symbol)) return drawOrder('Enter a symbol.'); if (!Number.isInteger(n) || n < 1 || n > 2) return drawOrder('Quantity must be 1 or 2.'); if (O.type === 'limit' && !(Number(O.limit) > 0)) return drawOrder('Enter a limit price.'); if (O.type === 'stop' && !(Number(O.stop) > 0)) return drawOrder('Enter a stop price.'); drawOrder('', true); });
+    const pl = q('#fo-place'); if (pl) pl.addEventListener('click', () => { rd(); const n = Number(O.qty); if (!/^[A-Za-z0-9._-]{1,20}$/.test(O.symbol)) return drawOrder('Enter a symbol.'); if (!Number.isInteger(n) || n < 1) return drawOrder('Quantity must be a whole number of 1 or more.'); if (O.type === 'limit' && !(Number(O.limit) > 0)) return drawOrder('Enter a limit price.'); if (O.type === 'stop' && !(Number(O.stop) > 0)) return drawOrder('Enter a stop price.'); drawOrder('', true); });
     const no = q('#fo-no'); if (no) no.addEventListener('click', () => drawOrder());
     const yes = q('#fo-yes'); if (yes) yes.addEventListener('click', async () => {
       busy(yes, 'Placing');

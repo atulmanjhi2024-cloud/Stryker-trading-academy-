@@ -25,8 +25,8 @@
 //           (live, admins only) "Turn off live trading" (the global kill switch). Broker names as plain text are allowed since 21 Nov.
 //   Phone (<= 700 px): a bottom sheet with Scalp + Order only.
 // SAFETY: every live order goes through chart-live.js place(): admin-only module, sent on the click like paper (no confirm, 19 Nov),
-// 2-contract cap + worst-case exposure, 10 orders a minute (client + server), fresh-read gate, kill switch, back to Paper after 15 min
-// idle, every attempt audited on the server. This file never calls the order endpoint itself.
+// no TradeZoro limits on symbol, size, exposure or orders a minute (Owner 21 Nov: the broker decides), a 500 ms double-click guard,
+// fresh-read gate, kill switch, back to Paper after 15 min idle, every attempt audited on the server. This file never calls the order endpoint itself.
 // Hotkeys: B = Buy, S = Sell (market, Scalp quantity) — OFF by default, only while the panel is open and not typing in a field.
 // TRADE INSTRUMENT (2026-11-18, roadmap card trade-instrument): the header's mini / micro switch (NQ | MNQ, ES | MES, YM | MYM,
 //           RTY | M2K, GC | MGC, CL | MCL, SI | SIL) picks what the panel trades; it starts on the chart symbol and is kept per chart
@@ -35,7 +35,7 @@
 //           (+ offset ticks), "Size from risk" ($ or % of the balance + the stop distance -> contracts, rounded down, min 1, capped at
 //           the max size). Paper: everything (paper-engine.js). LIVE: one stop loss + one take profit per contract is what the server's
 //           guarded route keeps (functions/connect/finatic/order.js), so TP1 and break-even are hidden there with a plain note;
-//           risk sizing still works (capped at the live max).
+//           risk sizing still works (no TradeZoro size cap live; the broker applies its own).
 // ADVANCED (member feature 2026-11-20, thread 1572249985058082896): the Order tab keeps the SIMPLE ticket by default (side, type,
 //           price, quantity, stop loss, take profit). The "Advanced" switch (prefs.adv, per user, off by default) shows TP1 + break-even,
 //           size from risk, and "Panel layout": where the panel sits (Float | Left | Right | Bottom of the chart; docked modes give the
@@ -98,7 +98,7 @@ function ctx() {
   const chartSym = P.activeSymbol() || '';
   const lv = P.live || null;
   const PE0 = window.PaperEngine;
-  // the TRADE instrument (chart symbol or its mini / micro partner). Live (admins): only pairs the live route trades (NQ / MNQ, ES / MES).
+  // the TRADE instrument (chart symbol or its mini / micro partner). Live: pairs whose contract specs are known (chart-live-core ROOTS).
   let fam = PE0 && PE0.familyOf ? PE0.familyOf(chartSym) : null;
   if (lv && fam && !(L.ROOTS[fam.mini] && L.ROOTS[fam.micro])) fam = null;
   const sym = (fam && P.tradeSym ? P.tradeSym(chartSym) : chartSym) || '';
@@ -162,7 +162,7 @@ const noQuoteWhy = (c) => (c.fut && l2Delayed() ? 'Join Bid / Join Ask need the 
 
 // ------------------------------------------------------------------------------------------------ quantities, brackets
 function qtyRules(c) {
-  if (c.live) return { min: 1, max: L.MAX_QTY, step: 1, int: true };
+  if (c.live) return { min: 1, max: Infinity, step: 1, int: true };   // whole numbers from 1; no TradeZoro cap (the broker applies its own)
   if (!c.sp.ok) return { min: 1, max: 1, step: 1, int: true };
   if (c.sp.kind === 'futures') return { min: 1, max: c.sp.maxQty || 500, step: 1, int: true };
   return { min: c.sp.minQty || 0.0001, max: c.sp.maxQty || 1e6, step: 0, int: false };
@@ -212,16 +212,16 @@ function riskSize(c, k, ref, sl) {
   }
   const amt = F.risk.mode === 'pct' ? bal * v / 100 : v;
   const r = qtyRules(c);
-  const spec = c.live ? { ok: true, kind: 'futures', pointValue: c.li ? c.li.pv : 0, qtyStep: 1, minQty: 1, maxQty: r.max } : c.sp;
+  const spec = c.live ? { ok: true, kind: c.li && c.li.asset === 'equity' ? 'equity' : 'futures', pointValue: c.li ? c.li.pv : 0, qtyStep: 1, minQty: 1, maxQty: r.max } : c.sp;
   if (!(spec.pointValue > 0)) return { error: 'No contract value for this symbol.' };
   const s0 = window.PaperEngine.sizeForRisk(spec, amt, ref, sl, r.max);
   return s0.error ? s0 : Object.assign(s0, { amt });
 }
 
 // ------------------------------------------------------------------------------------------------ actions
-const LIVE_CHART_ONLY = 'This chart can’t trade live. Open NQ1!, ES1!, MNQ1! or MES1!.';
+const noLive = (c) => (c.lv && c.lv.noLiveWhy ? c.lv.noLiveWhy(c.sym) : 'This chart can’t trade live.');
 function blockOf(c) {
-  if (c.live) return !c.li ? LIVE_CHART_ONLY : c.li.block || '';
+  if (c.live) return !c.li ? noLive(c) : c.li.block || '';
   if (!P.enabled) return 'Paper trading is off.';
   if (!c.a) return 'Paper trading is still loading.';
   if (!c.sp.ok) return c.sp.reason;
@@ -272,7 +272,7 @@ function confirmOrder() {
 }
 function flatten() {
   const c = ctx();
-  if (c.live) { if (!c.li) { P.toast(LIVE_CHART_ONLY, 'error'); return; } c.lv.flatten(c.sym); return; }
+  if (c.live) { if (!c.li) { P.toast(noLive(c), 'error'); return; } c.lv.flatten(c.sym); return; }
   if (!c.a || !c.sp.ok) return;
   const pos = c.a.position(c.sym), n = c.a.state.orders.filter((o) => o.symbol === c.sp.symbol).length;
   if (!pos && !n) { P.toast('Nothing to flatten on ' + c.label + '.', 'info'); return; }
@@ -766,7 +766,7 @@ export function update() {
   setText('wk', wk + ' working');
   const fl = el.querySelector('[data-a=flat]'); if (fl) fl.disabled = c.live ? !c.li || (!c.li.pos.qty && !c.li.working.length) : !(c.a && c.sp.ok && (c.a.position(c.sym) || wk));
   renderAi();
-  setText('fine', c.live ? 'Real orders at your broker. Max 2 contracts. Every attempt is logged. ' + DISCLAIMER : (P.label || 'Paper trading · demo money · simulated fills') + '. ' + DISCLAIMER);
+  setText('fine', c.live ? 'Real orders at your broker. Every attempt is logged. ' + DISCLAIMER : (P.label || 'Paper trading · demo money · simulated fills') + '. ' + DISCLAIMER);
 }
 
 // live strip under the symbol row (2026-11-17): the broker link could not be reached (Retry), or the stop loss / take profit state

@@ -3,7 +3,7 @@
 //   node tools/tests/chart-dev-server.mjs 8031 &   CHART_BASE=http://127.0.0.1:8031 node tools/tests/chart-live-browser.js <shotsDir>
 // ORDER PANEL (2026-11-16): the floating panel (assets/chart-order-panel.js) replaces the bottom live strip: Scalp Buy/Sell + qty cap,
 // Join Bid/Ask = limit at the best bid/ask, Order tab (limit tick-rounding; Stop/SL/TP/Trail disabled live with the reason), DOM tab
-// embeds the ladder, footer kill switch, Flatten, 10 orders/min, 2-contract cap; members: the same panel on PAPER with SL/TP bracket,
+// embeds the ladder, footer kill switch, Flatten, NO limits (21 Nov: no size/exposure/rate cap, 500 ms double-click guard); members: the same panel on PAPER with SL/TP bracket,
 // Trail, Stop, Join Bid/Ask, hotkeys (off by default), remembered position/size/tab; phone = bottom sheet. Waits on state, not sleeps.
 // Checks: picker hidden for non-admins; Paper is the default; picking the account -> red LIVE badge (panel + chart); orders send on the
 // click with NO confirm (Owner 19 Nov); the broker's account NAME everywhere (number as a small second line); payload (contract, qty, idemKey unique); read failure blocks; working-order + position
@@ -46,7 +46,7 @@ async function open(b, { w, h, mobile, theme, admin = true, connected = true, fl
     if (process.env.DBG) console.log('DBG route', u.pathname + u.search, bars.length);
     return r.fulfill({ json: { s: 'NQ', tf: '1', page, bars, rt: true } });
   });
-  const M = { calls: [], positions: [], orders: [], failRead: false, modify: true, n: 0, delay: 0, stops, envFail, group: null, consent, blocked: false, connected };
+  const M = { reject: '', calls: [], positions: [], orders: [], failRead: false, modify: true, n: 0, delay: 0, stops, envFail, group: null, consent, blocked: false, connected };
   ctx.M = M;
   const j = (o, status = 200) => ({ status, contentType: 'application/json', body: JSON.stringify(o) });
   await ctx.route('**/connect/finatic/**', async (r) => {
@@ -73,6 +73,7 @@ async function open(b, { w, h, mobile, theme, admin = true, connected = true, fl
       if (body.op === 'bracket') return r.fulfill(j({ ok: true, group: M.group, did: 'ok' }));
       M.n++;
       if (body.op === 'place' && M.timing) { const x = j({ ok: true, accepted: true, orderId: 'o' + M.n, status: 'SUBMITTED' }); x.headers = { 'server-timing': 'auth;dur=1, fin;dur=61, total;dur=70' }; if (body.type === 'limit') M.orders.push({ orderId: 'o' + M.n, status: 'SUBMITTED', orderType: 'LIMIT', legs: [{ securityId: body.symbol, side: body.side.toUpperCase(), quantity: body.qty, limitPrice: body.limitPrice }] }); return r.fulfill(x); }
+      if (body.op === 'place' && M.reject) return r.fulfill(j({ error: M.reject, code: 'rejected' }, 409));
       if (body.op === 'place' && body.bracket) M.group = { code: body.symbol, side: body.side, qty: body.qty, sl: body.bracket.sl, tp: body.bracket.tp, state: 'pending', slId: '', tpId: '', entryId: 'o' + M.n, why: '' };
       if (body.op === 'place' && body.bracket) return r.fulfill(j({ ok: true, accepted: true, orderId: 'o' + M.n, status: 'FILLED', bracket: M.group }));
       if (body.op === 'place') { const id = 'o' + M.n; if (body.type === 'limit') M.orders.push({ orderId: id, status: 'SUBMITTED', orderType: 'LIMIT', legs: [{ securityId: body.symbol, side: body.side.toUpperCase(), quantity: body.qty, limitPrice: body.limitPrice }] }); else { M.positions = [{ securityId: body.symbol, quantity: (body.side === 'buy' ? 1 : -1) * body.qty, averageBuyPrice: 28750, averageSellPrice: 28750 }]; } return r.fulfill(j({ ok: true, accepted: true, orderId: id, status: 'SUBMITTED' })); }
@@ -175,12 +176,13 @@ async function run(b, w, h, mobile, theme) {
     for (let k = 0; k < 30 && !rAt; k++) { rAt = M.calls.find((c) => c.body.op === 'live' && c.at > wAt); if (!rAt) await sleep(100); }
     check(rAt && rAt.at - wAt < 700, tag + ': positions re-read within 0.7 s of the order', rAt && rAt.at - wAt); }
   check(await opWait(p, () => /^Order sent in \d+ ms/.test(document.querySelector('#stkop [data-k=status]').textContent)), tag + ': panel status shows the measured round trip', await p.$eval('#stkop [data-k=status]', (e) => e.textContent.slice(0, 80)));
-  // qty stepper: capped at 2 contracts live
+  // qty stepper: NO cap live (Owner 21 Nov "No limits from our end"): + keeps going past 2; - stops at 1
   await p.evaluate(() => window.__stkLive.read()); await blockFree(p);
-  await tap(p, '#stkop .stkop-scalp [data-q="1"]', mobile); await tap(p, '#stkop .stkop-scalp [data-q="1"]', mobile).catch(() => {});
+  for (let k = 0; k < 3; k++) await tap(p, '#stkop .stkop-scalp [data-q="1"]', mobile);
   const qv = await p.evaluate(() => ({ v: document.querySelector('#stkop .stkop-scalp [data-f=qty]').value, plus: document.querySelector('#stkop .stkop-scalp [data-q="1"]').disabled }));
-  check(qv.v === '2' && qv.plus, tag + ': live quantity stepper stops at 2 contracts', qv);
-  await tap(p, '#stkop .stkop-scalp [data-q="-1"]', mobile);
+  check(qv.v === '4' && !qv.plus, tag + ': live quantity stepper has no 2-contract cap', qv);
+  for (let k = 0; k < 4; k++) await tap(p, '#stkop .stkop-scalp [data-q="-1"]', mobile).catch(() => {});
+  check(await p.evaluate(() => document.querySelector('#stkop .stkop-scalp [data-f=qty]').value === '1' && document.querySelector('#stkop .stkop-scalp [data-q="-1"]').disabled), tag + ': quantity stays 1 or more');
   // ---- Join Ask = SELL LIMIT at the best ask (second order = one tap)
   const jd = await p.evaluate(() => ({ bid: document.querySelector('#stkop .stkop-join.bid b').textContent, ask: document.querySelector('#stkop .stkop-join.ask b').textContent, bidC: getComputedStyle(document.querySelector('#stkop .stkop-join.bid b')).color, askC: getComputedStyle(document.querySelector('#stkop .stkop-join.ask b')).color }));
   check(jd.bid === '28,749.75' && jd.ask === '28,750.00', tag + ': Join Bid / Join Ask show the live best bid / ask', jd);
@@ -226,19 +228,32 @@ async function run(b, w, h, mobile, theme) {
   W = writes(M);
   check(W.length === 3 && W[2].type === 'limit' && W[2].limitPrice === 28745 && W[2].side === 'buy' && !(await p.$('#stklv-cf')), tag + ': Order tab Confirm = BUY LIMIT 28,745, no confirm sheet', W[2]);
   if (theme === 'dark' || w === 1440) await p.screenshot({ path: OUT + '/op-' + tag + '-4-order-live.png' });
-  // exposure: long 1 + working buy 1 = 2; one more buy is refused in the browser
+  // NO exposure cap (21 Nov): long 1 + working buys 1 -> another BUY LIMIT of 3 goes straight out; the broker decides
   await p.evaluate(() => window.__stkLive.read()); await blockFree(p);
   await p.fill('#stkop [data-f=price]', '28744'); await p.locator('#stkop [data-f=price]').blur();
+  await p.fill('#stkop .stkop-order [data-f=qty]', '3').catch(() => p.evaluate(() => { const q = [...document.querySelectorAll('#stkop [data-f=qty]')].pop(); q.value = '3'; q.dispatchEvent(new Event('input', { bubbles: true })); }));
+  await tap(p, '#stkop [data-k=confirm]', mobile); await waitWrites(p, M, 4);
+  W = writes(M); check(W.length === 4 && W[3].qty === 3 && W[3].limitPrice === 28744, tag + ': no exposure / size cap: BUY LIMIT 3 sent', W[3]);
+  // the broker's refusal is shown in its own words
+  M.reject = 'Order size exceeds the account limit'; await p.evaluate(() => window.__stkLive.read()); await blockFree(p);
   const n0 = (await p.evaluate(() => window.__toasts.length));
-  await tap(p, '#stkop [data-k=confirm]', mobile); await opWait(p, (n) => window.__toasts.length > n, n0, 4000);
-  check(writes(M).length === 3 && /more than 2 contracts/.test((await toastsSince(p, n0)).join(' ')), tag + ': worst-case exposure over 2 contracts refused (2-contract cap)');
-  // 10 orders a minute: the 11th is refused in the browser before any confirm
-  await p.evaluate(() => { const t = Date.now(); window.__stkLive.state.sentAt = Array.from({ length: 10 }, () => t); });
-  const n1 = (await p.evaluate(() => window.__toasts.length));
-  await tap(p, '#stkop [data-type=market]', mobile); await tap(p, '#stkop [data-side=sell]', mobile);
-  await tap(p, '#stkop [data-k=confirm]', mobile); await opWait(p, (n) => window.__toasts.length > n, n1, 4000);
-  check(writes(M).length === 3 && !(await p.$('#stklv-cf')) && /Order limit: 10 a minute/.test((await toastsSince(p, n1)).join(' ')), tag + ': 10 orders a minute enforced', await toastsSince(p, n1));
-  await p.evaluate(() => { window.__stkLive.state.sentAt = []; });
+  await p.fill('#stkop [data-f=price]', '28743'); await p.locator('#stkop [data-f=price]').blur();
+  await tap(p, '#stkop [data-k=confirm]', mobile); await opWait(p, (n) => window.__toasts.length > n, n0, 4000); M.reject = '';
+  check(/refused: Order size exceeds the account limit/.test((await toastsSince(p, n0)).join(' ')), tag + ': the broker refusal message is shown', await toastsSince(p, n0));
+  M.orders = M.orders.filter((o) => !(o.legs && o.legs[0].limitPrice === 28744));   // keep the counts below as before
+  await p.evaluate(() => { const q = [...document.querySelectorAll('#stkop [data-f=qty]')].pop(); q.value = '1'; q.dispatchEvent(new Event('input', { bubbles: true })); });
+  // no orders-a-minute limit; a double click (same order within 500 ms) is one order
+  await p.evaluate(() => window.__stkLive.read()); await blockFree(p);
+  { const nD = writes(M).length;
+    await tap(p, '#stkop [data-k=confirm]', mobile); await waitWrites(p, M, nD + 1);
+    await p.evaluate(() => window.__stkLive.read()); await blockFree(p);
+    await p.evaluate(() => { window.__stkLive.state.lastSend.at = Date.now(); });   // the same order again "within 500 ms"
+    await tap(p, '#stkop [data-k=confirm]', mobile); await sleep(400);
+    check(writes(M).length === nD + 1, tag + ': the identical order again within 500 ms is ignored (double-click guard)', writes(M).length - nD);
+    await p.evaluate(() => { window.__stkLive.state.lastSend.at = Date.now() - 600; });
+    await tap(p, '#stkop [data-k=confirm]', mobile); await waitWrites(p, M, nD + 2);
+    check(writes(M).length === nD + 2, tag + ': the same order after 500 ms goes out (no orders-a-minute limit)', writes(M).length - nD); }
+  M.orders = M.orders.filter((o) => !(o.legs && [28743, 28744].includes(o.legs[0].limitPrice)));
   // drag a working order = modify (confirm, never skipped)
   const ordChip = await p.evaluate(() => { const c = [...document.querySelectorAll('.stkpt-chip[data-live][data-kind=ord]')].find((x) => /SELL/.test(x.textContent)); if (!c) return null; const r = c.getBoundingClientRect(); return { x: r.left + 20, y: r.top + r.height / 2 }; });
   const nBefore0 = writes(M).length;
@@ -614,7 +629,7 @@ async function envAndBrackets(b, w, h, mobile, theme) {
   check(two.tp1 && /TP1 and break-even are paper only/.test(two.why), tag + ': live: TP1 / break-even hidden with a plain note', two);
   await p.evaluate(() => { const c = document.querySelector('#stkop [data-f="risk.on"]'); if (!c.checked) c.click(); const v = document.querySelector('#stkop [data-f="risk.v"]'); v.value = '100000'; v.dispatchEvent(new Event('input', { bubbles: true })); });
   const rq = await p.evaluate(() => new Promise((r) => setTimeout(() => r({ qty: document.querySelector('#stkop [data-f=qty]').value, rs: document.querySelector('#stkop [data-k=rsum]').textContent }), 300)));
-  check(rq.qty === '2' && /max size/.test(rq.rs), tag + ': live risk sizing capped at the live max 2', rq);
+  check(Number(rq.qty) > 2 && !/max size/.test(rq.rs), tag + ': live risk sizing has no 2-contract cap', rq);
   await p.evaluate(() => { const c = document.querySelector('#stkop [data-f="risk.on"]'); if (c.checked) c.click(); });
   await p.evaluate(() => { const c = document.querySelector('#stkop [data-f=adv]'); if (c.checked) c.click(); });
   await p.evaluate(() => { const q = document.querySelector('#stkop [data-f=qty]'); q.value = '1'; q.dispatchEvent(new Event('input', { bubbles: true })); });
@@ -690,6 +705,7 @@ async function memberLive(b, w, h, mobile, theme) {
       fit: B.bottom <= innerHeight + 1 && B.top >= -1, terms: (document.querySelector('.stklv-en-ck a') || {}).getAttribute && document.querySelector('.stklv-en-ck a').getAttribute('href') };
   });
   console.log('ENABLE ' + tag + ' ' + JSON.stringify(Object.assign({}, m, { txt: undefined })));
+  check(!/Limits apply|at most 2 contracts|orders a minute/i.test(m.txt) && /no limits of its own/i.test(m.txt) && /log every order/i.test(m.txt) && /switch live trading off/i.test(m.txt), tag + ': notice: no TradeZoro limits, every order logged, may switch off', m.txt);
   check(/real money/i.test(m.txt) && /go straight to your broker/i.test(m.txt) && /not a broker and gives no advice/i.test(m.txt) && /responsible for your orders/i.test(m.txt) && m.terms === '/terms#broker-live', tag + ': notice: real money, orders go to your broker, not a broker / no advice, you are responsible, Terms link', m.txt);
   check(m.yesDisabled, tag + ': Enable is disabled until the box is ticked');
   check(m.pad[0] === m.pad[1] && m.ckPad[0] === m.ckPad[1] && m.ckPad[2] === m.ckPad[3], tag + ': even padding (sheet + checkbox card)', [m.pad, m.ckPad]);

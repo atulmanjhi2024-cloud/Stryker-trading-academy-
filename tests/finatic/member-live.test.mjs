@@ -58,7 +58,7 @@ const go = async (h, path, body, uid, env = live) => { const r = await h.handle(
 const key = (n) => 'm' + String(n).padStart(20, '0');
 const writes = () => B.calls.filter((x) => x.m !== 'GET' && !x.p.includes('/session/'));
 const place = (acc, n, extra) => ({ src: 'chart', op: 'place', accountId: acc, symbol: 'MNQZ6', side: 'buy', qty: 1, type: 'market', idemKey: key(n), ...extra });
-const reset = () => { O._resetRate(); OW._resetOwner(); };
+const reset = () => { OW._resetOwner(); };
 
 // ---- 1. connect: each member's portal session is remembered server-side and only THAT session claims a user -----------------------
 nextSession = 'sess-a'; let r = await go(S, 'session', { mode: 'dark' }, 'memberA'); assert.equal(r.status, 200); assert.equal(r.j.sessionId, 'sess-a');
@@ -110,7 +110,7 @@ assert.equal(audits.get(key(4)).uid, 'memberA', 'audit row carries the member ui
 store.docs.set('liveConsent/memberB', { uid: 'memberB', version: '2026-01-01', at: 'x' });
 r = await go(O, 'order', place(ACC_B, 5), 'memberB'); assert.equal(r.status, 403); assert.equal(r.j.code, 'consent_needed');
 // acceptance unreadable = refused
-{ const d2 = { ...deps, store: memStore({ fail: (op, p) => p.startsWith('liveConsent/') }) }; d2.store.docs.set('brokerUsers/memberB', { finUserId: UB }); OW._resetOwner(); O._resetRate();
+{ const d2 = { ...deps, store: memStore({ fail: (op, p) => p.startsWith('liveConsent/') }) }; d2.store.docs.set('brokerUsers/memberB', { finUserId: UB }); OW._resetOwner(); 
   const x = await O.handle(req('order', place(ACC_B, 6), 'memberB'), live, d2); assert.equal(x.status, 503); assert.equal((await x.json()).code, 'consent_unreadable'); }
 r = await go(O, 'order', { op: 'consent', accept: true, version: OW.LIVE_TERMS_VERSION }, 'memberB'); assert.equal(r.status, 200);
 
@@ -138,21 +138,21 @@ r = await go(O, 'order', { op: 'env', src: 'chart' }, 'memberA'); assert.equal(r
 { const w0 = writes().length; r = await go(O, 'order', { src: 'chart', op: 'bracket', accountId: ACC_A, symbol: 'MNQZ6' }, 'memberA'); assert.equal(r.status, 200); assert.equal(writes().length, w0); }
 store.docs.set('settings/liveBlocked', { memberA: false });
 OW._resetOwner(); r = await go(O, 'order', place(ACC_A, 24), 'memberA'); assert.equal(r.status, 200, 'unblocked');
-{ const d2 = { ...deps, store: memStore({ consent: ['memberA'], fail: (op, p) => p === 'settings/liveBlocked' }) }; d2.store.docs.set('brokerUsers/memberA', { finUserId: UA }); OW._resetOwner(); O._resetRate();
+{ const d2 = { ...deps, store: memStore({ consent: ['memberA'], fail: (op, p) => p === 'settings/liveBlocked' }) }; d2.store.docs.set('brokerUsers/memberA', { finUserId: UA }); OW._resetOwner(); 
   const x = await O.handle(req('order', place(ACC_A, 25), 'memberA'), live, d2); assert.equal(x.status, 503, 'per-member switch unreadable = refused'); }
 OW._resetOwner();
 
-// ---- 6. 10 orders a minute PER MEMBER --------------------------------------------------------------------------------------------
+// ---- 6. NO orders-a-minute limit (Owner 21 Nov "No limits from our end") ------------------------------------------------------
 reset();
-for (let i = 0; i < 10; i++) { r = await O.handle(req('order', place(ACC_A, 100 + i), 'memberA'), live, deps); assert.equal(r.status, 200, 'A order ' + (i + 1)); }
-r = await O.handle(req('order', place(ACC_A, 110), 'memberA'), live, deps); assert.equal(r.status, 429, 'the 11th in a minute is refused');
-r = await O.handle(req('order', place(ACC_B, 111), 'memberB'), live, deps); assert.equal(r.status, 200, 'B has a limit of their own');
+for (let i = 0; i < 15; i++) { r = await O.handle(req('order', place(ACC_A, 100 + i), 'memberA'), live, deps); assert.equal(r.status, 200, 'A order ' + (i + 1)); }
+r = await O.handle(req('order', place(ACC_B, 120), 'memberB'), live, deps); assert.equal(r.status, 200);
 
-// ---- 7. existing safety still applies to members: idempotency, qty cap, contract list, exposure -----------------------------------
+// ---- 7. safety switches still apply to members (idempotency); the size cap and contract list are gone ------------------------------
 reset();
-r = await go(O, 'order', place(ACC_B, 111), 'memberB'); assert.equal(r.status, 409); assert.equal(r.j.code, 'duplicate', 'same key twice never reaches the broker');
-r = await go(O, 'order', place(ACC_B, 200, { qty: 3 }), 'memberB'); assert.equal(r.status, 400, 'qty cap');
-r = await go(O, 'order', place(ACC_B, 201, { symbol: 'CLZ6' }), 'memberB'); assert.equal(r.status, 400, 'contract list');
+r = await go(O, 'order', place(ACC_B, 120), 'memberB'); assert.equal(r.status, 409); assert.equal(r.j.code, 'duplicate', 'same key twice never reaches the broker');
+r = await go(O, 'order', place(ACC_B, 200, { qty: 40 }), 'memberB'); assert.equal(r.status, 200, 'no qty cap');
+r = await go(O, 'order', place(ACC_B, 201, { symbol: 'CLF7' }), 'memberB'); assert.equal(r.status, 200, 'no contract list');
+r = await go(O, 'order', place(ACC_B, 202, { qty: 0 }), 'memberB'); assert.equal(r.status, 400, 'qty must be 1 or more');
 r = await go(O, 'order', { op: 'place', accountId: ACC_B, symbol: 'MNQZ6', side: 'buy', qty: 1, type: 'market' }, 'memberB'); assert.equal(r.status, 403, 'raw journal order test: admin only');
 // journal mode of the sheet never reaches the order route for members (no src chart)
 

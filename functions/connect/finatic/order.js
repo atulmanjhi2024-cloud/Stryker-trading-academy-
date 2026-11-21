@@ -2,53 +2,38 @@
 // chart (src:'chart'); the journal's raw order test (no src) stays admin only. On top of every guard below, for everyone (admins too):
 // the broker-link user comes from the server's record for the uid and the account must be in that user's account list (_owner.js,
 // 403 not_owner otherwise), the one-time "Enable live trading" acceptance (liveConsent/{uid}, current version, 403 consent_needed),
-// and the per-member admin kill settings/liveBlocked {<uid>: true} (403 member_blocked; unreadable = refused). The rate limit below is
-// per uid. Older notes follow ("admin" there now reads "member").
+// and the per-member admin kill settings/liveBlocked {<uid>: true} (403 member_blocked; unreadable = refused). Older notes follow
+// ("admin" there now reads "member").
+// NO LIMITS (Owner decision 21 Nov 2026, "No limits from our end"): the contract whitelist, the size cap, the worst-case exposure check,
+// the orders-a-minute limit and the "too big to flatten" cap are GONE, for members and admins. Any well-formed symbol and any positive
+// whole quantity goes to the broker, which accepts or rejects it (its message is passed back). Every safety switch below stays.
 // ORIGINAL: ADMIN-ONLY order TEST routes for the Finatic integration (Owner exception 2026-11-04). POST {op, accountId, ...}.
 //   schema -> GET  /accounts/{id}/order-schemas?action=place|modify|cancel
 //   place  -> POST /accounts/{id}/orders          cancel -> DELETE /accounts/{id}/orders/{orderId}          modify -> PATCH /accounts/{id}/orders/{orderId}
 // Guards, in order: not configured 503 · origin/JSON/IP limit · unsigned 401 · non-admin 403 · live without FINATIC_LIVE_ORDERS=1 403 "Live orders are off"
-// · 10 orders/min per admin · body whitelist (unknown fields dropped, qty cap) · audit row written BEFORE the order (no audit, no order).
+// · body whitelist (unknown fields dropped) · audit row written BEFORE the order (no audit, no order).
 // CHART LIVE ORDERS (Owner order 2026-11-15, src:'chart' from assets/chart-live.js), on top of every guard above:
 // · live env: the kill switch settings/liveTrading must not say enabled:false (unreadable = refused) · idemKey required: it is the
 //   Idempotency-Key AND the audit doc id, so a repeated key is answered 409 duplicate and never reaches the broker twice
-// · contract whitelist (NQ/ES/MNQ/MES, the two nearest live quarters; assets/chart-live-core.js, the same code the chart uses)
+// · a well-formed contract code (future) or ticker (equity), assets/chart-live-core.js validContract; the broker decides the rest
 // · market, limit, stop, stop limit (2026-11-17; was market + limit); modify = the one price of a limit or stop order
 // · stop loss + take profit: market entries only, one group per account + contract (brokerBrackets), children placed by op 'bracket'
-//   after the fill, one-cancels-other done here (syncBracket); see the section at the end of this file · a FRESH positions + orders read before every place: worst-case net exposure
-//   (position + working orders + this order) stays within 2 contracts, unreadable = refused
+//   after the fill, one-cancels-other done here (syncBracket); see the section at the end of this file · a FRESH positions + orders read
+//   before every chart place (needed to settle an unclear answer; unreadable = refused)
 // · flatten runs here, not in the browser: cancel the contract's working orders, re-read until they are gone, re-read the position,
-//   then ONE market order for the net (refused above 2); deterministic key from the position snapshot, so a double tap is deduped
+//   then ONE market order for the net; deterministic key from the position snapshot, so a double tap is deduped
 // · no answer from the broker = code 'unknown' (the chart blocks new orders until a read settles it).
-// SPEED (Owner order 2026-11-16): independent pre-send steps run in parallel (order rate limit, kill switch, Finatic session), the session
+// SPEED (Owner order 2026-11-16): independent pre-send steps run in parallel (kill switch, member gates, Finatic session), the session
 // is cached per isolate (_fin.js cachedSession, 2 min) and the poll / 'env' call warm it, the fresh read fetches positions and orders
 // in parallel WITH the audit 'attempt' row (both must succeed before anything is sent), and the audit result row is written after the
 // reply (deps.defer = ctx.waitUntil). Every reply carries Server-Timing (rl, auth, admin, gate, sess, read, audit, fin, total).
 import { gate, readBody, cachedSession, finSession, ordersBlocked, envMode, json, fail, needsConnect, methodNotAllowed, safe, pagesEntry, deferOf, listAll, UPSTREAM_MSG, UUID, ID } from './_fin.js';
 import { resolveFinUser, ownsAccount, notYours, hasConsent, saveConsent, memberBlocked, LIVE_TERMS_VERSION } from './_owner.js';
 import { openAudit, liveSwitchOn, getBracket, putBracket, delBracket, logBracket } from './_audit.js';
-import { validContract, workingOrders, netPosition, exposureError, flattenPlan, IDEM, MAX_QTY, groupId, bracketCheck, bracketPlan, contractOf } from '../../../assets/chart-live-core.js';
+import { validContract, workingOrders, netPosition, flattenPlan, IDEM, groupId, bracketCheck, bracketPlan, contractOf, assetOf } from '../../../assets/chart-live-core.js';
 
-export const MAX_FUT = 2, MAX_EQ = 100, ORDERS_PER_MIN = 10;
 const TYPES = ['market', 'limit', 'stop', 'stop_limit'], TIFS = ['day', 'gtc', 'ioc', 'fok'], ASSETS = ['future', 'equity'];
 const SYMBOL = /^[A-Z0-9][A-Z0-9._\-]{0,19}$/;
-const mem = new Map();
-// 10 orders a minute per admin. The in-isolate count is checked FIRST (exact for this isolate, no wait); the KV count (shared across
-// isolates) is read too and its write goes out after the reply. Both must be under the limit.
-export async function orderRateLimited(env, uid, defer) {
-  const min = Math.floor(Date.now() / 60000), key = 'rl:finorder:' + uid + ':' + min;
-  try {
-    if (env.PASSKEYS) {
-      for (const k of mem.keys()) if (!k.endsWith(':' + min)) mem.delete(k);
-      const local = (mem.get(key) || 0) + 1; mem.set(key, local); if (local > ORDERS_PER_MIN) return true;
-      const n = Number(await env.PASSKEYS.get(key)) || 0; if (n >= ORDERS_PER_MIN) return true;
-      const w = env.PASSKEYS.put(key, String(n + 1), { expirationTtl: 120 }); if (defer) defer(w); else await w; return false;
-    }
-    for (const k of mem.keys()) if (!k.endsWith(':' + min)) mem.delete(k);
-    const n = (mem.get(key) || 0) + 1; mem.set(key, n); return n > ORDERS_PER_MIN;
-  } catch (e) { return true; }
-}
-export const _resetRate = () => mem.clear();
 
 // -> { order } | { error }. Only whitelisted fields leave this function.
 export function cleanOrder(b, { partial } = {}) {
@@ -61,9 +46,8 @@ export function cleanOrder(b, { partial } = {}) {
     const type = String(b.type || '').toLowerCase(); if (!TYPES.includes(type)) return { error: 'type must be market, limit, stop or stop_limit' }; o.orderType = type;
   } else if (b.type !== undefined) { const type = String(b.type).toLowerCase(); if (!TYPES.includes(type)) return { error: 'type must be market, limit, stop or stop_limit' }; o.orderType = type; }
   if (!partial || b.qty !== undefined) {
-    const q = Number(b.qty), cap = (o.assetType || 'future') === 'equity' ? MAX_EQ : MAX_FUT;
-    if (!Number.isInteger(q) || q < 1) return { error: 'qty must be a positive whole number' };
-    if (q > cap) return { error: 'qty is capped at ' + cap + (cap === 2 ? ' contracts' : ' shares') };
+    const q = Number(b.qty);   // no size cap (21 Nov): the broker applies its own limits
+    if (!Number.isInteger(q) || q < 1 || q > 1e9) return { error: 'qty must be a positive whole number' };
     o.orderQty = q;
   }
   const price = (v, name) => { const n = Number(v); return isFinite(n) && n > 0 && n < 1e7 ? n : null; };
@@ -104,7 +88,7 @@ async function run(request, env, deps) {
   }
   const blocked = ordersBlocked(env); if (blocked) return blocked;
   const chart = b.src === 'chart';
-  // the journal's raw order test (no chart guards: exposure, contract list) stays admin only
+  // the journal's raw order test (no chart guards: fresh read, flatten, stop loss / take profit) stays admin only
   if (!chart && !g.admin) return fail(403, 'Admin only');
   if (op !== 'schema' && op !== 'place' && op !== 'cancel' && op !== 'modify' && !((op === 'flatten' || op === 'bracket') && chart)) return fail(400, 'Not allowed');
   if (!(typeof b.accountId === 'string' && UUID.test(b.accountId))) return fail(400, 'accountId missing');
@@ -114,7 +98,8 @@ async function run(request, env, deps) {
   let bracket = null;
   if (chart && op !== 'schema') {
     if (op !== 'bracket' && !(typeof b.idemKey === 'string' && IDEM.test(b.idemKey))) return fail(400, 'idemKey missing');
-    if ((op === 'place' || op === 'flatten' || op === 'bracket') && !validContract(b.symbol, now)) return fail(400, 'Not a tradable contract');
+    const asset = op === 'place' && b.assetType === 'equity' ? 'equity' : op === 'place' ? 'future' : assetOf(b.symbol);
+    if ((op === 'place' || op === 'flatten' || op === 'bracket') && !validContract(String(b.symbol || '').toUpperCase(), now, asset)) return fail(400, 'Not a valid symbol');
     const ty = String(b.type || '').toLowerCase();
     if (op === 'place' && !CHART_TYPES.includes(ty)) return fail(400, 'Market, limit, stop or stop limit only');
     if (op === 'modify') {   // one price per order type: limit -> limitPrice, stop -> stopPrice; never the quantity or the side
@@ -133,7 +118,7 @@ async function run(request, env, deps) {
   if (op === 'place' || op === 'modify') { const c = cleanOrder(b, { partial: op === 'modify' }); if (c.error) return fail(400, c.error); order = c.order; if (op === 'modify' && Object.keys(order).length < 2) return fail(400, 'nothing to change'); }
   // moving a stop loss / take profit (drag on the chart): it must stay on its side of the other one (advisor: same checks as place)
   let modGroup = null;
-  if (chart && op === 'modify' && typeof b.symbol === 'string' && validContract(b.symbol, now)) {
+  if (chart && op === 'modify' && typeof b.symbol === 'string' && validContract(b.symbol.toUpperCase(), now, assetOf(b.symbol.toUpperCase()))) {
     try { modGroup = await getBracket(env, deps, groupId(b.accountId, String(b.symbol).toUpperCase())); } catch (e) { return fail(503, 'Could not read the stop loss / take profit record, nothing sent', 'bracket_unreadable'); }
     if (modGroup && (modGroup.slId === b.orderId || modGroup.tpId === b.orderId)) {
       const isSl = modGroup.slId === b.orderId, np = isSl ? order.stopPrice : order.price;
@@ -148,15 +133,16 @@ async function run(request, env, deps) {
   const userId = ow.finUser;
   const t = deps.t, defer = deps.defer || deferOf(null), live = envMode(env) === 'live';
   const write = op !== 'schema';
-  // independent checks in parallel; each verdict is applied below in the old order (rate limit, kill switch, member gates, session)
+  // independent checks in parallel; each verdict is applied below in the old order (bracket sync rate, kill switch, member gates, session)
+  // (no orders-a-minute limit since 21 Nov; the bracket sync keeps its own 40-a-minute cap: it is a background poll, not an order)
   const [limited, sw, s0, mc, mb] = await t.step('gate', Promise.all([
-    op === 'bracket' ? syncLimited(g.uid) : op !== 'schema' ? orderRateLimited(env, g.uid, defer) : false,
+    op === 'bracket' ? syncLimited(g.uid) : false,
     op !== 'schema' && live ? liveSwitchOn(env, deps).then((v) => ({ v }), (e) => ({ err: true, why: String((e && e.reason) || 'unknown error').slice(0, 160) })) : { v: true },   // kill switch, fails closed
     userId ? cachedSession(env, deps, userId) : null,
     write ? hasConsent(env, deps, g.uid).then((v) => ({ v }), () => ({ err: true })) : { v: true },     // "Enable live trading" accepted
     write ? memberBlocked(env, deps, g.uid).then((v) => ({ v }), () => ({ err: true })) : { v: false }, // per-member admin kill, fails closed
   ]));
-  if (limited) return fail(429, op === 'bracket' ? 'Too many checks, try again in a moment' : 'Order limit: 10 a minute');
+  if (limited) return fail(429, 'Too many checks, try again in a moment');
   // the bracket sync still runs with the switch off (or unreadable): it may only CANCEL then (the protective one-cancels-other),
   // never place a new order (syncBracket gets killed = true)
   if (op !== 'bracket' && sw.err) {
@@ -206,22 +192,20 @@ async function run(request, env, deps) {
   // For a chart place / flatten it runs in parallel with the fresh read that has to happen anyway.
   const opened = t.step('audit', openAudit(env, deps, entry, chart ? b.idemKey : undefined).then((a) => ({ a }), (e) => ({ e })));
   const needRead = chart && (op === 'place' || op === 'flatten');
-  // single flight per account in this isolate: a second place/flatten waits for the first to answer, so both cannot pass the exposure
-  // check on the same read (advisor review 16 Nov). Costs nothing for one order at a time.
+  // single flight per account in this isolate: a second place/flatten waits for the first to answer, so the pre-send read (used to
+  // settle an unclear answer) never overlaps another send (advisor review 16 Nov). Costs nothing for one order at a time.
   const release = needRead ? await t.step('queue', acquire(b.accountId)) : () => {};
   try {
   const [au, st0] = await Promise.all([opened, needRead ? t.step('read', read()) : null]);
   if (au.e) { if (au.e && au.e.duplicate) return json({ error: 'This order was already sent once. Nothing new was sent.', code: 'duplicate', duplicate: true }, 409); try { console.warn('finatic order: audit unavailable: ' + (au.e.reason || 'error')); } catch (e) {} return fail(503, 'Audit log unavailable' + (au.e.reason ? ' (' + String(au.e.reason).slice(0, 160) + ')' : '') + ', order not sent', 'audit_unavailable'); }
   const audit = { id: au.a.id, finish: (res) => defer(au.a.finish(res)) };   // the result row goes out after the reply, never skipped
   if (renewFail) { audit.finish({ result: 'rejected', message: 'session renew failed' }); return needsConnect(); }
-  if (chart && op === 'place') {   // fresh read, worst-case exposure
+  if (chart && op === 'place') {   // fresh read (the settle baseline); no exposure cap since 21 Nov
     if (!st0) { audit.finish({ result: 'rejected', message: 'read failed' }); return fail(503, 'Could not read positions and orders, order not sent', 'read_failed'); }
     if (bracket) {   // one stop loss / take profit group per account + contract
       let old; try { old = await getBracket(env, deps, groupId(b.accountId, order.symbol)); } catch (e) { audit.finish({ result: 'rejected', message: 'bracket read failed' }); return fail(503, 'Could not read the stop loss / take profit record, order not sent', 'bracket_unreadable'); }
       if (old) { audit.finish({ result: 'rejected', message: 'bracket exists' }); return fail(409, 'A stop loss / take profit is already set on ' + order.symbol + '. Flatten or wait for it to finish first.', 'bracket_exists'); }
     }
-    const err = exposureError(netPosition(st0.positions, order.symbol).qty, workingOrders(st0.orders, order.symbol), order.action, order.orderQty);
-    if (err) { audit.finish({ result: 'rejected', message: 'exposure' }); return fail(409, err, 'exposure'); }
   }
   const idem = chart ? b.idemKey : (deps.uuid || (() => crypto.randomUUID()))();
   const sandbox = envMode(env) === 'sandbox';
@@ -327,10 +311,9 @@ async function flatten(env, deps, b, A, send, read, audit, sandbox, first) {
   if (!st) return done('partial', { message: 'read failed after cancel', cancelled }, fail(503, 'Orders were cancelled but positions could not be read. Nothing else was sent; check the broker.', 'read_failed'));
   if (st.busy) return done('partial', { cancelled }, fail(409, 'Orders are still cancelling. Nothing else was sent; try Flatten again in a moment.', 'cancelling'));
   const pos = netPosition(st.positions, code).qty, plan = flattenPlan(pos, []);
-  if (plan.tooBig) return done('rejected', { cancelled, message: 'position ' + pos }, fail(409, 'The position is more than ' + MAX_QTY + ' contracts. Close it at the broker.', 'too_big'));
   const dropGroup = () => delBracket(env, deps, groupId(b.accountId, code)).catch(() => {});   // its children were cancelled above
   if (!plan.close) { await dropGroup(); return done('accepted', { cancelled }, json({ ok: true, op: 'flatten', cancelled, closed: null })); }
-  const order = { assetType: 'future', symbol: code, action: plan.close.side, orderType: 'market', orderQty: plan.close.qty, timeInForce: 'day' };
+  const order = { assetType: assetOf(code), symbol: code, action: plan.close.side, orderType: 'market', orderQty: plan.close.qty, timeInForce: 'day' };
   const r = await send('POST', A + '/orders', b.idemKey + '-x', { order, paperTradeConfirmed: sandbox });
   const res = r.data && r.data.order ? r.data : (r.data || {});
   const accepted = r.ok && res.accepted !== false, unknown = r.status === 0 || r.status >= 500 || r.bad;
@@ -396,7 +379,7 @@ async function syncBracket(env, deps, x) {
     if (killed) { const w = 'Live trading is switched off, so the stop loss and take profit were not placed. Switch it back on, flatten, or set them at your broker.'; if (grp.why !== w) { grp.why = w; await save(); log('blocked', { result: 'rejected', message: 'kill switch' }); } return answer('blocked'); }   // stays pending: placed once the switch is back on
     const chk = bracketCheck({ side: grp.side, ref: plan.ref, sl: grp.sl, tp: grp.tp, code, pct: 0.05 });
     if (chk.error) { grp.state = 'unprotected'; grp.why = chk.error.replace(/\.$/, '') + ' at the fill price, so it was not placed. Flatten, or set them at your broker.'; await save(); log('blocked', { result: 'rejected', message: chk.error }); return answer('blocked'); }
-    const base = { assetType: 'future', symbol: code, action: plan.exitSide, orderQty: plan.qty, timeInForce: 'gtc' };
+    const base = { assetType: assetOf(code), symbol: code, action: plan.exitSide, orderQty: plan.qty, timeInForce: 'gtc' };
     const legs = [];
     if (grp.sl != null && !grp.slId) legs.push(['sl', { ...base, orderType: 'stop', stopPrice: grp.sl }]);
     if (grp.tp != null && !grp.tpId) legs.push(['tp', { ...base, orderType: 'limit', price: grp.tp }]);

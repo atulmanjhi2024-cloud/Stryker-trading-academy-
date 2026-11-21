@@ -73,7 +73,7 @@ const deps = { store: memStore({ consent: ['admin1'] }), verifyFetch, finFetch, 
 const live = { FINATIC_API_KEY: 'fntc_live_FAKE', FINATIC_LIVE_ORDERS: '1', DEV: '0' };
 let ip = 1;
 const req = (body, url) => new Request(url, { method: 'POST', headers: { 'cf-connecting-ip': '10.8.' + (ip++ % 250) + '.1', origin: 'https://tradezoro.com', 'content-type': 'application/json', authorization: 'Bearer ' + token('admin1') }, body: JSON.stringify(body) });
-const send = async (b) => { O._resetRate(); const x = await O.handle(req({ src: 'chart', accountId: ACC, userId: US, ...b }, 'https://tradezoro.com/connect/finatic/order'), live, deps); return { status: x.status, j: await x.json() }; };
+const send = async (b) => { const x = await O.handle(req({ src: 'chart', accountId: ACC, userId: US, ...b }, 'https://tradezoro.com/connect/finatic/order'), live, deps); return { status: x.status, j: await x.json() }; };
 const dataOp = async (b) => { const x = await D.handle(req({ userId: US, ...b }, 'https://tradezoro.com/connect/finatic/data'), live, deps); return { status: x.status, j: await x.json() }; };
 const posts = () => B.calls.filter((c) => c.m === 'POST' && c.p.endsWith('/orders'));
 const key = (n) => 'lf2' + String(n).padStart(20, '0');

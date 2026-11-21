@@ -44,7 +44,7 @@ const place = (extra) => ({ src: 'chart', op: 'place', accountId: ACC, userId: U
 const sessStarts = () => B.calls.filter((c) => c.p === '/api/v1/session/start').length;
 
 // ---- Server-Timing on every reply (names + durations only) ------------------------------------------------------------------
-O._resetRate(); F._resetSessions();
+F._resetSessions();
 let r = await O.handle(req(place()), live, deps);
 assert.equal(r.status, 200, JSON.stringify(await r.clone().json()));
 const st = r.headers.get('server-timing'); assert.ok(st, 'server-timing set');
@@ -57,15 +57,15 @@ assert.equal(r.status, 401); assert.match(r.headers.get('server-timing') || '', 
 
 // ---- session cache: second order reuses the session; TTL 2 min; a 401 from a cached session renews ONCE, same idem key ------------
 assert.equal(F.SESSION_TTL_MS, 120000);
-O._resetRate(); r = await O.handle(req(place()), live, deps); assert.equal(r.status, 200); assert.equal(sessStarts(), 1, 'cached session reused');
+r = await O.handle(req(place()), live, deps); assert.equal(r.status, 200); assert.equal(sessStarts(), 1, 'cached session reused');
 {
   const before = sessStarts(); T += F.SESSION_TTL_MS - 1; const c1 = await F.cachedSession(live, { ...deps, defer: undefined }, US); assert.ok(c1.cached, 'still inside the TTL'); assert.equal(sessStarts(), before);
   T += 2; const c2 = await F.cachedSession(live, { ...deps, defer: undefined }, US); assert.ok(!c2.cached, 'TTL passed: new session'); assert.equal(sessStarts(), before + 1); }
 // expire s2 (current cached) -> mock refuses s1 only, so force: reset and make s1 cached then expire
 F._resetSessions(); B.sess = 0; B.calls.length = 0;
-O._resetRate(); r = await O.handle(req(place()), live, deps); assert.equal(r.status, 200); assert.equal(sessStarts(), 1);   // s1 cached
+r = await O.handle(req(place()), live, deps); assert.equal(r.status, 200); assert.equal(sessStarts(), 1);   // s1 cached
 B.expireNext = true; const k401 = key();
-O._resetRate(); r = await O.handle(req(place({ idemKey: k401 })), live, deps); B.expireNext = false;
+r = await O.handle(req(place({ idemKey: k401 })), live, deps); B.expireNext = false;
 assert.equal(r.status, 200, 'renewed after 401');
 assert.equal(sessStarts(), 2, 'exactly one renew');
 const posts = B.calls.filter((c) => c.m === 'POST' && c.p.endsWith('/orders'));
@@ -92,53 +92,47 @@ F.dropSession(live, US); await F.cachedSession(live, deps, US); assert.equal(ses
 
 // ---- admin check memo (functions/api/chart/_rt.js): 60 s positive, so one Firestore read per minute, not per order ------------
 F._resetSessions(); adminReads = 0;
-for (let i = 0; i < 3; i++) { O._resetRate(); await O.handle(req(place()), live, deps); }
+for (let i = 0; i < 3; i++) { await O.handle(req(place()), live, deps); }
 assert.ok(adminReads <= 1, 'admin doc read at most once for 3 orders (' + adminReads + ')');
 
 // ---- parallel pre-send steps: kill switch + audit + read overlap (each step 40 ms) ---------------------------------------------
 F._resetSessions(); await F.cachedSession(live, deps, US); B.delay = 150;   // 150 ms steps: a busy test server can't blur parallel vs serial
-O._resetRate(); let a = Date.now(); r = await O.handle(req(place()), live, deps); const took = Date.now() - a; B.delay = 0;
+let a = Date.now(); r = await O.handle(req(place()), live, deps); const took = Date.now() - a; B.delay = 0;
 assert.equal(r.status, 200);
 // serial would be: switch 40 + audit 40 + positions 40 + orders 40 + send 40 = 200 ms; parallel ~ 40 (gate) + 40 (audit|read) + 40 (send)
 // serial = 5 x 150 = 750 ms; parallel ~ 3 x 150 = 450 ms (+ scheduling noise on a loaded box)
 assert.ok(took < 620, 'pre-send steps run in parallel (' + took + ' ms)');
 
 // ---- audit: attempt row BEFORE the order, result AFTER the reply (deferred), never skipped ---------------------------------------
-deferred.length = 0; O._resetRate(); const ka = key();
+deferred.length = 0; const ka = key();
 r = await O.handle(req(place({ idemKey: ka })), live, deps); assert.equal(r.status, 200);
 assert.equal(audits.get(ka).result, undefined, 'result row not awaited on the hot path');
 assert.ok(deferred.length >= 1, 'finish handed to waitUntil'); await Promise.all(deferred);
 assert.equal(audits.get(ka).result, 'accepted', 'result written after the reply'); assert.equal(audits.get(ka).brokerOrderId, 'new-1');
 // audit down: nothing sent
-{ const n1 = B.calls.filter((c) => c.m === 'POST' && c.p.endsWith('/orders')).length; O._resetRate();
+{ const n1 = B.calls.filter((c) => c.m === 'POST' && c.p.endsWith('/orders')).length; 
   r = await O.handle(req(place()), live, { ...deps, audit: async () => { throw new Error('down'); } }); assert.equal(r.status, 503);
   assert.equal(B.calls.filter((c) => c.m === 'POST' && c.p.endsWith('/orders')).length, n1, 'no audit, no order'); }
-// exposure refusal / read failure are audited as rejected (deferred)
-deferred.length = 0; O._resetRate(); const kr = key();
-r = await O.handle(req(place({ idemKey: kr, qty: 2 })), live, { ...deps, finFetch: async (u, i) => (new URL(u).pathname.endsWith('/positions') ? ok([{ securityId: 'NQZ6', quantity: 1 }]) : finFetch(u, i)) });
-assert.equal(r.status, 409); await Promise.all(deferred); assert.equal(audits.get(kr).result, 'rejected');
+// a read failure is audited as rejected (deferred); no exposure refusal any more (21 Nov)
+deferred.length = 0; const kr = key();
+r = await O.handle(req(place({ idemKey: kr, qty: 2 })), live, { ...deps, finFetch: async (u, i) => (new URL(u).pathname.endsWith('/positions') ? new Response('x', { status: 500 }) : finFetch(u, i)) });
+assert.equal(r.status, 503); await Promise.all(deferred); assert.equal(audits.get(kr).result, 'rejected');
 // duplicate key still refused before the broker
-O._resetRate(); r = await O.handle(req(place({ idemKey: ka })), live, deps); assert.equal(r.status, 409); assert.equal((await r.json()).code, 'duplicate');
+r = await O.handle(req(place({ idemKey: ka })), live, deps); assert.equal(r.status, 409); assert.equal((await r.json()).code, 'duplicate');
 
-// ---- single flight per account: two places at once -> the second reads AFTER the first was sent (exposure sees it) ----------
+// ---- single flight per account: two places at once -> the second reads AFTER the first was sent (its settle baseline is fresh) --
 { let pos = 0; const seq = [];
   const ff = async (u, i) => { const p = new URL(u).pathname; await sleep(15);
     if (p.endsWith('/positions')) { seq.push('read'); return ok(pos ? [{ securityId: 'NQZ6', quantity: pos }] : []); }
     if (p.endsWith('/orders') && i.method === 'POST') { seq.push('send'); pos += JSON.parse(i.body).order.orderQty; return ok({ accepted: true, order: { orderId: 'x' + pos, status: 'FILLED' } }); }
     return finFetch(u, i); };
-  const d = { ...deps, finFetch: ff }; F._resetSessions(); await F.cachedSession(live, d, US); O._resetRate();
+  const d = { ...deps, finFetch: ff }; F._resetSessions(); await F.cachedSession(live, d, US); 
   const [r1, r2] = await Promise.all([O.handle(req(place({ qty: 2 })), live, d), O.handle(req(place({ qty: 2 })), live, d)]);
-  assert.deepEqual([r1.status, r2.status].sort(), [200, 409], 'second one refused on a read taken after the first send');
-  assert.deepEqual(seq, ['read', 'send', 'read'], 'serialised'); assert.equal(pos, 2, 'never above the cap'); }
+  assert.deepEqual([r1.status, r2.status], [200, 200], 'no exposure cap: both go to the broker');
+  assert.deepEqual(seq, ['read', 'send', 'read', 'send'], 'serialised'); assert.equal(pos, 4); }
 
-// ---- order rate limit: 10 a minute per admin, with and without KV; KV write deferred ------------------------------------------
-{ O._resetRate(); const kv = new Map(); const puts = [];
-  const env = { ...live, PASSKEYS: { get: async (k) => kv.get(k) || null, put: async (k, v) => { puts.push(k); kv.set(k, v); } } };
-  const dd = []; let refused = 0;
-  for (let i = 0; i < 12; i++) { const x = await O.orderRateLimited(env, 'admin1', (p) => dd.push(p)); if (x) refused++; await Promise.all(dd); }
-  assert.equal(refused, 2, '11th and 12th refused');
-  O._resetRate(); for (let i = 0; i < 11; i++) if (await O.orderRateLimited(live, 'admin7')) refused++;
-  assert.equal(refused, 3, 'memory fallback also caps at 10'); }
+// ---- no order rate limit (Owner 21 Nov "No limits from our end") -------------------------------------------------------------
+assert.equal(O.orderRateLimited, undefined, 'orders-a-minute limit removed');
 
 // ---- Google access token: cached TOKEN_TTL_MS (45 min) and re-minted after; a 401 drops it ------------------------------------
 { AU._resetToken(); AU._resetKill(); const { privateKey: pk } = generateKeyPairSync('rsa', { modulusLength: 2048 });
@@ -166,7 +160,7 @@ O._resetRate(); r = await O.handle(req(place({ idemKey: ka })), live, deps); ass
 F._resetSessions(); deferred.length = 0; const s0 = sessStarts();
 r = await O.handle(req({ op: 'env', userId: US, src: 'chart', accountId: ACC }), live, deps); assert.equal(r.status, 200); { const j = await r.json(); assert.equal(j.env, 'live'); assert.equal(j.enabled, true); assert.equal(j.consent, true); }
 await Promise.all(deferred); assert.equal(sessStarts() - s0, 1, 'warmed');
-O._resetRate(); r = await O.handle(req(place()), live, deps); assert.equal(r.status, 200); assert.equal(sessStarts() - s0, 1, 'order used the warm session');
+r = await O.handle(req(place()), live, deps); assert.equal(r.status, 200); assert.equal(sessStarts() - s0, 1, 'order used the warm session');
 // member with no connection of their own: env answers, but never warms the admin's user (the client-sent id is ignored)
 { const s1 = sessStarts(); deferred.length = 0; r = await O.handle(new Request('https://tradezoro.com/connect/finatic/order', { method: 'POST', headers: { origin: 'https://tradezoro.com', 'content-type': 'application/json', 'cf-connecting-ip': '10.3.3.3', authorization: 'Bearer ' + token('member9') }, body: JSON.stringify({ op: 'env', userId: US }) }), live, deps); assert.equal(r.status, 200); await Promise.all(deferred); assert.equal(sessStarts(), s1, 'no warm-up for a borrowed id'); }
 // data 'live' poll keeps the same cached session (parallel GETs)

@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- Perf baseline for tools/tests/chart-perf-pan.js: the chart engine ALONE (same vendored 0.9.0 build the
+<!-- Perf baseline for tools/tests/chart-perf-pan.js: the chart engine ALONE (same vendored 0.9.0 build (or ?eng=) the
      Charts page loads, same workspace options shape, same bars), with none of our layers, panels or pollers.
      Test-only page: not linked, not deployed as a feature. Bars come from /api/chart/bars (routed by the bench). -->
 <html lang="en" data-theme="dark">
@@ -8,15 +8,19 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>perf: bare engine</title>
 <style>html,body{margin:0;height:100%;background:#000}#vela-chart{position:absolute;inset:0}</style>
-<script type="importmap">{"imports":{
-  "@zag-js/vanilla":"/assets/vendor/zag-1.42.0/vanilla.js","@zag-js/menu":"/assets/vendor/zag-1.42.0/menu.js",
-  "@zag-js/dialog":"/assets/vendor/zag-1.42.0/dialog.js","@zag-js/tooltip":"/assets/vendor/zag-1.42.0/tooltip.js",
-  "@luxalgo/vela":"/assets/vendor/vela-0.9.0-s11/index.js","@luxalgo/vela/plugin":"/assets/vendor/vela-0.9.0-s11/plugin.js"}}</script>
+<script>
+// ?eng=vela-0.9.0-s11 picks the engine folder (default: the live one); ?lines=N adds N EMA lines (chart-perf-pan.js LINES=).
+window.__ENG = '/assets/vendor/' + (new URLSearchParams(location.search).get('eng') || 'vela-0.9.0-s16') + '/';
+document.write('<script type="importmap">' + JSON.stringify({ imports: {
+  '@zag-js/vanilla': '/assets/vendor/zag-1.42.0/vanilla.js', '@zag-js/menu': '/assets/vendor/zag-1.42.0/menu.js',
+  '@zag-js/dialog': '/assets/vendor/zag-1.42.0/dialog.js', '@zag-js/tooltip': '/assets/vendor/zag-1.42.0/tooltip.js',
+  '@luxalgo/vela': window.__ENG + 'index.js', '@luxalgo/vela/plugin': window.__ENG + 'plugin.js' } }) + '<\/script>');
+</script>
 </head>
 <body>
 <div id="vela-chart"></div>
 <script type="module">
-import { VelaWorkspace } from '/assets/vendor/vela-0.9.0-s11/workspace.js';
+const { VelaWorkspace } = await import(window.__ENG + 'workspace.js');
 // Minimal futures provider: the same /api/chart/bars pages the Charts page reads, nothing else.
 const PAGE = 8 * 3600;
 class Bars {
@@ -40,6 +44,10 @@ window.STRYKER_VELA = new VelaWorkspace('#vela-chart', {
   layout: '1', symbol: 'futures:NQ1!', timeframe: '1', cells: { A: { symbol: 'futures:NQ1!', timeframe: '1' } },
   maxWebglCells: 4, live: true, theme: 'dark', providers: { futures: () => new Bars() }
 });
+const LINES = +(new URLSearchParams(location.search).get('lines') || 0);
+if (LINES) (async () => {
+  for (let k = 0; k < 120; k++) { try { const c = window.STRYKER_VELA.cell(window.STRYKER_VELA.active.id).chart; if (c.renderer.renderer.coords.barCount > 20) { for (let i = 0; i < LINES; i++) c.addNativeIndicator('ema', { inputs: { length: 5 + i * 7 } }); window.__perfLines = LINES; return; } } catch (e) {} await new Promise((r) => setTimeout(r, 250)); }
+})();
 </script>
 </body>
 </html>

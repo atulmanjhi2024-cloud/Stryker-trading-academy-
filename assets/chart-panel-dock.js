@@ -54,7 +54,7 @@
       '.stkpd-dk,.stkpd-h{display:none}' +
       '@media (min-width:' + NARROW + 'px){' +
       // the chart gives up exactly the dock column (the panels' own "-open" widths no longer apply while the helper runs)
-      '.stkchart-panel.stkw-host.stkpd-on:not(.stkwi-open):not(.stkhll-open) #vela-chart{right:calc(var(--stkw-rail,44px) + var(--stkpd-cw,0px)) !important}' +
+      'html:not(.stk-fs-only) .stkchart-panel.stkw-host.stkpd-on:not(.stkwi-open):not(.stkhll-open) #vela-chart{right:calc(var(--stkw-rail,44px) + var(--stkpd-cw,0px)) !important}' +   // chart-only full screen: the chart takes the whole width
       '.stkpd-p{right:auto !important;bottom:auto !important;max-width:none !important;min-width:0 !important}' +
       '.stkpd-p.stkpd-float{border:1px solid var(--line-soft) !important;border-radius:12px !important;box-shadow:0 8px 24px rgba(0,0,0,.35);overflow:hidden}' +
       '.stkpd-p.stkpd-dock{border-radius:0 !important;box-shadow:none}' +

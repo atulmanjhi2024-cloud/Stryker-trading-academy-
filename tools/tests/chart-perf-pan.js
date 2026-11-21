@@ -3,6 +3,7 @@
 //   CHART_BASE=http://127.0.0.1:8031 tools/chrome-slot.sh node tools/tests/chart-perf-pan.js [out.json] [scenarios] [dprs]
 //     scenarios: comma list of bare,member,heavy (default all three); dprs: comma list (default 1,2)
 //     RUNS=n repeats each measured pass (default 2; the median run is reported). PROFILE=0 skips the profiled pass.
+//     bare only: ENG=vela-0.9.0-s11 picks the engine folder, LINES=20 adds 20 EMA lines; VW/VH/MOBILE=1 for phone emulation.
 // Scenarios (1440x900, NQ1! 1m, the same bars everywhere):
 //   bare    tools/tests/perf-bare-vela.html: the chart engine alone, no TradeZoro layers (the target).
 //   member  charts.html as a member opens it (stock workspace: legend, bottom bar, workspace tabs, Volume) on NQ1! 1m
@@ -101,7 +102,8 @@ function fakeWs() {
 
 async function open(b, scen, dpr) {
   await candles();
-  const ctx = await b.newContext({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: dpr });
+  const mob = process.env.MOBILE === '1';
+  const ctx = await b.newContext({ viewport: { width: +(process.env.VW || 1440), height: +(process.env.VH || 900) }, deviceScaleFactor: dpr, isMobile: mob, hasTouch: mob });
   if (scen !== 'bare') {
     await ctx.addInitScript(stub);
     await ctx.addInitScript(() => { try { for (const k of ['stryker_install_prompt_shown_u1', 'stryker_push_prompt_shown_u1', 'stryker_community_disclaimer_ack_v1']) localStorage.setItem(k, '1'); localStorage.setItem('stryker.vela.session', ''); } catch (e) {} });
@@ -136,7 +138,7 @@ async function open(b, scen, dpr) {
   const p = await ctx.newPage();
   const errors = [];
   p.on('pageerror', (e) => errors.push(String(e).slice(0, 200)));
-  await p.goto(BASE + (scen === 'bare' ? '/tools/tests/perf-bare-vela.html' : '/charts.html'), { waitUntil: 'domcontentloaded' });
+  await p.goto(BASE + (scen === 'bare' ? '/tools/tests/perf-bare-vela.html?eng=' + (process.env.ENG || '') + '&lines=' + (process.env.LINES || 0) : '/charts.html'), { waitUntil: 'domcontentloaded' });
   if (process.env.DBG) p.on('console', (m) => console.log('CON', m.type(), m.text().slice(0, 160)));
   await p.waitForFunction((bare) => { try { const ws = window.STRYKER_VELA; return ws && (bare ? ws.cell(ws.active.id).chart.renderer.renderer.coords.barCount > 20 : window.__stkHeavyReady); } catch (e) { return false; } }, scen === 'bare', { timeout: 90000 }).catch(async (e) => { console.log('boot state', await p.evaluate(() => ({ heavy: !!window.__stkHeavyReady, ws: !!window.STRYKER_VELA, fc: !!window.__stkFirstCandles }))); throw e; });
   if (scen !== 'bare') {
@@ -150,6 +152,7 @@ async function open(b, scen, dpr) {
       try { ws.context().stateChanged(); } catch (e) {}
     }, [scen === 'heavy' || scen === 'fp', scen === 'heavy' || scen === 'hm']);
   }
+  if (scen === 'bare' && +process.env.LINES) await p.waitForFunction(() => window.__perfLines > 0, null, { timeout: 60000 });
   await sleep(scen === 'bare' ? 3000 : 9000);   // indicators fetch + first paint, history pager settles
   // Frame the newest ~3 h (180 bars at 1440) so every scenario pans the same span.
   await p.evaluate(() => { const ws = window.STRYKER_VELA, c = ws.cell(ws.active.id).chart, now = Date.now(); c.setVisibleRange({ from: now - 3 * 3600000, to: now }); });

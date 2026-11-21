@@ -44,6 +44,7 @@ const DEFAULTS = Object.freeze({
   marginBottom: '8',
   h12: false,              // s2 patch: 12-hour clock on the time axis + crosshair
   dow: true,               // s2 patch: weekday in the crosshair date
+  ownSym: false,           // "Keep drawings on their own symbol" (AUTO-VELAUP E): off = drawings follow the chart, as always
   hidePrice: false,        // hide the main price series (candles / bars / line); overlays + indicators stay (member request)
   rhide: false             // ADMIN ONLY: hide replay markings while bar replay runs (Owner 2026-10-16)
 });
@@ -88,6 +89,9 @@ const DISABLED = {
 };
 
 const clone = (o) => JSON.parse(JSON.stringify(o));
+const SYMDRAW_KEY = 'stryker.symdraw';
+const SYMDRAW_MAX = 200;              // symbols remembered per chart
+const symDocs = new Map();            // cellId -> { symbol: drawings document } (symbols not on screen)
 const store = new Map();             // cellId -> settings object (our part)
 let WS = null;
 let toastFn = () => {};
@@ -136,6 +140,16 @@ export function installChartSettings(Core, VelaChunk){
     serialize(ctx){ return DL.serialize(ctx.cellId); },
     restore(payload, ctx){ DL.restore(ctx.cellId, payload); try { window.__stkHistoryPager && window.__stkHistoryPager.kick(ctx.cellId); } catch (e) {} }
   });
+  // Drawings of the symbols this cell is NOT showing, while "Keep drawings on their own symbol" is on.
+  Core.registerStatePersistence({
+    key: SYMDRAW_KEY, scope: 'cell',
+    serialize(ctx){ const m = symDocs.get(ctx.cellId); return m && Object.keys(m).length ? Object.assign({}, m) : undefined; },
+    restore(payload, ctx){
+      const m = {};
+      if (payload && typeof payload === 'object') for (const k of Object.keys(payload).slice(0, SYMDRAW_MAX)) { const d = payload[k]; if (k.length <= 80 && d && typeof d === 'object' && Array.isArray(d.drawings)) m[k] = d; }
+      symDocs.set(ctx.cellId, m);
+    }
+  });
   Core.registerStatePersistence({
     key: EXT_KEY, scope: 'cell',
     serialize(ctx){ const s = store.get(ctx.cellId); return s && !isDefault(s) ? Object.assign({}, s) : undefined; },
@@ -165,6 +179,7 @@ function hookCell(cell){
   rc.setSettingsSections = (secs) => origSet([...(secs || []), ...ourSections(id)]);
   const R = inner(cell);
   keepViewOnSwitch(R, cell);
+  ownSymbolDrawings(cell);
   mountFitLatest(cell, R);
   if (R) {
     // Gradient background: re-applied after Vela paints its solid one.
@@ -300,6 +315,39 @@ function applyRight(cell){
 // dropped an indicator's wider margin and any margin the user had set. A scrolled-back view
 // (offset < 0 or far out) re-anchors at the default, as TradingView does. Empty clears in between
 // (a symbol switch) keep the remembered view until the new bars land.
+// "Keep drawings on their own symbol" (brief AUTO-VELAUP E, idea from upstream 0.10.9 clearOnSymbolChange): with the
+// switch on, a symbol switch puts the old symbol's drawings away and brings back the new symbol's, as the switch STARTS
+// (before the new bars load). A restored layout (rehydrate) carries its own drawings and is not a switch. Off by default.
+function ownSymbolDrawings(cell){
+  const ch = cell.chart;
+  if (!ch || ch.__stkOwnSym || typeof ch.setMarket !== 'function') return;
+  ch.__stkOwnSym = true;
+  const id = cell.id;
+  let restoring = false;
+  if (typeof cell.rehydrate === 'function' && !cell.__stkOwnSymRh) {
+    cell.__stkOwnSymRh = true;
+    const rh = cell.rehydrate.bind(cell);
+    cell.rehydrate = (cs) => { restoring = true; try { return rh(cs); } finally { restoring = false; } };
+  }
+  const orig = ch.setMarket.bind(ch);
+  ch.setMarket = (next) => {
+    try {
+      const from = ch.market && ch.market.symbol, to = next && next.symbol;
+      if (!restoring && S(id).ownSym === true && to && from && to !== from) {
+        const m = symDocs.get(id) || {};
+        const doc = ch.drawings.toJSON();
+        if (doc && doc.drawings && doc.drawings.length) m[from] = doc; else delete m[from];
+        const back = m[to] || null;
+        delete m[to];
+        const keys = Object.keys(m); if (keys.length > SYMDRAW_MAX) delete m[keys[0]];
+        symDocs.set(id, m);
+        ch.drawings.fromJSON(back);
+        try { WS.markStateDirty(); } catch (e) {}
+      }
+    } catch (e) { console.warn('TradeZoro: own-symbol drawings', e); }
+    return orig(next);
+  };
+}
 function keepViewOnSwitch(R, cell){
   if (!R || R.__stkKeepView || typeof R.setBars !== 'function') return;
   R.__stkKeepView = true;
@@ -498,6 +546,9 @@ function ourSections(id){
       off('Hollow candles'),
       { kind: 'toggle', label: HIDE_ROW, id: 'hide-price', get: g('hidePrice'), set: (v) => { if (!hideSetting) setHide(id, v); },
         title: 'Hides the candles, bars or line. Footprint, profiles, heatmap, big trades and indicators, the price scale and the crosshair stay. Also in the top bar (eye button) and the right-click menu.' },
+      { kind: 'heading', label: 'Drawings' },
+      { kind: 'toggle', label: 'Keep drawings on their own symbol', id: 'own-sym', get: g('ownSym'), set: st('ownSym'),
+        title: 'On: each symbol keeps its own drawings. Switching to another symbol puts this one\'s drawings away and brings that symbol\'s back. Off: drawings stay on the chart when you change symbol.' },
       { kind: 'heading', label: 'Data modification' }, off('Adjust for contract changes'),
       { kind: 'heading', label: 'History' }, daysRow(id),
       { kind: 'select', label: 'Precision', id: 'precision', options: PRECISIONS, get: g('precision'), set: st('precision') },

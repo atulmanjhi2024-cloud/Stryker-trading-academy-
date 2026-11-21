@@ -403,7 +403,7 @@ export function mountTvToolbars(ws, opts){
     const paintFs = () => {
       const on = isOn();
       fsBtn.innerHTML = svg(on ? IC.fullOff : IC.full, 16);
-      fsBtn.title = on ? 'Exit full screen' : 'Full screen';
+      fsBtn.title = on ? 'Exit full screen (Alt+Enter)' : 'Full screen (Alt+Enter)';
       fsBtn.setAttribute('aria-label', fsBtn.title);
       fsBtn.setAttribute('aria-pressed', on ? 'true' : 'false');
     };
@@ -414,11 +414,37 @@ export function mountTvToolbars(ws, opts){
         }
       } catch (e) {}
     };
+    // CHART ONLY (desktop layout, brief AUTO-VELAUP B): full screen also hides our top bar, the drawing column,
+    // the bottom bar, the right icon bar and every side panel (style.css html.stk-fs-only). CSS only, so leaving
+    // restores exactly what was open. Phones keep the bar: there is no Esc key there. The pill at the top is the
+    // way out with a mouse (shown on entry, then when the pointer reaches the top edge).
+    const deskLayout = () => { const w = root.querySelector('[data-layout]'); return !(w && w.dataset.layout === 'mobile') && window.innerWidth > 700; };
+    const pill = document.createElement('button');
+    pill.type = 'button';
+    pill.className = 'stkt-fs-pill';
+    pill.hidden = true;
+    pill.innerHTML = svg(IC.fullOff, 16) + '<span>Exit full screen</span><kbd>Esc</kbd>';
+    pill.addEventListener('click', () => setFs(false));
+    document.body.appendChild(pill);
+    let pillT = 0;
+    const showPill = (ms) => { pill.hidden = false; pill.classList.add('on'); clearTimeout(pillT); pillT = setTimeout(() => { if (!pill.matches(':hover, :focus-visible')) pill.classList.remove('on'); }, ms); };
+    const onlyNow = () => html.classList.contains('stk-fs-only');
+    const syncOnly = () => {
+      const want = isOn() && deskLayout();
+      if (want !== onlyNow()) { html.classList.toggle('stk-fs-only', want); window.dispatchEvent(new Event('resize')); }
+      pill.hidden = !want;
+      if (!want) pill.classList.remove('on');
+    };
+    window.addEventListener('resize', () => { if (isOn() !== onlyNow() || onlyNow()) syncOnly(); }, { passive: true });
+    document.addEventListener('pointermove', (e) => { if (onlyNow() && e.clientY < 48) showPill(1500); }, { passive: true });
+    pill.addEventListener('pointerleave', () => showPill(600));
     const setFs = (on, opts) => {
       opts = opts || {};
       on = !!on;
       if (on !== isOn()) {
         html.classList.toggle('stk-chart-fs', on);
+        syncOnly();
+        if (onlyNow()) showPill(2500);
         try { if (on) localStorage.setItem(LS_FS, '1'); else localStorage.removeItem(LS_FS); } catch (e) {}
         // a history entry, so the phone's back gesture leaves full screen instead of the page
         if (on && !opts.fromHistory) { try { history.pushState(Object.assign({}, history.state, { stkFs: 1 }), ''); } catch (e) {} }
@@ -440,9 +466,17 @@ export function mountTvToolbars(ws, opts){
     window.addEventListener('popstate', (e) => { if (isOn() && !(e.state && e.state.stkFs)) setFs(false, { fromHistory: true }); });
     // capture phase: the chart canvas handles Esc itself (cancels a drawing) and may stop it
     window.addEventListener('keydown', (e) => {
+      // Alt+Enter toggles (desktop keyboards); it never reaches the chart
+      if (e.key === 'Enter' && e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey && !e.repeat) {
+        e.preventDefault(); e.stopPropagation();
+        setFs(!isOn(), { native: true });
+        return;
+      }
       if (e.key !== 'Escape' || !isOn()) return;
       const t = e.target;
       if (t && t.closest && t.closest('input, textarea, select, [contenteditable="true"]')) return;
+      // an armed drawing tool takes Esc first (puts it down); the next Esc leaves
+      try { const c = activeChart(); if (c && c.drawings && c.drawings.getTool && c.drawings.getTool()) return; } catch (x) {}
       // an open menu / dialog takes Esc first
       if (document.querySelector('.stkc-pop:not([hidden]), .stkc-ob-pop:not([hidden]), .mclock-pop:not([hidden]), [role="dialog"]:not([hidden]) input:focus')) return;
       setFs(false);

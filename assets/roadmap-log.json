@@ -1,14 +1,20 @@
 [
  {
-  "build": 1171,
+  "build": 1176,
   "date": "2026-11-21",
-  "title": "chart-compact-layout",
+  "title": "add requested features being worked on",
   "link": ""
  },
  {
-  "build": 1168,
-  "date": "2026-11-20",
-  "title": "add requested features being worked on",
+  "build": 1176,
+  "date": "2026-11-21",
+  "title": "add requested features being worked on (build 1176)",
+  "link": ""
+ },
+ {
+  "build": 1171,
+  "date": "2026-11-21",
+  "title": "chart-compact-layout",
   "link": ""
  },
  {

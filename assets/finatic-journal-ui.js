@@ -1,9 +1,10 @@
-// TradeZoro — Nemesis "Broker sync (beta)" sheet (ES module, every signed-in member since 21 Nov 2026, loaded on demand by
+// TradeZoro — "Connect your broker" sheet (broker grid, linked accounts, trust row) (ES module, every signed-in member since 21 Nov 2026, loaded on demand by
 // assets/finatic-journal.js and by the chart's Connect a broker). READ ONLY for the journal: lists accounts and fills through
 // /connect/finatic/data (server allow-list, scoped to the member's own connection). The "Order test" step is admins only (admin flag).
 // Flow: start session -> broker portal in a new tab (the member logs in there) -> Continue -> pick account + dates -> preview -> import.
 // Depends on the journal page globals: auth, db, firebase, JOURNAL_UID, JOURNAL_TRADES, journalCollectionRef, reloadJournalData, showToast.
 import { CSS } from './rithmic-journal-ui.js?v=1192';
+import { acctInfo, grantFor, ageText } from './chart-live-core.js?v=1192';
 import { tripsFromBroker, tripToTrade, tripId, ordersToFetch, planImport } from './finatic-fills.js?v=1192';
 
 const esc = (s) => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -22,6 +23,38 @@ const EXTRA_CSS = `.fjs-tag{ display:inline-block; margin-left:8px; padding:2px 
 .fjs-ord{ display:flex; align-items:center; justify-content:space-between; gap:8px; padding:10px 12px; border:1px solid var(--rz-line); border-radius:12px; margin:0 0 8px; font:400 13px/18px var(--rz-font); } .fjs-ord button{ height:40px; padding:0 14px; border:1px solid var(--rz-line); border-radius:10px; background:transparent; color:var(--rz-ink); font:600 13px/18px var(--rz-font); cursor:pointer; }
 .fjs-confirm{ margin:0 0 16px; padding:14px; border:1px solid var(--rz-amber); border-radius:12px; font:600 16px/22px var(--rz-font); }
 .fjs-sample{ margin:0 0 12px; font:600 12px/16px var(--rz-font); color:var(--rz-amber); letter-spacing:.04em; text-transform:uppercase; }
+.fjs-sub{ margin:-4px 0 16px; font:400 15px/22px var(--rz-font); color:var(--rz-ink-2); }
+#fjs .rjs-x{ width:48px; height:48px; margin-right:-4px; }
+.fjs-h{ margin:20px 0 8px; font:600 13px/18px var(--rz-font); letter-spacing:.04em; text-transform:uppercase; color:var(--rz-ink-2); }
+.fjs-grid{ display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px; margin:0; padding:0; list-style:none; }
+@media (min-width:481px){ .fjs-grid{ grid-template-columns:repeat(4,minmax(0,1fr)); } }
+.fjs-grid li{ display:flex; } .fjs-tile{ display:flex; flex-direction:column; align-items:center; justify-content:center; gap:8px; width:100%; min-height:104px; padding:12px 8px; border:1px solid var(--rz-line); border-radius:16px; background:var(--rz-field); color:var(--rz-ink); cursor:pointer; transition:border-color .15s, background .15s; }
+.fjs-tile:hover{ border-color:var(--rz-mint); }
+.fjs-tile:active{ background:rgba(3,201,136,.08); }
+.fjs-tile:disabled{ opacity:.6; cursor:default; }
+.fjs-lg{ flex:none; display:block; width:48px; height:48px; border-radius:12px; overflow:hidden; background:#fff; border:1px solid var(--rz-line); }
+.fjs-lg img{ display:block; width:100%; height:100%; object-fit:contain; }
+.fjs-lg.s32{ width:40px; height:40px; border-radius:10px; }
+.fjs-tn{ display:block; max-width:100%; font:500 13px/16px var(--rz-font); text-align:center; overflow-wrap:anywhere; }
+.fjs-linked{ border:1px solid var(--rz-line); border-radius:16px; background:var(--rz-field); }
+.fjs-lrow{ position:relative; display:flex; align-items:center; gap:12px; min-height:64px; padding:8px 4px 8px 12px; border-bottom:1px solid var(--rz-line); }
+.fjs-lrow:last-child{ border-bottom:0; }
+.fjs-lt{ flex:1; min-width:0; }
+.fjs-lt b{ display:block; font:600 15px/20px var(--rz-font); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.fjs-lt small{ display:flex; align-items:center; gap:6px; font:400 13px/18px var(--rz-font); color:var(--rz-ink-2); white-space:nowrap; overflow:hidden; }
+.fjs-dot{ flex:none; width:8px; height:8px; border-radius:50%; background:var(--rz-ink-2); }
+.fjs-dot.live{ background:var(--rz-mint); } .fjs-dot.paper{ background:var(--rz-amber); } .fjs-dot.need{ background:var(--rz-red); }
+.fjs-more{ flex:none; display:inline-grid; place-items:center; width:48px; height:48px; padding:0; border:0; border-radius:50%; background:transparent; color:var(--rz-ink-1); cursor:pointer; }
+.fjs-more:hover{ background:rgba(150,160,175,.16); }
+.fjs-menu{ position:absolute; right:8px; top:calc(100% - 8px); z-index:5; min-width:176px; padding:4px; border:1px solid var(--rz-line); border-radius:12px; background:var(--rz-bg); box-shadow:0 12px 28px -8px rgba(0,0,0,.5); }
+.fjs-menu button{ display:block; width:100%; height:48px; padding:0 12px; border:0; border-radius:8px; background:transparent; color:var(--rz-ink); font:500 15px/20px var(--rz-font); text-align:left; cursor:pointer; }
+.fjs-menu button:hover{ background:rgba(150,160,175,.14); } .fjs-menu button.dng{ color:var(--rz-red); }
+.fjs-empty{ margin:0; padding:20px 16px; border:1px dashed var(--rz-line); border-radius:16px; text-align:center; font:400 14px/20px var(--rz-font); color:var(--rz-ink-2); }
+.fjs-trust{ display:flex; align-items:flex-start; gap:12px; margin:20px 0 0; padding-top:16px; border-top:1px solid var(--rz-line); font:400 13px/18px var(--rz-font); color:var(--rz-ink-1); }
+.fjs-trust svg{ flex:none; width:20px; height:20px; color:var(--rz-mint); }
+.fjs-trust a,.fjs-quiet a{ color:inherit; text-decoration:underline; text-underline-offset:2px; }
+.fjs-quiet{ margin:8px 0 0 32px; font:400 12px/16px var(--rz-font); color:var(--rz-ink-2); }
+#fjs .fjs-tag{ margin-left:8px; }
 #fjs .rjs-head h2{ display:flex; align-items:center; } #fjs .fjs-tag{ vertical-align:baseline; }
 #fjs .rjs-err{ margin-top:8px; padding:12px 16px; }
 [data-theme="light"] #fjs .rjs-err{ color:#b3261e; border-color:rgba(179,38,30,.35); background:rgba(179,38,30,.06); }`;
@@ -54,7 +87,7 @@ export function openBrokerSync({ uid, onConnected, portal, admin } = {}) {
   const lsSet = (v) => { try { v ? localStorage.setItem(LS, v) : localStorage.removeItem(LS); } catch (e) {} };
 
   const back = document.createElement('div'); back.className = 'rjs-back'; back.id = 'fjs-back';
-  const sheet = document.createElement('div'); sheet.className = 'rjs'; sheet.id = 'fjs'; sheet.setAttribute('role', 'dialog'); sheet.setAttribute('aria-modal', 'true'); sheet.setAttribute('aria-label', 'Broker sync (beta)');
+  const sheet = document.createElement('div'); sheet.className = 'rjs'; sheet.id = 'fjs'; sheet.setAttribute('role', 'dialog'); sheet.setAttribute('aria-modal', 'true'); sheet.setAttribute('aria-label', 'Connect your broker');
   back.appendChild(sheet); document.body.appendChild(back);
   const prevFocus = document.activeElement;
   const S = { step: 'start', userId: lsGet(), sessionId: '', accounts: [], account: null, from: ymd(new Date(Date.now() - 30 * 864e5)), to: ymd(new Date()), trips: [], open: [], need: [], pv: {}, raw: [], plan: null, sample: !!window.STRYKER_BROKER_SAMPLE, ord: { side: 'buy', type: 'market', qty: 1, symbol: '', limit: '', stop: '', tif: 'day' }, envMode: '', ordersOn: false, openOrders: [], recent: [] };
@@ -63,7 +96,7 @@ export function openBrokerSync({ uid, onConnected, portal, admin } = {}) {
   const onKey = (e) => { if (e.key === 'Escape') { e.stopPropagation(); close(); } };
   document.addEventListener('keydown', onKey, true);
   back.addEventListener('mousedown', (e) => { if (e.target === back) close(); });
-  const head = (title) => '<div class="rjs-grab"></div><div class="rjs-head"><h2>' + esc(title) + '<span class="fjs-tag">Beta</span></h2><button type="button" class="rjs-x" id="fjs-x" aria-label="Close">' + X_ICON + '</button></div>' + (S.sample ? '<p class="fjs-sample">Sample data</p>' : '');
+  const head = (title, sub) => '<div class="rjs-grab"></div><div class="rjs-head"><h2>' + esc(title) + '</h2><button type="button" class="rjs-x" id="fjs-x" aria-label="Close">' + X_ICON + '</button></div>' + (sub ? '<p class="fjs-sub">' + esc(sub) + '</p>' : '') + (S.sample ? '<p class="fjs-sample">Sample data</p>' : '');
   const err = (m) => (m ? '<div class="rjs-err" role="alert">' + esc(m) + '</div>' : '');
   const wireX = () => { const x = sheet.querySelector('#fjs-x'); if (x) x.addEventListener('click', close); };
   const q = (s) => sheet.querySelector(s);
@@ -73,30 +106,81 @@ export function openBrokerSync({ uid, onConnected, portal, admin } = {}) {
 
   // ---- not set up
   function drawNotSetUp() {
-    sheet.innerHTML = head('Broker sync') + '<p class="rjs-lead">Not set up yet. The broker connection key has not been added to the site, so nothing can connect. ' + (admin ? 'Admin note: add FINATIC_API_KEY to the Pages secrets (see the handback notes), then redeploy.' : 'Please try again later.') + '</p><button type="button" class="rjs-ghost" id="fjs-close">Close</button>';
+    sheet.innerHTML = head('Connect your broker') + '<p class="rjs-lead">Not set up yet. The broker connection key has not been added to the site, so nothing can connect. ' + (admin ? 'Admin note: add FINATIC_API_KEY to the Pages secrets (see the handback notes), then redeploy.' : 'Please try again later.') + '</p><button type="button" class="rjs-ghost" id="fjs-close">Close</button>';
     wireX(); q('#fjs-close').addEventListener('click', close);
   }
-  // ---- start: connect a broker
+  // ---- start: broker grid + already linked + trust row (one flow for the chart and the journal)
+  const BROKERS = [['interactive-brokers', 'Interactive Brokers', 'ibkr.png'], ['metatrader-4', 'MetaTrader 4', 'mt4.png'], ['metatrader-5', 'MetaTrader 5', 'mt5.png'], ['ninjatrader', 'NinjaTrader', 'ninja.png'],
+    ['rithmic', 'Rithmic', 'rithmic.png'], ['tastytrade', 'tastytrade', 'tastytrade.svg'], ['tradovate', 'Tradovate', 'tradovate.png'], ['webull', 'Webull', 'webull.png']];
+  const logoFor = (name) => { const k = String(name || '').toLowerCase().replace(/[^a-z0-9]/g, ''); const f = BROKERS.find((b) => k.indexOf(b[1].toLowerCase().replace(/[^a-z0-9]/g, '')) === 0 || (b[0] === 'interactive-brokers' && /^ibkr/.test(k))); return f ? '/assets/images/brokers/' + f[2] : ''; };
+  const logo = (name, big) => { const u = logoFor(name); return '<span class="fjs-lg' + (big ? '' : ' s32') + '" aria-hidden="true">' + (u ? '<img src="' + u + '" alt="" width="48" height="48" loading="lazy">' : '') + '</span>'; };
+  const LOCK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>';
+  const DOTS = '<svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="12" cy="5" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="12" cy="19" r="1.8"/></svg>';
+  const status = (a) => (a.sync.status === 'failed' ? ['need', 'Needs login'] : /paper|sim|demo|practice|sandbox/i.test(a.number + ' ' + a.broker) ? ['paper', 'Paper'] : ['live', 'Live']);
+  const ago = (a) => (a.sync.at ? (ageText(a.sync.at, Date.now(), 0) || 'updated just now') : 'not synced yet');
+  function linkedHtml() {
+    if (S.lstate === 'loading') return '<p class="fjs-empty">Loading your accounts…</p>';
+    if (!S.accounts.length) return '<p class="fjs-empty">No brokers linked yet. Pick one above to connect.</p>';
+    return '<div class="fjs-linked">' + S.accounts.map((a) => { const st = status(a);
+      return '<div class="fjs-lrow" data-row="' + esc(a.id) + '">' + logo(a.broker, false) + '<span class="fjs-lt"><b>' + esc(a.broker) + (a.last4 ? ' ···· ' + esc(a.last4) : '') + '</b><small><i class="fjs-dot ' + st[0] + '"></i>' + st[1] + ' · ' + esc(ago(a)) + '</small></span>' +
+        '<button type="button" class="fjs-more" data-more="' + esc(a.id) + '" aria-haspopup="menu" aria-label="Actions for ' + esc(a.broker) + '">' + DOTS + '</button></div>'; }).join('') + '</div>';
+  }
+  async function loadLinked() {
+    try {
+      const r = await data('accounts');
+      S.accounts = (Array.isArray(r) ? r : []).map((x) => Object.assign(acctInfo(x), { name: acctInfo(x).number || acctInfo(x).broker, cur: acctInfo(x).currency })).filter((x) => x.id);
+      S.lstate = 'ok';
+    } catch (e) { S.accounts = []; S.lstate = 'ok'; if (e.needsConnect) { S.userId = ''; lsSet(''); } }   // a stale saved id is forgotten quietly
+    const box = q('#fjs-linked'); if (box && S.step === 'start') { box.innerHTML = linkedHtml(); wireLinked(); }
+  }
+  function wireLinked() {
+    const closeMenu = () => { const m = q('.fjs-menu'); if (m) m.remove(); };
+    sheet.querySelectorAll('[data-more]').forEach((b) => b.addEventListener('click', (e) => {
+      e.stopPropagation(); const had = b.parentNode.querySelector('.fjs-menu'); closeMenu(); if (had) return;
+      const m = document.createElement('div'); m.className = 'fjs-menu'; m.setAttribute('role', 'menu');
+      m.innerHTML = '<button type="button" role="menuitem" data-sync>Sync</button><button type="button" role="menuitem" class="dng" data-off>Disconnect</button>';
+      m.addEventListener('click', (ev) => ev.stopPropagation()); b.parentNode.appendChild(m); m.querySelector('[data-sync]').focus();
+      m.querySelector('[data-sync]').addEventListener('click', () => { closeMenu(); syncRow(b.dataset.more); });
+      const off = m.querySelector('[data-off]');
+      off.addEventListener('click', () => { if (!off.dataset.sure) { off.dataset.sure = '1'; off.textContent = 'Tap again to disconnect'; return; } closeMenu(); disconnectRow(b.dataset.more); });
+    }));
+    sheet.addEventListener('click', closeMenu, { once: true });
+  }
+  async function syncRow(id) {
+    if (!onConnected) { S.account = S.accounts.find((x) => x.id === id) || S.accounts[0]; S.step = 'pick'; return draw(); }   // journal: go on to the account + dates step
+    await loadLinked(); toast('success', 'Accounts updated.');
+  }
+  async function disconnectRow(id) {
+    const a = S.accounts.find((x) => x.id === id); if (!a) return;
+    try {
+      const gs = await data('grants'); const gid = grantFor(a, Array.isArray(gs) ? gs : []);
+      if (!gid) return drawStart('Could not tell which connection this is. Disconnect it at your broker.');
+      await call('/connect/finatic/data', Object.assign({ op: 'revoke', grantId: gid }, userBody()));
+      toast('success', a.broker + ' disconnected.'); await loadLinked();
+    } catch (e) { drawStart(e.message || 'Could not disconnect.'); }
+  }
+  async function startConnect(brokerId, tile) {
+    const win = window.open('', '_blank');           // opened on the tap so pop-up blockers allow it
+    sheet.querySelectorAll('.fjs-tile').forEach((t) => { t.disabled = true; });
+    tile.querySelector('.fjs-tn').innerHTML = '<span class="rjs-spin"></span>Opening';
+    try {
+      const r = await call('/connect/finatic/session', Object.assign({ mode: 'dark', broker: brokerId }, S.userId ? { userId: S.userId } : {}));
+      S.sessionId = r.sessionId || '';
+      if (S.userId && !r.userId) { S.userId = ''; lsSet(''); }   // the saved user was gone: the new connection starts a new one
+      if (win && r.portalUrl) { win.opener = null; win.location.href = r.portalUrl; } else if (r.portalUrl) { location.href = r.portalUrl; return; }
+      S.step = 'wait'; draw();
+    } catch (e2) { if (win) win.close(); const notSet = e2.status === 503 && (!e2.code || e2.code === 'not_set_up'); drawStart(notSet ? '' : (e2.message || 'Could not start.')); if (notSet) drawNotSetUp(); }
+  }
   function drawStart(error) {
-    sheet.innerHTML = head('Broker sync') + err(error) +
-      (onConnected ? '<p class="rjs-lead">Connect your broker to see your accounts on the chart. Interactive Brokers, MetaTrader 4 and 5, NinjaTrader, Rithmic, tastytrade, Tradovate and Webull are supported. Live orders stay off until you enable live trading for your account. <a href="/help/connect-broker" target="_blank" rel="noopener">How to connect</a></p>'
-        : '<p class="rjs-lead">Pull your fills from a connected broker (Interactive Brokers, MetaTrader 4 or 5, NinjaTrader, Rithmic, tastytrade, Tradovate or Webull) into the journal. The journal only reads accounts and fills; it never places or changes an order. <a href="/help/connect-broker" target="_blank" rel="noopener">How to connect</a></p>') +
-      '<button type="button" class="rjs-go" id="fjs-connect">Connect a broker</button>' +
-      (S.userId ? '<button type="button" class="rjs-ghost" id="fjs-have">' + (portal ? 'Use the brokers already linked' : 'I already connected') + '</button>' : '') +
-      '<p class="rjs-fine">You sign in at your broker in a new tab. Your broker password is never typed into TradeZoro.</p>';
-    wireX();
-    q('#fjs-connect').addEventListener('click', async (e) => {
-      const btn = e.currentTarget; busy(btn, 'Opening');
-      const win = window.open('', '_blank');           // opened on the tap so pop-up blockers allow it
-      try {
-        const r = await call('/connect/finatic/session', Object.assign({ mode: 'dark' }, S.userId ? { userId: S.userId } : {}));
-        S.sessionId = r.sessionId || '';
-        if (S.userId && !r.userId) { S.userId = ''; lsSet(''); }   // the saved user was gone: the new connection starts a new one
-        if (win && r.portalUrl) { win.opener = null; win.location.href = r.portalUrl; } else if (r.portalUrl) { location.href = r.portalUrl; return; }
-        S.step = 'wait'; draw();
-      } catch (e2) { if (win) win.close(); const notSet = e2.status === 503 && (!e2.code || e2.code === 'not_set_up'); drawStart(notSet ? '' : (e2.message || 'Could not start.')); if (notSet) drawNotSetUp(); }
-    });
-    const have = q('#fjs-have'); if (have) have.addEventListener('click', loadAccounts);
+    if (!(S.accounts[0] && S.accounts[0].sync)) { S.accounts = []; S.lstate = 'loading'; }   // the server knows the member's connection, so always ask
+    sheet.innerHTML = head('Connect your broker', onConnected ? 'Trade and sync your accounts from the chart' : 'Pull your fills into the journal. Read only: it never places or changes an order.') + err(error) +
+      '<ul class="fjs-grid" aria-label="Brokers">' + BROKERS.map((b) => '<li><button type="button" class="fjs-tile" data-broker="' + b[0] + '">' + logo(b[1], true) + '<span class="fjs-tn">' + esc(b[1]) + '</span></button></li>').join('') + '</ul>' +
+      '<h3 class="fjs-h">Already linked</h3><div id="fjs-linked">' + linkedHtml() + '</div>' +
+      '<p class="fjs-trust">' + LOCK + '<span>You log in on your broker’s own page. We never see your password. <a href="/help/connect-broker" target="_blank" rel="noopener">How it works</a></span></p>' +
+      (onConnected ? '<p class="fjs-quiet">Live orders stay off until you <a href="/terms#broker-live" target="_blank" rel="noopener">turn on live trading</a>.</p>' : '');
+    wireX(); wireLinked();
+    sheet.querySelectorAll('.fjs-tile').forEach((t) => t.addEventListener('click', () => startConnect(t.dataset.broker, t)));
+    if (S.lstate !== 'ok') loadLinked();
   }
   function drawWait(error) {
     sheet.innerHTML = head('Finish connecting') + err(error) +
@@ -255,5 +339,5 @@ export function openBrokerSync({ uid, onConnected, portal, admin } = {}) {
 
   // Probe first: "Not set up yet" when the server key is missing.
   fetch('/connect/finatic/session?probe=1', { cache: 'no-store' }).then((r) => r.json().catch(() => ({}))).then((j) => { if (!(j && j.configured)) return drawNotSetUp(); draw(); if (S.userId && !portal) loadAccounts(); }).catch(() => drawStart(NET_MSG));
-  sheet.innerHTML = head('Broker sync') + '<p class="rjs-lead">Checking…</p>'; wireX();
+  sheet.innerHTML = head('Connect your broker') + '<p class="rjs-lead">Checking…</p>'; wireX();
 }

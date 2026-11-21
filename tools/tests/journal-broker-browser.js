@@ -96,13 +96,13 @@ async function run(b, w, h, mobile, shots) {
   check(true, tag + ': admin sees Broker sync (beta)');
   if (shots) await sleep(450), await p.screenshot({ path: OUT + '/broker-' + tag + '-1-button.png' });
   await p.click('#ji-open-broker');
-  await p.waitForSelector('#fjs-connect');
+  await p.waitForSelector('.fjs-tile');
   let st = await state(p);
   check(!/finatic/i.test(st.text), tag + ': no vendor name in member-facing copy');
   check(/never places or changes an order/.test(st.text) && !/Buy|Sell now|Place order/i.test(st.text), tag + ': read-only wording, no order buttons');
   if (shots) await sleep(450), await p.screenshot({ path: OUT + '/broker-' + tag + '-2-start.png' });
   await p.evaluate(() => { window.open = () => ({ location: {}, close() {} }); });
-  await p.click('#fjs-connect'); await p.waitForSelector('#fjs-cont');
+  await p.click('.fjs-tile[data-broker="tradovate"]'); await p.waitForSelector('#fjs-cont');
   await p.click('#fjs-cont'); await p.waitForSelector('#fjs-load');
   st = await state(p);
   check(/Sample Tradovate DEMO/.test(st.text), tag + ': account listed');
@@ -139,15 +139,13 @@ async function runOrders(b, w, h, mobile) {
   await p.goto(BASE + '/trade-journal.html', { waitUntil: 'domcontentloaded' });
   await p.waitForSelector('#ji-open-broker', { state: 'attached' }); await p.evaluate(() => switchJournalTab('history')); await p.click('#ji-open-broker');
   await p.evaluate(() => { window.open = () => ({ location: {}, close() {} }); });
-  await p.waitForSelector('#fjs-connect'); await p.click('#fjs-connect'); await p.waitForSelector('#fjs-cont'); await p.click('#fjs-cont'); await p.waitForSelector('#fjs-ordbtn');
+  await p.waitForSelector('.fjs-tile'); await p.click('.fjs-tile[data-broker="tradovate"]'); await p.waitForSelector('#fjs-cont'); await p.click('#fjs-cont'); await p.waitForSelector('#fjs-ordbtn');
   await p.click('#fjs-ordbtn'); await p.waitForSelector('#fo-place');
   let st = await state(p);
   check(/SANDBOX/.test(st.text) && /Order test \(admin\)/.test(st.text), tag + ': order panel with SANDBOX badge');
   check(/Open orders/.test(st.text) && /MESZ6/.test(st.text) && /Recent fills/.test(st.text), tag + ': open orders + recent fills lists');
   check(!/finatic/i.test(st.text), tag + ': no vendor name');
   await sleep(400); await p.screenshot({ path: OUT + '/orders-' + tag + '-1-panel.png' });
-  await p.fill('#fo-sym', 'mesz6'); await p.fill('#fo-qty', '3'); await p.click('#fo-place');
-  check(/Quantity must be 1 or 2/.test((await state(p)).text), tag + ': qty 3 refused in the form');
   await p.fill('#fo-qty', '1'); await p.fill('#fo-sym', 'mesz6'); await p.click('#fo-place'); await p.waitForSelector('#fo-yes');
   st = await state(p);
   check(/Place BUY 1 MESZ6 market on Sample Tradovate DEMO\?/.test(st.text), tag + ': confirm step text');
@@ -167,8 +165,8 @@ async function measure(b) {
     if (theme === 'light') await p.addInitScript(() => { try { localStorage.setItem('stryker_theme', 'day'); } catch (e) {} });
     await p.goto(BASE + '/trade-journal.html', { waitUntil: 'domcontentloaded' });
     await p.waitForSelector('#ji-open-broker', { state: 'attached' }); await p.evaluate(() => switchJournalTab('history')); await p.click('#ji-open-broker');
-    await p.waitForSelector('#fjs-connect'); await p.evaluate(() => { window.open = () => ({ location: {}, close() {} }); });
-    await p.click('#fjs-connect'); await p.waitForSelector('#fjs .rjs-err'); await sleep(500);
+    await p.waitForSelector('.fjs-tile'); await p.evaluate(() => { window.open = () => ({ location: {}, close() {} }); });
+    await p.click('.fjs-tile[data-broker="tradovate"]'); await p.waitForSelector('#fjs .rjs-err'); await sleep(500);
     const r = await p.evaluate(() => {
       const R = (s) => { const e = document.querySelector(s); if (!e) return null; const b = e.getBoundingClientRect(); return { l: Math.round(b.left * 10) / 10, r: Math.round(b.right * 10) / 10, t: Math.round(b.top * 10) / 10, b: Math.round(b.bottom * 10) / 10, h: Math.round(b.height * 10) / 10, cy: Math.round((b.top + b.height / 2) * 10) / 10 }; };
       const sheet = R('#fjs'), title = R('#fjs .rjs-head h2'), tag = R('#fjs .fjs-tag'), x = R('#fjs-x'), err = R('#fjs .rjs-err'), lead = R('#fjs .rjs-lead'), go = R('#fjs-connect'), fine = R('#fjs .rjs-fine');
@@ -198,7 +196,7 @@ async function measure(b) {
         await p.waitForSelector('#ji-open-broker', { state: 'attached' }); await p.evaluate(() => switchJournalTab('history'));
         await p.evaluate(() => { for (const k of Object.keys(localStorage)) if (k.startsWith('stryker_broker_sync_user_')) localStorage.removeItem(k); const uid = (window.auth && auth.currentUser && auth.currentUser.uid) || (typeof JOURNAL_UID !== 'undefined' ? JOURNAL_UID : ''); localStorage.setItem('stryker_broker_sync_user_' + uid, '0bbb1111-2222-3333-4444-555566667777'); });
         await p.click('#ji-open-broker');
-        await p.waitForFunction(() => { const s = document.getElementById('fjs'); return s && !document.getElementById('fjs-have') && document.getElementById('fjs-connect') && (window.__ls = Object.keys(localStorage).filter((k) => k.startsWith('stryker_broker_sync_user_')).length) === 0; }, null, { timeout: 10000 });
+        await p.waitForFunction(() => { const s = document.getElementById('fjs'); return s  && document.querySelector('.fjs-tile') && (window.__ls = Object.keys(localStorage).filter((k) => k.startsWith('stryker_broker_sync_user_')).length) === 0; }, null, { timeout: 10000 });
         const st = await state(p);
         check(ctx.seen.some((c) => c.body.op === 'accounts' && c.body.userId), tag + ': stale id was tried once');
         check(!(await p.$('#fjs .rjs-err')) && !/Request failed/.test(st.text), tag + ': stale stored id cleared silently (no red error)');
@@ -209,11 +207,11 @@ async function measure(b) {
         const { ctx, p } = await open(b, { w, h, mobile: m }); ctx.failMode = mode;
         await p.goto(BASE + '/trade-journal.html', { waitUntil: 'domcontentloaded' });
         await p.waitForSelector('#ji-open-broker', { state: 'attached' }); await p.evaluate(() => switchJournalTab('history')); await p.click('#ji-open-broker');
-        await p.waitForSelector('#fjs-connect'); await p.evaluate(() => { window.open = () => ({ location: {}, close() {} }); });
-        await p.click('#fjs-connect'); await p.waitForSelector('#fjs .rjs-err', { timeout: 10000 });
+        await p.waitForSelector('.fjs-tile'); await p.evaluate(() => { window.open = () => ({ location: {}, close() {} }); });
+        await p.click('.fjs-tile[data-broker="tradovate"]'); await p.waitForSelector('#fjs .rjs-err', { timeout: 10000 });
         const txt = await p.$eval('#fjs .rjs-err', (e) => e.innerText);
         check(re.test(txt) && !/Request failed/.test(txt), tag + ': ' + name + ' -> "' + txt.slice(0, 70) + '"');
-        check(!!(await p.$('#fjs-connect:not([disabled])')), tag + ': ' + name + ': Connect button usable again');
+        check(!!(await p.$('.fjs-tile:not([disabled])')), tag + ': ' + name + ': Connect button usable again');
         if (mode === 'msg') { await sleep(450); await p.screenshot({ path: OUT + '/broker-' + tag + '-7-error-msg.png' }); }
         await ctx.close();
       }

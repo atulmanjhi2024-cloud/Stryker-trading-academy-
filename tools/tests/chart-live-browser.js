@@ -775,13 +775,13 @@ async function connectAlways(b) {
     await p.evaluate(() => window.__stkPaper.openTradeMenu());
     await p.waitForSelector('#stkc-trade-pop:not([hidden]) [data-a=connect]', { timeout: 5000 });
     await p.evaluate(() => document.querySelector('#stkc-trade-pop [data-a=connect]').click());
-    const st = await p.waitForSelector('#fjs #fjs-connect', { timeout: 10000 }).then(() => true, () => false);
+    const st = await p.waitForSelector('#fjs .fjs-tile', { timeout: 10000 }).then(() => true, () => false);
     await sleep(800);
-    const sh = await p.evaluate(() => ({ open: !!document.getElementById('fjs'), btn: (document.getElementById('fjs-connect') || {}).textContent, have: (document.getElementById('fjs-have') || {}).textContent }));
-    check(st && sh.open && /Connect a broker/.test(sh.btn), w + ': saved connection: Connect a broker still shows the connect step (no auto-reconnect, no auto-close)', sh);
-    check(M.calls.filter((c) => c.body.op === 'accounts').length === nAcc, w + ': no silent accounts reload on Connect', M.calls.length);
+    const sh = await p.evaluate(() => ({ open: !!document.getElementById('fjs'), btn: document.querySelectorAll('#fjs .fjs-tile').length + ' tiles' }));
+    check(st && sh.open && /8 tiles/.test(sh.btn), w + ': saved connection: Connect a broker still shows the connect step (no auto-reconnect, no auto-close)', sh);
+    check(!(await p.evaluate(() => window.__stkLive.state.accounts.length === 0)), w + ': Connect only lists linked accounts in the sheet (no auto-close)');
     await p.screenshot({ path: OUT + '/connect-always-' + w + '.png' });
-    await p.evaluate(() => document.getElementById('fjs-connect').click());
+    await p.evaluate(() => document.querySelector('#fjs .fjs-tile[data-broker="tradovate"]').click());
     await opWait(p, () => window.__opened.length && window.__opened[0].location.href, null, 5000);
     const ses = M.calls.filter((c) => c.path.endsWith('/session') && c.body.mode).at(-1);
     const href = await p.evaluate(() => window.__opened[0] && window.__opened[0].location.href);

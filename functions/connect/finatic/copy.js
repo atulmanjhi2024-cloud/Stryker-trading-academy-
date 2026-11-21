@@ -45,6 +45,8 @@ async function run(request, env, deps) {
   if (request.method !== 'POST') return methodNotAllowed('POST');
   const g = await gate(request, env, deps, 'finatic-copy');
   if (g instanceof Response) return g;
+  // ADMIN ONLY (Owner 21 Nov: "Only enable copytrading for admin for now, let me first test it")
+  if (!g.admin) return fail(403, 'Copy trading is not available yet.', 'copy_admin_only');
   const b = await readBody(request);
   if (!b || typeof b !== 'object') return fail(400, 'Bad request');
   const op = b.op;

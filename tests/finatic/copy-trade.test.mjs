@@ -42,7 +42,9 @@ const { privateKey, publicKey } = generateKeyPairSync('rsa', { modulusLength: 20
 const b64 = (o) => Buffer.from(JSON.stringify(o)).toString('base64url');
 const token = (uid) => { const now = Math.floor(Date.now() / 1000); const h = b64({ alg: 'RS256', kid: 'k1' }), p = b64({ iss: 'https://securetoken.google.com/strykertrades-e0cd8', aud: 'strykertrades-e0cd8', sub: uid, iat: now - 5, exp: now + 3000 }); return h + '.' + p + '.' + createSign('RSA-SHA256').update(h + '.' + p).sign(privateKey).toString('base64url'); };
 const jwk = { ...publicKey.export({ format: 'jwk' }), kid: 'k1', alg: 'RS256', use: 'sig' };
-const verifyFetch = async (url) => (String(url).includes('jwk/securetoken') ? new Response(JSON.stringify({ keys: [jwk] })) : new Response('{}', { status: 404 }));
+// copy trading is ADMIN ONLY (Owner 21 Nov): memberA/memberB are admins here; 'outsider' is not
+const ADMINS = new Set(['memberA', 'memberB']);
+const verifyFetch = async (url) => { const u = String(url); if (u.includes('jwk/securetoken')) return new Response(JSON.stringify({ keys: [jwk] })); const m = u.match(/documents\/admins\/([^?]+)/); if (m && ADMINS.has(decodeURIComponent(m[1]))) return new Response(JSON.stringify({ name: 'x', fields: {} })); return new Response('{}', { status: 404 }); };
 
 // member A: three accounts (leader + two followers); member B: one account (Sample data)
 const UA = '0aaa1111-2222-3333-4444-555566667777', UB = '0bbb1111-2222-3333-4444-555566667777';
@@ -173,3 +175,6 @@ B.calls.length = 0;
 r = await go({ op: 'flattenAll', symbol: 'NQZ6', idemKey: key() });
 assert.equal(r.status, 200); assert.equal(r.j.copy.results.length, 3); assert.equal(r.j.copy.results.find((x) => x.id === 'paper').paper.op, 'flatten');
 console.log('copy-trade tests: all passed');
+
+// ADMIN ONLY gate: a signed-in non-admin member gets 403 copy_admin_only
+{ const r = await go({ op: 'get' }, 'outsider'); assert.equal(r.status, 403); assert.equal(r.j.code || r.j.reason || r.j.error && 'x', r.j.code || r.j.reason || 'x'); assert.ok(JSON.stringify(r.j).includes('copy_admin_only'), 'non-admin refused'); console.log('ok admin-only gate'); }

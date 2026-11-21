@@ -94,7 +94,11 @@
   function loadData() {
     return fetch('/assets/help/help-data.json?v=' + encodeURIComponent(VER), { credentials: 'omit' })
       .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
-      .then(addZscriptHelp);
+      .then(addZscriptHelp)
+      .then(function (data) {   // hidden:true = page built but not public yet (never listed, searched or counted)
+        data.categories.forEach(function (c) { c.subs.forEach(function (s) { s.items = s.items.filter(function (it) { return !it.hidden; }); }); });
+        return data;
+      });
   }
   // Zscript help entries ship in their own file and appear only once the launch switch ZS_LIVE is true.
   function addZscriptHelp(data) {

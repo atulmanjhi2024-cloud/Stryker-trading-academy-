@@ -37,6 +37,8 @@ function abs(href) {
 }
 
 function build(data) {
+  // hidden:true = built but not public yet (broker guides): not in the JSON-LD, the list or the count
+  data.categories.forEach((c) => c.subs.forEach((s) => { s.items = s.items.filter((it) => !it.hidden); }));
   const items = [];
   data.categories.forEach((c) => c.subs.forEach((s) => s.items.forEach((it) => items.push(it))));
 

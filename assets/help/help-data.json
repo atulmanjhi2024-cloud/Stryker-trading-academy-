@@ -3926,6 +3926,161 @@
          "href": "/help/desktop-bridge"
         }
        ]
+      },
+      {
+       "id": "connect-broker",
+       "hidden": true,
+       "q": "Connect your broker: what it does, privacy and fixes",
+       "a": "<p>Connecting a broker links your trading account so TradeZoro can read your trades, positions and balance. You log in on the broker's own page, so TradeZoro never sees your broker password. Placing orders works only where it is switched on for you.</p>",
+       "tags": [
+        "broker",
+        "connect",
+        "sync",
+        "journal",
+        "disconnect",
+        "reconnect",
+        "balance"
+       ],
+       "related": [
+        "connect-broker-ibkr",
+        "connect-broker-ninjatrader",
+        "connect-broker-rithmic",
+        "connect-broker-tastytrade",
+        "connect-broker-tradovate",
+        "connect-broker-webull"
+       ],
+       "links": [
+        {
+         "label": "Connect your broker guide",
+         "href": "/help/connect-broker"
+        }
+       ]
+      },
+      {
+       "id": "connect-broker-ibkr",
+       "hidden": true,
+       "q": "How do I connect Interactive Brokers?",
+       "a": "<p>Step by step guide for Interactive Brokers: accounts that work, the login you need, what syncs and known limits.</p>",
+       "tags": [
+        "broker",
+        "connect",
+        "interactive brokers",
+        "sync"
+       ],
+       "related": [
+        "connect-broker"
+       ],
+       "links": [
+        {
+         "label": "Interactive Brokers guide",
+         "href": "/help/connect-broker-interactive-brokers"
+        }
+       ]
+      },
+      {
+       "id": "connect-broker-ninjatrader",
+       "hidden": true,
+       "q": "How do I connect NinjaTrader?",
+       "a": "<p>Step by step guide for NinjaTrader: accounts that work, the login you need, what syncs and known limits.</p>",
+       "tags": [
+        "broker",
+        "connect",
+        "ninjatrader",
+        "sync"
+       ],
+       "related": [
+        "connect-broker"
+       ],
+       "links": [
+        {
+         "label": "NinjaTrader guide",
+         "href": "/help/connect-broker-ninjatrader"
+        }
+       ]
+      },
+      {
+       "id": "connect-broker-rithmic",
+       "hidden": true,
+       "q": "How do I connect Rithmic?",
+       "a": "<p>Step by step guide for Rithmic: accounts that work, the login you need, what syncs and known limits.</p>",
+       "tags": [
+        "broker",
+        "connect",
+        "rithmic",
+        "sync"
+       ],
+       "related": [
+        "connect-broker"
+       ],
+       "links": [
+        {
+         "label": "Rithmic guide",
+         "href": "/help/connect-broker-rithmic"
+        }
+       ]
+      },
+      {
+       "id": "connect-broker-tastytrade",
+       "hidden": true,
+       "q": "How do I connect tastytrade?",
+       "a": "<p>Step by step guide for tastytrade: accounts that work, the login you need, what syncs and known limits.</p>",
+       "tags": [
+        "broker",
+        "connect",
+        "tastytrade",
+        "sync"
+       ],
+       "related": [
+        "connect-broker"
+       ],
+       "links": [
+        {
+         "label": "tastytrade guide",
+         "href": "/help/connect-broker-tastytrade"
+        }
+       ]
+      },
+      {
+       "id": "connect-broker-tradovate",
+       "hidden": true,
+       "q": "How do I connect Tradovate?",
+       "a": "<p>Step by step guide for Tradovate: accounts that work, the login you need, what syncs and known limits.</p>",
+       "tags": [
+        "broker",
+        "connect",
+        "tradovate",
+        "sync"
+       ],
+       "related": [
+        "connect-broker"
+       ],
+       "links": [
+        {
+         "label": "Tradovate guide",
+         "href": "/help/connect-broker-tradovate"
+        }
+       ]
+      },
+      {
+       "id": "connect-broker-webull",
+       "hidden": true,
+       "q": "How do I connect Webull?",
+       "a": "<p>Step by step guide for Webull: accounts that work, the login you need, what syncs and known limits.</p>",
+       "tags": [
+        "broker",
+        "connect",
+        "webull",
+        "sync"
+       ],
+       "related": [
+        "connect-broker"
+       ],
+       "links": [
+        {
+         "label": "Webull guide",
+         "href": "/help/connect-broker-webull"
+        }
+       ]
       }
      ]
     }

@@ -1,0 +1,212 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="stryker-build" content="1177">
+<meta name="robots" content="noindex,nofollow">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="description" content="Connect NinjaTrader: logins, steps, what syncs.">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="TradeZoro">
+<meta property="og:title" content="Connect NinjaTrader: step by step">
+<meta property="og:description" content="Connect NinjaTrader: logins, steps, what syncs.">
+<meta property="og:url" content="https://tradezoro.com/help/connect-broker-ninjatrader">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="Connect NinjaTrader: step by step">
+<meta name="twitter:description" content="Connect NinjaTrader: logins, steps, what syncs.">
+<meta name="theme-color" content="#050506">
+<title>Connect NinjaTrader: step by step | TradeZoro</title>
+<link rel="canonical" href="https://tradezoro.com/help/connect-broker-ninjatrader">
+<link rel="preload" href="/assets/fonts/archivo-latin-variable.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="/assets/fonts/archivo-tnum-latin-variable.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="/assets/style.css?v=1177">
+<link rel="stylesheet" href="/assets/nav-features.css?v=1177">
+<script src="/assets/sanitize.js?v=1177"></script>
+<script>
+// TradeZoro — device detection for forced views
+//
+// Loaded synchronously in <head>, before first paint, so the layout never
+// flashes from one mode to another. Stamps the html root element with data-device="mobile|
+// tablet|desktop">, which assets/style.css uses to FORCE the right shell
+// for the physical device instead of trusting viewport width alone:
+//
+//   - a phone held in landscape reports >900px and used to get the squeezed
+//     desktop sidebar; it now keeps the mobile drawer shell.
+//   - a tablet in portrait reports <900px and used to get the phone drawer;
+//     it now keeps a visible sidebar.
+//
+// Detection order matters: explicit mobile UAs first, then tablet UAs
+// (including iPadOS, which reports itself as a Mac but has multi-touch),
+// then a touch-screen heuristic to catch phones running in "Desktop site"
+// mode with a spoofed UA. Touch-screen laptops fall through to desktop
+// because their PRIMARY pointer is still fine (mouse/trackpad).
+
+(function () {
+  var ua = navigator.userAgent || '';
+  var touchPoints = navigator.maxTouchPoints || 0;
+  var coarsePrimary = !!(window.matchMedia && window.matchMedia('(pointer: coarse)').matches);
+  var iPadOS = /Macintosh/.test(ua) && touchPoints > 1;
+
+  var device;
+  if (/iPhone|iPod|Windows Phone|BlackBerry|Opera Mini/i.test(ua) ||
+      (/Android/i.test(ua) && /Mobile/i.test(ua))) {
+    device = 'mobile';
+  } else if (/iPad|Tablet|PlayBook|Silk/i.test(ua) || iPadOS ||
+      (/Android/i.test(ua) && !/Mobile/i.test(ua))) {
+    device = 'tablet';
+  } else if (coarsePrimary) {
+    // Touch-first device wearing a desktop UA ("Desktop site" checkbox).
+    // The shorter screen edge separates phones from tablets well enough.
+    var shortEdge = Math.min(window.screen.width || 0, window.screen.height || 0);
+    device = shortEdge && shortEdge < 620 ? 'mobile' : 'tablet';
+  } else {
+    device = 'desktop';
+  }
+
+  document.documentElement.setAttribute('data-device', device);
+})();
+</script>
+<script src="/assets/toast.js?v=1177" defer></script>
+<script src="/assets/version-check.js?v=1177" defer></script>
+<script src="/assets/cookie-notice.js?v=1177" defer></script>
+<script src="/assets/acquisition.js?v=1177" defer></script>
+<script src="/assets/focus-mode.js?v=1177" defer></script>
+<link rel="manifest" href="/manifest.json">
+<link rel="icon" type="image/x-icon" href="/assets/images/tradezoro-favicon-32-494.png?v=1177">
+<link rel="icon" type="image/png" sizes="32x32" href="/assets/images/tradezoro-favicon-32-494.png?v=1177">
+<link rel="icon" type="image/png" sizes="16x16" href="/assets/images/tradezoro-favicon-16-494.png?v=1177">
+<link rel="apple-touch-icon" sizes="180x180" href="/assets/images/tradezoro-apple-touch-icon-494.png?v=1177">
+<link rel="icon" type="image/png" sizes="192x192" href="/assets/images/tradezoro-icon-192-494.png?v=1177">
+<script>try{var _t=localStorage.getItem('stryker_theme');if(_t==='day')document.documentElement.setAttribute('data-theme','light')}catch(e){}</script>
+<style>
+.bh-card{ border:1px solid var(--line,#2c2c32); border-radius:12px; padding:16px; margin:0 0 20px; background:var(--bg-2,rgba(255,255,255,.03)); }
+.bh-card ul{ margin:8px 0 0; }
+.bh-warn{ border-color:rgba(255,176,32,.6); background:rgba(255,176,32,.09); }
+:root[data-theme="light"] .bh-warn{ border-color:rgba(176,112,0,.6); background:rgba(176,112,0,.08); }
+.bh-small{ font-size:13px; line-height:20px; color:var(--ink-2,#8b93a0); margin:8px 0 0; }
+.bh code{ font-family:var(--font-code); font-size:.9em; overflow-wrap:anywhere; }
+.bh-path{ display:flex; flex-wrap:wrap; align-items:center; gap:8px; list-style:none; margin:0 0 20px; padding:0; }
+.bh-path li{ display:inline-flex; align-items:center; min-height:32px; padding:0 12px; border:1px solid var(--line,#2c2c32); border-radius:999px; background:var(--bg-2,rgba(255,255,255,.04)); font-size:14px; line-height:20px; font-variant-numeric:tabular-nums; }
+.bh-path li+li::before{ content:"\203A"; margin:0 8px 0 -4px; color:var(--ink-2,#8b93a0); }
+.bh-grid{ display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:16px; margin:0 0 24px; }
+.bh-grid a{ display:flex; flex-direction:column; justify-content:flex-start; gap:4px; min-height:88px; padding:16px; border:1px solid var(--line,#2c2c32); border-radius:12px; background:var(--bg-2,rgba(255,255,255,.03)); text-decoration:none; color:inherit; }
+.bh-grid a:hover,.bh-grid a:focus-visible{ border-color:var(--accent,#7aa2ff); }
+.bh-grid b{ font-size:16px; line-height:24px; } .bh-grid span{ font-size:13px; line-height:20px; color:var(--ink-2,#8b93a0); }
+.bh-tbl{ width:100%; border-collapse:collapse; margin:0 0 20px; font-size:14px; line-height:20px; }
+.bh-tbl th,.bh-tbl td{ text-align:left; vertical-align:top; padding:10px 12px; border-bottom:1px solid var(--line,#2c2c32); }
+.bh-tblw{ overflow-x:auto; margin:0 0 20px; } .bh-tblw .bh-tbl{ margin:0; min-width:520px; }
+</style>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+
+<nav class="nav" id="site-nav">
+  <div class="nav-inner">
+    <a href="/" class="brand">
+      <picture><source media="(max-width:767px)" srcset="/assets/images/tradezoro-tzmark-1014-144.webp" type="image/webp" width="144" height="144"><source srcset="/assets/images/tradezoro-wordmark-1014-192.webp" type="image/webp"><img class="brand-mark" src="/assets/images/tradezoro-wordmark-1014-192.png" alt="TradeZoro" width="273" height="64"></picture>
+    </a>
+    <div class="nav-links">
+      <a href="/features">Features</a>
+      <a href="/features/community">Community</a>
+      <a href="/#faq">FAQ</a>
+      <a href="/help">Help</a>
+    </div>
+    <div class="nav-cta">
+      <a href="/login" class="btn btn-ghost btn-sm">Log in</a>
+      <a href="/signup" class="btn btn-primary btn-sm">Start learning</a>
+      <button class="nav-toggle" aria-label="Menu">☰</button>
+    </div>
+  </div>
+</nav>
+<main id="main" tabindex="-1">
+<header class="site-page-hero"><div class="container"><h1 id="site-page-title">Connect NinjaTrader: step by step</h1>
+<span class="updated-note">Beta · Last updated 21 November 2026</span></div></header>
+<div class="container"><div class="article-wrap"><div class="article-body bh">
+<p>This guide connects <strong>NinjaTrader</strong> to TradeZoro. Read the <a href="/help/connect-broker">Connect your broker</a> guide first if you want the big picture.</p>
+<div class="bh-card"><strong>What you need</strong><ul><li>your <strong>NinjaTrader</strong> account login. You sign in on NinjaTrader’s own page and approve access (an OAuth sign-in).</li><li>The accounts you want to share, ready at NinjaTrader.</li><li>Pop-ups allowed for TradeZoro (the sign-in opens in a new tab).</li></ul></div>
+<h2 id="accounts">Accounts that work</h2><ul><li>NinjaTrader brokerage accounts, <strong>live</strong> and <strong>sim</strong>, that your NinjaTrader login can see.</li><li>Futures and other products NinjaTrader lists for the account.</li><li>Prop firm accounts that sit on the NinjaTrader platform and log in with NinjaTrader credentials may show up. If your firm gave you a Rithmic login instead, use the Rithmic guide.</li></ul><p><strong>This is not the Data Bridge.</strong> The <a href="/help/desktop-bridge">Data Bridge</a> add-on only sends prices to a chart. Connecting a broker reads your account, positions, balance and fills.</p>
+<h2 id="steps">Step by step</h2>
+<ol class="bh-path" aria-label="The steps in TradeZoro"><li>Charts</li><li>Trade menu</li><li>Connect a broker</li><li>Pick your broker</li><li>Log in</li><li>Choose accounts</li><li>Done</li></ol>
+<ol><li>Open a chart and click <strong>Trade</strong>, then <strong>Connect a broker</strong> at the bottom of the menu. (Journal: <strong>Broker sync (beta)</strong>.)</li>
+<li>In the connect window click <strong>Connect a broker</strong>. A new tab opens.</li>
+<li>Open the connect window and pick <strong>NinjaTrader</strong>.</li><li>A NinjaTrader sign-in page opens. Log in with your NinjaTrader username and password there.</li><li>Approve access when NinjaTrader asks, then choose the accounts to share.</li>
+<li>Go back to the TradeZoro tab and click <strong>Continue</strong>. Your NinjaTrader accounts show in the Trade menu.</li>
+<li>Journal only: pick the account and dates, click <strong>Load trades</strong>, check the preview, then <strong>Import</strong>.</li></ol>
+<h2 id="syncs">What syncs</h2><p>Accounts, balance, positions, orders and fills. The connection service lists order placing as supported for NinjaTrader; in TradeZoro it only works where it has been switched on for you.</p>
+<h2 id="limits">Known limits</h2><ul><li>If your account list is empty, the login you used has no account the connection can read.</li><li>Balance can be a little behind NinjaTrader (see Troubleshooting in the hub).</li></ul>
+<h2 id="disconnect">Disconnect</h2><p>Trade menu, gear on the account, <strong>Disconnect</strong>, confirm. Imported journal trades stay. You can also remove access in NinjaTrader’s own settings.</p>
+<h2 id="faq">FAQ</h2><h3>Which login do I use?</h3><p>The same one you use at NinjaTrader’s own site or platform.</p><h3>My prop firm gave me a NinjaTrader login. Does it work?</h3><p>Try it. If the sign-in page rejects it, ask your firm which platform login it is.</p>
+<h3>Something went wrong. Where do I look?</h3><p>See Troubleshooting in <a href="/help/connect-broker#fix">Connect your broker</a>. If you get “no clear answer from the broker”, check your working orders at NinjaTrader before you send anything again.</p>
+<p class="bh-small">Other brokers: <a href="/help/connect-broker-interactive-brokers">Interactive Brokers</a> · <a href="/help/connect-broker-rithmic">Rithmic</a> · <a href="/help/connect-broker-tastytrade">tastytrade</a> · <a href="/help/connect-broker-tradovate">Tradovate</a> · <a href="/help/connect-broker-webull">Webull</a></p>
+<p class="bh-small">Education only. Not financial advice. Beta: broker connections are being rolled out step by step.</p>
+</div></div></div>
+</main>
+<footer>
+  <div class="container">
+    <div class="footer-grid">
+      <div>
+        <a href="/" class="brand" style="margin-bottom:14px;">
+          <picture><source media="(max-width:767px)" srcset="/assets/images/tradezoro-tzmark-1014-144.webp" type="image/webp" width="144" height="144"><source srcset="/assets/images/tradezoro-wordmark-1014-144.webp" type="image/webp"><img class="brand-mark" src="/assets/images/tradezoro-wordmark-1014-144.png" alt="TradeZoro" width="205" height="48"></picture>
+        </a>
+        <p style="color:var(--ink-3); font-size:13.5px; max-width:280px;">Chapter-based ICT and SMT trading education, built like a trading desk curriculum.</p>
+      </div>
+      <div>
+        <h5>Mentis</h5>
+        <a href="/academy">Mentis home</a>
+        <a href="/features">All features</a>
+        <a href="/courses">Full curriculum</a>
+        <a href="/#concepts">ICT / SMT glossary</a>
+        <a href="/learn">Mentis articles</a>
+      </div>
+      <div>
+        <h5>Account</h5>
+        <a href="/login">Log in</a>
+        <a href="/signup">Create account</a>
+        <a href="/dashboard-user">Student dashboard</a>
+      </div>
+      <div>
+        <h5>Company</h5>
+        <a href="/about">About TradeZoro</a>
+        <a href="/traders-for-traders">Traders for Traders</a>
+        <a href="/help">Help Center</a>
+        <a href="/suggestions">Suggestions</a>
+        <a href="/creators">Creator Hub</a>
+        <a href="https://discord.gg/M4d4gTr5c3" target="_blank" rel="noopener">Get help on Discord</a>
+        <a href="/contact">Contact us</a>
+        <a href="mailto:support@tradezoro.com">support@tradezoro.com</a>
+        <a href="/terms">Terms &amp; Risk Disclosure</a>
+      </div>
+    </div>
+    <div class="footer-bottom">
+      <span>© 2026 TradeZoro LLC. All rights reserved.</span>
+      <span>Made for traders who read the tape.</span>
+    </div>
+    <div class="footer-legal-row">
+      <a href="/privacy">Privacy Policy</a>
+      <a href="/cookies">Cookie Policy</a>
+      <a href="/gdpr">GDPR</a>
+      <a href="/refund-policy">Refund Policy</a>
+      <a href="/market-data-terms">Market Data Terms</a>
+      <a href="/terms#third-party-notices">Third-party notices</a>
+    </div>
+    <p class="risk-disclaimer">Trading foreign exchange, indices, and commodities carries a high level of risk and may not be suitable for all investors. TradeZoro is an educational service only and does not provide financial advice or manage client funds. Past performance shown in course materials is illustrative and not indicative of future results.</p>
+  </div>
+</footer>
+
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
+<script src="/assets/nav-features.js?v=1177" defer></script>
+<script src="/assets/main.js?v=1177"></script>
+<script src="/assets/auth.js?v=1177"></script>
+<script src="/assets/progress.js?v=1177"></script>
+<script src="/assets/activity-log.js?v=1177"></script>
+<script src="/assets/banned-check.js?v=1177"></script>
+<script src="/assets/email-verify.js?v=1177"></script>
+<script src="/assets/profiles-sync.js?v=1177"></script>
+<script src="/assets/loading-animation.js?v=1177"></script>
+<script src="/assets/branding.js?v=1177"></script>
+<script src="/assets/seo.js?v=1177"></script>
+<script src="/assets/theme.js?v=1177"></script>
+</body>
+</html>

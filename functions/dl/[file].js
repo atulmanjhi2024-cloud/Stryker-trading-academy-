@@ -1,10 +1,11 @@
 // Fast desktop download (Owner 14 Nov "github download is slow"): /dl/TradeZoro-Setup.exe and /dl/TradeZoro-Portable.exe.
 // Streams the latest GitHub release asset through Cloudflare and caches it at the edge for a day, so after the first
-// download in a region every member gets it from Cloudflare's network instead of GitHub. Only the two known file names.
+// download in a region every member gets it from Cloudflare's network instead of GitHub. Only the known file names (Windows exe, Mac dmg/zip per chip, Linux AppImage/deb).
 // The edge cache key carries the release tag (/dl/desktop-v1.0.1/<file>), so publishing a new release serves the new
 // exe within LATEST_TTL_S (5 min) instead of the old one for up to a day. The tag comes from github.com's own
 // /releases/latest redirect (no API rate limit), itself cached for LATEST_TTL_S. Tests: tools/tests/dl-cache.test.mjs.
-const FILES = new Set(['TradeZoro-Setup.exe', 'TradeZoro-Portable.exe']);
+const FILES = new Set(['TradeZoro-Setup.exe', 'TradeZoro-Portable.exe', 'TradeZoro-mac-arm64.dmg', 'TradeZoro-mac-x64.dmg', 'TradeZoro-mac-arm64.zip', 'TradeZoro-mac-x64.zip',
+  'TradeZoro-linux-x64.AppImage', 'TradeZoro-linux-x64.deb']);
 const REPO = 'theelitegrey/Stryker-trading-academy-';
 const LATEST_TTL_S = 300;
 const TAG_RE = /^desktop-v\d+\.\d+\.\d+$/;
@@ -40,7 +41,7 @@ export async function serve({ params, request, waitUntil }, deps = {}) {
   const up = await fetchImpl(src, tag ? { redirect: 'follow', cf: { cacheEverything: true, cacheTtl: 86400 } } : { redirect: 'follow' });
   if (!up.ok || !up.body) return Response.redirect(src, 302);
   const h = new Headers();
-  h.set('Content-Type', 'application/vnd.microsoft.portable-executable');
+  h.set('Content-Type', name.endsWith('.dmg') ? 'application/x-apple-diskimage' : name.endsWith('.zip') ? 'application/zip' : name.endsWith('.deb') ? 'application/vnd.debian.binary-package' : name.endsWith('.AppImage') ? 'application/octet-stream' : 'application/vnd.microsoft.portable-executable');
   h.set('Content-Disposition', `attachment; filename="${name}"`);
   h.set('Cache-Control', `public, max-age=${LATEST_TTL_S}, s-maxage=86400`);
   if (tag) h.set('X-TZ-Release', tag);

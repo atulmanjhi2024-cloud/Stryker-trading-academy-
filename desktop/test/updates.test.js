@@ -41,3 +41,10 @@ test('banner: below minVersion blocks, even after X', () => {
   assert.strictEqual(s.kind, 'block'); assert.strictEqual(s.ready, false);
   assert.strictEqual(U.bannerState({ installed: '0.9.0', manifest: M, ready: '1.1.0', dismissed: '1.1.0' }).ready, true);
 });
+
+test('banner: macOS available (no silent install)', () => {
+  const s = U.bannerState({ installed: '1.0.1', manifest: M, ready: null, available: '1.1.0' });
+  assert.strictEqual(s.kind, 'available'); assert.strictEqual(s.ready, false); assert.strictEqual(s.canInstall, false);
+  assert.strictEqual(U.bannerState({ installed: '1.1.0', manifest: M, available: '1.1.0' }), null);
+  assert.strictEqual(U.bannerState({ installed: '1.0.1', manifest: M, available: '1.1.0', dismissed: '1.1.0' }), null);
+});

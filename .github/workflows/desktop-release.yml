@@ -28,6 +28,7 @@ concurrency:
 
 jobs:
   build:
+    if: github.ref_type == 'tag' || github.event_name == 'workflow_dispatch'
     runs-on: windows-latest
     timeout-minutes: 30
     env:
@@ -115,3 +116,165 @@ jobs:
           if [ "$DRAFT" = "true" ]; then MODE="--draft"; else MODE="--latest"; fi
           gh release create "$TAG" dist/TradeZoro-Setup.exe dist/TradeZoro-Setup.exe.blockmap dist/TradeZoro-Portable.exe dist/latest.yml dist/SHA256SUMS.txt \
             --title "TradeZoro for Windows $VER" --notes-file notes.md --target "$GITHUB_SHA" $MODE
+
+  # macOS (Beta): separate Apple silicon (arm64) and Intel (x64) .dmg + .zip, AD-HOC signed (no Apple Developer account
+  # yet, so no notarization; members right-click > Open once). Attached to the SAME release the Windows job created.
+  # electron-updater cannot install on Mac without a real signature, so the app only shows "New version available".
+  mac:
+    needs: [build]
+    if: always() && (needs.build.result == 'success' || needs.build.result == 'skipped')
+    runs-on: macos-latest
+    timeout-minutes: 40
+    env:
+      TAG: ${{ github.event.inputs.tag || github.ref_name }}
+    defaults:
+      run:
+        shell: bash
+        working-directory: desktop
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+
+      - name: Version from tag
+        run: |
+          VER="${TAG#desktop-v}"
+          echo "$VER" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$' || { echo "tag must look like desktop-v1.2.3, got $TAG"; exit 1; }
+          npm version "$VER" --no-git-tag-version --allow-same-version
+          echo "VER=$VER" >> "$GITHUB_ENV"
+
+      - run: npm ci
+      - run: npm test
+
+      - name: Build dmg + zip for Apple silicon and Intel (ad-hoc signed)
+        run: npx electron-builder --mac dmg zip --arm64 --x64 --publish never
+
+      - name: Check the builds (files, ad-hoc signature, launch)
+        run: |
+          ls -l dist
+          for A in arm64 x64; do
+            test -s dist/TradeZoro-mac-$A.dmg
+            test -s dist/TradeZoro-mac-$A.zip
+          done
+          test -s dist/latest-mac.yml
+          grep -q "version: $VER" dist/latest-mac.yml
+          check() {  # $1 = app dir, $2 = expected arch
+            APP="$1/TradeZoro.app"
+            lipo -archs "$APP/Contents/MacOS/TradeZoro" | tee arch.txt
+            grep -qx "$2" arch.txt
+            codesign -dv --verbose=2 "$APP" 2>&1 | tee sig.txt
+            grep -q 'Signature=adhoc' sig.txt
+            codesign --verify --deep --strict "$APP"
+          }
+          check dist/mac-arm64 arm64
+          check dist/mac x86_64
+          # Launch smoke test (runner is Apple silicon): --version must print the version and exit.
+          OUT=$(dist/mac-arm64/TradeZoro.app/Contents/MacOS/TradeZoro --version --no-sandbox 2>&1 | tail -1)
+          echo "version output: $OUT"; test "$OUT" = "$VER"
+          # And the app must stay up for 15 s.
+          dist/mac-arm64/TradeZoro.app/Contents/MacOS/TradeZoro --no-sandbox >launch.log 2>&1 &
+          PID=$!
+          sleep 15
+          kill -0 "$PID" && echo "LAUNCH OK (pid $PID still running after 15 s)" || { cat launch.log; exit 1; }
+          kill "$PID" || true
+          cd dist && shasum -a 256 TradeZoro-mac-arm64.dmg TradeZoro-mac-arm64.zip TradeZoro-mac-x64.dmg TradeZoro-mac-x64.zip | tee SHA256SUMS-mac.txt
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: tradezoro-mac-${{ env.VER }}
+          path: |
+            desktop/dist/TradeZoro-mac-*.dmg
+            desktop/dist/TradeZoro-mac-*.zip
+            desktop/dist/latest-mac.yml
+            desktop/dist/SHA256SUMS-mac.txt
+          if-no-files-found: error
+
+      - name: Attach to the desktop release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cd dist
+          # Add the Mac lines to SHA256SUMS.txt (never touches the Windows files themselves).
+          gh release download "$TAG" -p SHA256SUMS.txt -O SHA256SUMS.txt --clobber -R "$GITHUB_REPOSITORY" || : > SHA256SUMS.txt
+          grep -v 'TradeZoro-mac-' SHA256SUMS.txt > S.tmp || true
+          cat S.tmp SHA256SUMS-mac.txt > SHA256SUMS.txt
+          gh release upload "$TAG" TradeZoro-mac-*.dmg TradeZoro-mac-*.zip latest-mac.yml SHA256SUMS.txt --clobber -R "$GITHUB_REPOSITORY"
+
+  # Linux (Beta): AppImage (self-updating) and .deb (update banner with a Download button), x64.
+  # Runs after the Mac job so the two never write SHA256SUMS.txt at the same time.
+  linux:
+    needs: [build, mac]
+    if: always() && (needs.build.result == 'success' || needs.build.result == 'skipped') && needs.mac.result != 'cancelled'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      TAG: ${{ github.event.inputs.tag || github.ref_name }}
+    defaults:
+      run:
+        shell: bash
+        working-directory: desktop
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+
+      - name: Version from tag
+        run: |
+          VER="${TAG#desktop-v}"
+          echo "$VER" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$' || { echo "tag must look like desktop-v1.2.3, got $TAG"; exit 1; }
+          npm version "$VER" --no-git-tag-version --allow-same-version
+          echo "VER=$VER" >> "$GITHUB_ENV"
+
+      - run: npm ci
+      - run: npm test
+
+      - name: Build AppImage + deb (x64)
+        run: npx electron-builder --linux AppImage deb --x64 --publish never
+
+      - name: Check the builds (files, deb metadata, AppImage --version under xvfb)
+        run: |
+          ls -l dist
+          test -s dist/TradeZoro-linux-x64.AppImage
+          test -s dist/TradeZoro-linux-x64.deb
+          test -s dist/latest-linux.yml
+          grep -q "version: $VER" dist/latest-linux.yml
+          dpkg-deb -I dist/TradeZoro-linux-x64.deb | tee deb.txt
+          grep -q "Version: $VER" deb.txt
+          sudo apt-get update -qq && sudo apt-get install -y -qq xvfb libfuse2t64 >/dev/null
+          chmod +x dist/TradeZoro-linux-x64.AppImage
+          OUT=$(xvfb-run -a dist/TradeZoro-linux-x64.AppImage --version 2>&1 | tail -1)
+          echo "AppImage version output: $OUT"; test "$OUT" = "$VER"
+          # The .deb must install with apt and run (its chrome-sandbox helper is setuid).
+          sudo apt-get install -y -qq ./dist/TradeZoro-linux-x64.deb >/dev/null
+          OUT=$(xvfb-run -a tradezoro --version 2>&1 | tail -1)
+          echo "deb version output: $OUT"; test "$OUT" = "$VER"
+          cd dist && sha256sum TradeZoro-linux-x64.AppImage TradeZoro-linux-x64.deb | tee SHA256SUMS-linux.txt
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: tradezoro-linux-${{ env.VER }}
+          path: |
+            desktop/dist/TradeZoro-linux-x64.*
+            desktop/dist/latest-linux.yml
+            desktop/dist/SHA256SUMS-linux.txt
+          if-no-files-found: error
+
+      - name: Attach to the desktop release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cd dist
+          gh release download "$TAG" -p SHA256SUMS.txt -O SHA256SUMS.txt --clobber -R "$GITHUB_REPOSITORY" || : > SHA256SUMS.txt
+          grep -v 'TradeZoro-linux-' SHA256SUMS.txt > S.tmp || true
+          cat S.tmp SHA256SUMS-linux.txt > SHA256SUMS.txt
+          gh release upload "$TAG" TradeZoro-linux-x64.AppImage TradeZoro-linux-x64.deb latest-linux.yml SHA256SUMS.txt --clobber -R "$GITHUB_REPOSITORY"

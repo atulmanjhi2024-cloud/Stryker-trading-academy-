@@ -45,3 +45,10 @@ r = await run('TradeZoro-Portable.exe', { cache: c2, fetchImpl: async (u) => { i
 assert.equal(await r.text(), 'latest-fallback');
 assert.equal(c2.m.size, 0);
 console.log('dl cache tests: ok');
+
+// Linux + per-chip Mac files are served; the old universal name and unknown names are not.
+for (const f of ['TradeZoro-linux-x64.AppImage', 'TradeZoro-linux-x64.deb', 'TradeZoro-mac-arm64.dmg', 'TradeZoro-mac-x64.dmg']) {
+  r = await run(f, { cache: memCache(), fetchImpl }); assert.equal(r.status, 200, f);
+}
+assert.equal((await run('TradeZoro-linux-x64.rpm', { cache, fetchImpl })).status, 404);
+console.log('dl-cache linux/mac names ok');

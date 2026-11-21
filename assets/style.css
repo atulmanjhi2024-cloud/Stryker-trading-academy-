@@ -13395,7 +13395,7 @@ html .vela-dsp-lab{ flex-basis:120px; }
 .dl-menu > summary:focus-visible{ outline:2px solid var(--gold); outline-offset:2px; }
 .dl-menu .ci{ width:16px; height:16px; flex:none; fill:none; stroke:currentColor; stroke-width:1.75; stroke-linecap:round; stroke-linejoin:round; }
 .dl-menu .dl-chev{ transition:transform .2s; } .dl-menu[open] .dl-chev{ transform:rotate(180deg); }
-.dl-panel{ position:absolute; right:0; top:calc(100% + 8px); z-index:120; width:340px; padding:8px; border:1px solid var(--line); border-radius:16px; background:var(--bg-2); box-shadow:0 12px 32px rgba(0,0,0,.38); transform-origin:top right; animation:mh-in .14s ease-out; }
+.dl-panel{ position:absolute; right:0; top:calc(100% + 8px); z-index:120; width:340px; max-height:calc(100vh - 80px); overflow-y:auto; padding:8px; border:1px solid var(--line); border-radius:16px; background:var(--bg-2); box-shadow:0 12px 32px rgba(0,0,0,.38); transform-origin:top right; animation:mh-in .14s ease-out; }
 .dl-panel::before{ content:""; position:absolute; left:0; right:0; top:-8px; height:8px; }
 .dl-panel a, .dl-drawer a{ display:flex; align-items:center; gap:12px; padding:12px; border-radius:12px; color:var(--ink-0); }
 .dl-panel a:hover, .dl-drawer a:hover{ background:var(--bg-3); }
@@ -13410,6 +13410,8 @@ html .vela-dsp-lab{ flex-basis:120px; }
 .dl-panel b, .dl-drawer b{ display:block; font-size:14px; line-height:20px; font-weight:600; color:var(--ink-0); }
 .dl-panel a span, .dl-drawer a span{ display:block; font-size:12px; line-height:16px; color:var(--ink-2); }
 .dl-beta{ flex:none; font-style:normal; font-size:11px; line-height:16px; font-weight:600; letter-spacing:.02em; padding:1px 8px; border:1px solid var(--gold-dim); border-radius:999px; color:var(--gold); }
+.dl-grp{ margin:0; padding:8px 12px 4px; font-size:12px; line-height:16px; font-weight:600; color:var(--ink-2); text-transform:uppercase; letter-spacing:.06em; }
+.dl-grp:not(:first-child){ margin-top:4px; padding-top:12px; border-top:1px solid var(--line); }
 .dl-panel .dl-all{ margin-top:4px; padding:12px; border-top:1px solid var(--line); border-radius:0 0 12px 12px; font-size:13px; font-weight:600; color:var(--ink-1); justify-content:center; }
 .dl-drawer{ display:none; }
 @media (max-width:899px){

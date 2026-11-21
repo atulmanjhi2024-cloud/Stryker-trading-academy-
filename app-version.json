@@ -9,10 +9,10 @@
     "minVersionCode": 1
   },
   "windows": {
-    "version": "1.1.0",
-    "url": "/dl/TradeZoro-Setup.exe?r=1.1.0",
+    "version": "1.2.0",
+    "url": "/dl/TradeZoro-Setup.exe?r=1.2.0",
     "notes": [
-      "Update banner inside the app: restart to update in one click."
+      "Now also on macOS and Linux. Windows has no changes in this version."
     ],
     "minVersion": "1.0.0"
   }

@@ -101,3 +101,11 @@ Options (nothing has been bought):
 
 Once one is chosen: add the secrets to GitHub (never to the repo) and set `win.azureSignOptions` or
 `CSC_LINK`/`CSC_KEY_PASSWORD` in the workflow. Nothing else in the app changes.
+
+## Linux and per-chip Mac builds (22 Nov)
+
+Release job `linux` (ubuntu-latest) builds `TradeZoro-linux-x64.AppImage` and `.deb`; job `mac` builds `TradeZoro-mac-arm64` and
+`TradeZoro-mac-x64` (.dmg + .zip, ad-hoc signed). All attach to the same `desktop-v*` release, with SHA256 lines in `SHA256SUMS.txt`.
+CI runs `<app> --version` (xvfb on Linux) and checks the ad-hoc signature on Mac. Updates: Windows and AppImage install themselves
+(electron-updater); Mac and the .deb show "New version available" with a Download button. Site menu + page: `python3 tools/gen-dl-menu.py`.
+Test locally: `cd desktop && npm run dist:linux`.

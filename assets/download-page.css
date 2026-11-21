@@ -191,3 +191,22 @@ html.dp-js .dp-rv.in{ opacity:1; transform:none; }
 .dp-cmp thead th{ text-transform:none; letter-spacing:0; }
 .dp-ui .dp-paper{ margin:12px 0 0; font-size:12px; line-height:16px; }
 .dp-ui .dp-synced{ margin:12px 0 0; }
+
+/* Desktop / Phone groups (Owner 22 Nov): every platform file, text labels and neutral glyphs only. */
+.dp-grp{ margin:0 0 24px; }
+.dp-grp-h{ display:flex; align-items:center; justify-content:center; gap:8px; margin:0 0 12px; font-size:13px; line-height:18px; font-weight:600; letter-spacing:.06em; text-transform:uppercase; color:var(--ink-2); }
+.dp-grp-h .dl-beta{ text-transform:none; letter-spacing:.02em; }
+.dp-plat > .ci{ width:24px; height:24px; flex:none; fill:none; stroke:var(--gold); stroke-width:1.75; stroke-linecap:round; stroke-linejoin:round; }
+.dp-grp .dp-btns{ gap:12px; }
+.dp-grp .dp-plat{ height:56px; }
+.dp-steps code{ padding:2px 6px; border-radius:6px; background:var(--bg-3); font:500 13px/18px var(--font-mono, ui-monospace, monospace); color:var(--ink-0); word-break:break-all; }
+.dp-final .dp-grp-h{ margin-top:8px; }
+@media (max-width:640px){
+  .dp-grp .dp-btns{ flex-direction:column; align-items:stretch; }
+  .dp-grp .dp-plat{ width:100%; }
+  .dp-seg{ max-width:100%; overflow-x:auto; }
+  .dp-seg button{ padding:0 12px; flex:none; }
+}
+.dp-grp .dp-plat{ padding:0 20px; }
+.dp-steps code.dp-cmd{ display:block; margin-top:8px; padding:8px 12px; border-radius:8px; overflow-wrap:anywhere; word-break:normal; user-select:all; }
+.dp-steps li > span{ min-width:0; }

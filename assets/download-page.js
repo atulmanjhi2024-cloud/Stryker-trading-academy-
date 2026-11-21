@@ -4,8 +4,8 @@
 (function(){
   var html=document.documentElement, ua=navigator.userAgent||'';
   var reduce=window.matchMedia&&matchMedia('(prefers-reduced-motion: reduce)').matches;
-  var os=/Android/i.test(ua)?'and':(/Windows/i.test(ua)?'win':'');
-  if(os){ var rec=document.getElementById('dp-'+os); if(rec) rec.classList.add('is-rec'); }
+  var os=/Android/i.test(ua)?'and':(/Windows/i.test(ua)?'win':(/Linux|X11/i.test(ua)?'linux':/Macintosh|Mac OS X/i.test(ua)&&!/iPhone|iPad/i.test(ua)&&navigator.maxTouchPoints<2?'mac':''));
+  [].forEach.call(document.querySelectorAll('.dp-plat[data-os="'+os+'"]'),function(a){ a.classList.add('is-rec'); });
 
   // install tabs: default to the visitor's OS; arrow keys move between tabs
   var tabs=[].slice.call(document.querySelectorAll('.dp-seg [role="tab"]'));
@@ -14,7 +14,7 @@
     b.addEventListener('click',function(){ sel(b); });
     b.addEventListener('keydown',function(e){ var d=e.key==='ArrowRight'?1:e.key==='ArrowLeft'?-1:0; if(d){ e.preventDefault(); sel(tabs[(i+d+tabs.length)%tabs.length],true); } });
   });
-  if(os==='and'&&tabs[1]) sel(tabs[1]);
+  var ti={mac:1,linux:2,and:3}[os]; if(ti&&tabs[ti]) sel(tabs[ti]);
 
   // reveal on scroll
   var rv=[].slice.call(document.querySelectorAll('.dp-rv'));

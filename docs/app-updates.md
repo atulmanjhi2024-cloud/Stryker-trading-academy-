@@ -18,7 +18,7 @@ This format is the contract between the site and both apps; change it only in al
     "minVersionCode": 1
   },
   "windows": {
-    "version": "1.1.0",
+    "version": "1.2.0",
     "url": "/dl/TradeZoro-Setup.exe",
     "notes": ["One line shown under the banner title."],
     "minVersion": "1.0.0"

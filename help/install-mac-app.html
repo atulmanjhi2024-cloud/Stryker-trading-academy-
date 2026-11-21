@@ -1,0 +1,207 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="stryker-build" content="1185">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="description" content="How to install the TradeZoro Mac app (beta): open the dmg, drag to Applications, and the one-time Open step because Apple has not notarized it yet.">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="TradeZoro">
+<meta property="og:title" content="Install the Mac app">
+<meta property="og:description" content="How to install the TradeZoro Mac app (beta): open the dmg, drag to Applications, and the one-time Open step because Apple has not notarized it yet.">
+<meta property="og:url" content="https://tradezoro.com/help/install-mac-app">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="Install the Mac app">
+<meta name="twitter:description" content="How to install the TradeZoro Mac app (beta): open the dmg, drag to Applications, and the one-time Open step because Apple has not notarized it yet.">
+<meta name="theme-color" content="#050506">
+<title>Install the Mac app | TradeZoro</title>
+<link rel="canonical" href="https://tradezoro.com/help/install-mac-app">
+<link rel="preload" href="/assets/fonts/archivo-latin-variable.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="/assets/fonts/archivo-tnum-latin-variable.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="/assets/style.css?v=1185">
+<link rel="stylesheet" href="/assets/nav-features.css?v=1185">
+<script src="/assets/sanitize.js?v=1185"></script>
+<script>
+// TradeZoro — device detection for forced views
+//
+// Loaded synchronously in <head>, before first paint, so the layout never
+// flashes from one mode to another. Stamps the html root element with data-device="mobile|
+// tablet|desktop">, which assets/style.css uses to FORCE the right shell
+// for the physical device instead of trusting viewport width alone:
+//
+//   - a phone held in landscape reports >900px and used to get the squeezed
+//     desktop sidebar; it now keeps the mobile drawer shell.
+//   - a tablet in portrait reports <900px and used to get the phone drawer;
+//     it now keeps a visible sidebar.
+//
+// Detection order matters: explicit mobile UAs first, then tablet UAs
+// (including iPadOS, which reports itself as a Mac but has multi-touch),
+// then a touch-screen heuristic to catch phones running in "Desktop site"
+// mode with a spoofed UA. Touch-screen laptops fall through to desktop
+// because their PRIMARY pointer is still fine (mouse/trackpad).
+
+(function () {
+  var ua = navigator.userAgent || '';
+  var touchPoints = navigator.maxTouchPoints || 0;
+  var coarsePrimary = !!(window.matchMedia && window.matchMedia('(pointer: coarse)').matches);
+  var iPadOS = /Macintosh/.test(ua) && touchPoints > 1;
+
+  var device;
+  if (/iPhone|iPod|Windows Phone|BlackBerry|Opera Mini/i.test(ua) ||
+      (/Android/i.test(ua) && /Mobile/i.test(ua))) {
+    device = 'mobile';
+  } else if (/iPad|Tablet|PlayBook|Silk/i.test(ua) || iPadOS ||
+      (/Android/i.test(ua) && !/Mobile/i.test(ua))) {
+    device = 'tablet';
+  } else if (coarsePrimary) {
+    // Touch-first device wearing a desktop UA ("Desktop site" checkbox).
+    // The shorter screen edge separates phones from tablets well enough.
+    var shortEdge = Math.min(window.screen.width || 0, window.screen.height || 0);
+    device = shortEdge && shortEdge < 620 ? 'mobile' : 'tablet';
+  } else {
+    device = 'desktop';
+  }
+
+  document.documentElement.setAttribute('data-device', device);
+})();
+</script>
+<script src="/assets/toast.js?v=1185" defer></script>
+<script src="/assets/version-check.js?v=1185" defer></script>
+<script src="/assets/cookie-notice.js?v=1185" defer></script>
+<script src="/assets/acquisition.js?v=1185" defer></script>
+<script src="/assets/focus-mode.js?v=1185" defer></script>
+<link rel="manifest" href="/manifest.json">
+<link rel="icon" type="image/x-icon" href="/assets/images/tradezoro-favicon-32-494.png?v=1185">
+<link rel="icon" type="image/png" sizes="32x32" href="/assets/images/tradezoro-favicon-32-494.png?v=1185">
+<link rel="icon" type="image/png" sizes="16x16" href="/assets/images/tradezoro-favicon-16-494.png?v=1185">
+<link rel="apple-touch-icon" sizes="180x180" href="/assets/images/tradezoro-apple-touch-icon-494.png?v=1185">
+<link rel="icon" type="image/png" sizes="192x192" href="/assets/images/tradezoro-icon-192-494.png?v=1185">
+<script>try{var _t=localStorage.getItem('stryker_theme');if(_t==='day')document.documentElement.setAttribute('data-theme','light')}catch(e){}</script>
+<style>
+.bh-card{ border:1px solid var(--line,#2c2c32); border-radius:12px; padding:16px; margin:0 0 20px; background:var(--bg-2,rgba(255,255,255,.03)); }
+.bh-card ul{ margin:8px 0 8px; }
+.bh-warn{ border-color:rgba(255,176,32,.6); background:rgba(255,176,32,.09); }
+:root[data-theme="light"] .bh-warn{ border-color:rgba(176,112,0,.6); background:rgba(176,112,0,.08); }
+.bh-small{ font-size:13px; line-height:20px; color:var(--ink-2,#8b93a0); margin:8px 0 0; }
+.bh-figs{ display:grid; grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); gap:16px; margin:0 0 16px; }
+.bh-fig{ margin:0 0 16px; } .bh-figs .bh-fig{ margin:0; }
+.bh-fig svg{ display:block; width:100%; height:auto; border-radius:8px; font-family:'Segoe UI',system-ui,sans-serif; }
+.bh-fig figcaption{ font-size:13px; line-height:20px; color:var(--ink-2,#8b93a0); margin-top:6px; }
+.bh-pre{ overflow-x:auto; border:1px solid var(--line,#2c2c32); border-radius:8px; padding:12px 14px; margin:0 0 16px; background:var(--bg-2,rgba(255,255,255,.04)); font-size:13px; line-height:20px; }
+.bh code{ font-family:var(--font-code); font-size:.9em; overflow-wrap:anywhere; }
+.bh-pre code{ white-space:pre; overflow-wrap:normal; }
+</style>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+
+<nav class="nav" id="site-nav">
+  <div class="nav-inner">
+    <a href="/" class="brand">
+      <picture><source media="(max-width:767px)" srcset="/assets/images/tradezoro-tzmark-1014-144.webp" type="image/webp" width="144" height="144"><source srcset="/assets/images/tradezoro-wordmark-1014-192.webp" type="image/webp"><img class="brand-mark" src="/assets/images/tradezoro-wordmark-1014-192.png" alt="TradeZoro" width="273" height="64"></picture>
+    </a>
+    <div class="nav-links">
+      <a href="/features">Features</a>
+      <a href="/features/community">Community</a>
+      <a href="/#faq">FAQ</a>
+      <a href="/help">Help</a>
+    </div>
+    <div class="nav-cta">
+      <a href="/login" class="btn btn-ghost btn-sm">Log in</a>
+      <a href="/signup" class="btn btn-primary btn-sm">Start learning</a>
+      <button class="nav-toggle" aria-label="Menu">☰</button>
+    </div>
+  </div>
+</nav>
+<main id="main" tabindex="-1">
+<header class="site-page-hero"><div class="container"><h1 id="site-page-title">Install the Mac app</h1>
+<span class="updated-note">Beta · macOS 11+ · Apple Silicon and Intel · Last updated 21 November 2026</span></div></header>
+<div class="container"><div class="article-wrap"><div class="article-body bh">
+<p>The TradeZoro Mac app opens tradezoro.com in its own window, with pop-out charts and notifications. There is one download for Apple silicon (M1 or newer) and one for Intel Macs.</p>
+<div class="bh-card bh-warn"><strong>The beta is not notarized by Apple yet.</strong> macOS will warn you the first time you open it because it does not know the publisher, not because anything was found. The steps below open it once; after that it opens normally.</div>
+<h2 id="install">1. Download and install</h2>
+<ol><li>Download <a href="/dl/TradeZoro-mac-arm64.dmg" rel="noopener">TradeZoro-mac-arm64.dmg</a> (Apple silicon) or <a href="/dl/TradeZoro-mac-x64.dmg" rel="noopener">TradeZoro-mac-x64.dmg</a> (Intel; Apple menu, About This Mac shows which you have) from the <a href="/download">download page</a>.</li>
+<li>Open the file. A window shows the TradeZoro icon and the Applications folder.</li>
+<li>Drag <strong>TradeZoro</strong> into <strong>Applications</strong>, then eject the disk image.</li></ol>
+<h2 id="first-open">2. First open: macOS 11 to 14</h2>
+<ol><li>Open <strong>Applications</strong> in Finder.</li><li><strong>Right-click</strong> (or Control-click) <strong>TradeZoro</strong> and choose <strong>Open</strong>.</li><li>Click <strong>Open</strong> in the box that appears.</li></ol>
+<h2 id="macos15">3. First open: macOS 15 or newer</h2>
+<p>Newer macOS no longer shows an Open button in that box. Do this instead:</p>
+<ol><li>Try to open <strong>TradeZoro</strong> once. macOS says it cannot verify the app. Click <strong>Done</strong>.</li><li>Open <strong>System Settings</strong>, then <strong>Privacy &amp; Security</strong>.</li><li>Scroll down to <strong>Security</strong>. Next to "TradeZoro was blocked", click <strong>Open Anyway</strong> and confirm with your password or Touch ID.</li><li>Open TradeZoro again and click <strong>Open</strong>.</li></ol>
+<p>Then sign in with your TradeZoro account. Your charts and settings are already there.</p>
+<h2 id="updates">Updates</h2>
+<p>The Mac app does not install updates by itself. When a new version is out, a banner says <strong>New version available</strong>. Click <strong>Download</strong>, which opens the <a href="/download">download page</a>. Install it the same way and replace the old one in Applications.</p>
+<h2 id="fix">If it still will not open</h2>
+<ul><li>Check you dragged the app to Applications and are not opening it from inside the disk image.</li><li>Check the file you downloaded is complete: the checksum is on the <a href="https://github.com/theelitegrey/Stryker-trading-academy-/releases?q=desktop-v&amp;expanded=true" rel="noopener">releases page</a> (run <code>shasum -a 256 TradeZoro-mac-arm64.dmg</code> in Terminal).</li><li>Still stuck? Contact support from the <a href="/help">Help Center</a>.</li></ul>
+<p class="bh-small">Education only. Not financial advice.</p>
+</div></div></div>
+</main>
+<footer>
+  <div class="container">
+    <div class="footer-grid">
+      <div>
+        <a href="/" class="brand" style="margin-bottom:14px;">
+          <picture><source media="(max-width:767px)" srcset="/assets/images/tradezoro-tzmark-1014-144.webp" type="image/webp" width="144" height="144"><source srcset="/assets/images/tradezoro-wordmark-1014-144.webp" type="image/webp"><img class="brand-mark" src="/assets/images/tradezoro-wordmark-1014-144.png" alt="TradeZoro" width="205" height="48"></picture>
+        </a>
+        <p style="color:var(--ink-3); font-size:13.5px; max-width:280px;">Chapter-based ICT and SMT trading education, built like a trading desk curriculum.</p>
+      </div>
+      <div>
+        <h5>Mentis</h5>
+        <a href="/academy">Mentis home</a>
+        <a href="/features">All features</a>
+        <a href="/courses">Full curriculum</a>
+        <a href="/#concepts">ICT / SMT glossary</a>
+        <a href="/learn">Mentis articles</a>
+      </div>
+      <div>
+        <h5>Account</h5>
+        <a href="/login">Log in</a>
+        <a href="/signup">Create account</a>
+        <a href="/dashboard-user">Student dashboard</a>
+      </div>
+      <div>
+        <h5>Company</h5>
+        <a href="/about">About TradeZoro</a>
+        <a href="/traders-for-traders">Traders for Traders</a>
+        <a href="/help">Help Center</a>
+        <a href="/suggestions">Suggestions</a>
+        <a href="/creators">Creator Hub</a>
+        <a href="https://discord.gg/M4d4gTr5c3" target="_blank" rel="noopener">Get help on Discord</a>
+        <a href="/contact">Contact us</a>
+        <a href="mailto:support@tradezoro.com">support@tradezoro.com</a>
+        <a href="/terms">Terms &amp; Risk Disclosure</a>
+      </div>
+    </div>
+    <div class="footer-bottom">
+      <span>© 2026 TradeZoro LLC. All rights reserved.</span>
+      <span>Made for traders who read the tape.</span>
+    </div>
+    <div class="footer-legal-row">
+      <a href="/privacy">Privacy Policy</a>
+      <a href="/cookies">Cookie Policy</a>
+      <a href="/gdpr">GDPR</a>
+      <a href="/refund-policy">Refund Policy</a>
+      <a href="/market-data-terms">Market Data Terms</a>
+      <a href="/terms#third-party-notices">Third-party notices</a>
+    </div>
+    <p class="risk-disclaimer">Trading foreign exchange, indices, and commodities carries a high level of risk and may not be suitable for all investors. TradeZoro is an educational service only and does not provide financial advice or manage client funds. Past performance shown in course materials is illustrative and not indicative of future results.</p>
+  </div>
+</footer>
+
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
+<script src="/assets/nav-features.js?v=1185" defer></script>
+<script src="/assets/main.js?v=1185"></script>
+<script src="/assets/auth.js?v=1185"></script>
+<script src="/assets/progress.js?v=1185"></script>
+<script src="/assets/activity-log.js?v=1185"></script>
+<script src="/assets/banned-check.js?v=1185"></script>
+<script src="/assets/email-verify.js?v=1185"></script>
+<script src="/assets/profiles-sync.js?v=1185"></script>
+<script src="/assets/loading-animation.js?v=1185"></script>
+<script src="/assets/branding.js?v=1185"></script>
+<script src="/assets/seo.js?v=1185"></script>
+<script src="/assets/theme.js?v=1185"></script>
+</body>
+</html>

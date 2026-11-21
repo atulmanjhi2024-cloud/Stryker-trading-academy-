@@ -2,7 +2,7 @@
   "name": "tradezoro-desktop",
   "productName": "TradeZoro",
   "version": "1.1.0",
-  "description": "TradeZoro for Windows: the tradezoro.com app in its own window, with pop-out charts, always-on-top and native notifications.",
+  "description": "TradeZoro for Windows, macOS and Linux: the tradezoro.com app in its own window, with pop-out charts, always-on-top and native notifications.",
   "author": "TradeZoro LLC",
   "license": "UNLICENSED",
   "private": true,
@@ -11,8 +11,9 @@
     "start": "electron .",
     "test": "node --test test/policy.test.js test/handoff.test.js test/updates.test.js test/shown.test.js",
     "dist:win": "electron-builder --win nsis portable --x64",
-    "dist:linux": "electron-builder --linux dir --x64",
-    "dist:appx": "electron-builder --win appx --x64"
+    "dist:linux": "electron-builder --linux AppImage deb --x64",
+    "dist:appx": "electron-builder --win appx --x64",
+    "dist:mac": "electron-builder --mac dmg zip --arm64 --x64"
   },
   "dependencies": {
     "electron-updater": "6.8.11"
@@ -97,10 +98,55 @@
     },
     "linux": {
       "icon": "build/icon.png",
+      "executableName": "tradezoro",
+      "category": "Office",
+      "maintainer": "TradeZoro LLC <support@tradezoro.com>",
+      "synopsis": "TradeZoro desktop app",
       "target": [
-        "dir"
+        {
+          "target": "AppImage",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "deb",
+          "arch": [
+            "x64"
+          ]
+        }
       ],
-      "category": "Office"
+      "artifactName": "TradeZoro-linux-x64.${ext}"
+    },
+    "mac": {
+      "icon": "build/icon.png",
+      "category": "public.app-category.finance",
+      "identity": "-",
+      "hardenedRuntime": false,
+      "gatekeeperAssess": false,
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64",
+            "x64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "arm64",
+            "x64"
+          ]
+        }
+      ],
+      "artifactName": "TradeZoro-mac-${arch}.${ext}",
+      "minimumSystemVersion": "11.0"
+    },
+    "dmg": {
+      "title": "TradeZoro",
+      "sign": false
     }
-  }
+  },
+  "homepage": "https://tradezoro.com"
 }

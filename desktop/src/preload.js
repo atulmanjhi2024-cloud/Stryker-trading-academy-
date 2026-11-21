@@ -27,7 +27,7 @@ if (location.protocol === 'https:' && (host === 'tradezoro.com' || host === 'www
 }
 
 // In-app update banner, drawn by the app (not the site) in a shadow root so site CSS cannot touch it.
-// Main sends { kind: 'ready' | 'block', version, note, ready, canInstall } or null (src/updates.js).
+// Main sends { kind: 'ready' | 'available' | 'block', version, note, ready, canInstall } or null (src/updates.js).
 // Same look as the Android banner: dark card, mint edge, 16 radius, mint pill, round X. Follows the site's
 // Day/Night theme (html[data-theme="light"]).
 function updateBanner() {
@@ -72,6 +72,9 @@ function updateBanner() {
       const btn = st.ready ? '<button class="p" data-a="install">Restart to update</button>' : '<button class="p" data-a="download">Download the update</button>';
       const msg = st.ready ? 'Version ' + v + ' is ready. Restart TradeZoro to finish.' : (st.canInstall ? 'The new version is downloading. You can also get it from tradezoro.com.' : 'Get the newest version from tradezoro.com.');
       html = '<div class="ov" role="alertdialog" aria-modal="true" aria-labelledby="h"><div class="card"><h2 id="h">Please update to keep using TradeZoro</h2><p>' + msg + '</p>' + btn + '</div></div>';
+    } else if (st.kind === 'available') {
+      html = '<div class="bar" role="status"><div class="tx"><div class="t">New version available · v' + v + '</div></div>' +
+        '<button class="p" data-a="download">Download</button><button class="x" data-a="dismiss" aria-label="Close" title="Remind me next time">' + X + '</button></div>';
     } else {
       html = '<div class="bar" role="status"><div class="tx"><div class="t">Update ready · v' + v + '</div>' + (st.note ? '<div class="n">' + esc(st.note) + '</div>' : '') +
         '</div><button class="p" data-a="install">Restart to update</button><button class="x" data-a="dismiss" aria-label="Close" title="Remind me next time">' + X + '</button></div>';

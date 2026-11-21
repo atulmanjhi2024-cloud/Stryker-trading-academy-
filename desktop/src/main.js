@@ -26,6 +26,12 @@ app.setAppUserModelId('com.tradezoro.desktop');   // Windows toasts show "TradeZ
 // Google refuses sign-in from user agents that say "Electron"; present as the Chromium it is.
 app.userAgentFallback = app.userAgentFallback.replace(/\s(TradeZoro|tradezoro-desktop|Electron)\/\S+/gi, '');
 
+// `TradeZoro --version` prints the app version and exits (CI smoke test on every OS).
+if (process.argv.includes('--version')) { process.stdout.write(app.getVersion() + '\n'); app.exit(0); }
+// AppImage on Ubuntu 24.04+ cannot start Chromium's sandbox (AppArmor blocks user namespaces), so run without it there.
+// The app only loads the allowlisted tradezoro.com pages (src/policy.js). The .deb keeps the sandbox (setuid helper).
+if (process.platform === 'linux' && process.env.APPIMAGE) app.commandLine.appendSwitch('no-sandbox');
+
 if (!app.requestSingleInstanceLock()) { app.quit(); }
 
 // tradezoro://auth?code=... brings a Google sign-in back from the browser when the loopback port could not be used.
@@ -35,7 +41,7 @@ if (process.defaultApp && process.argv.length >= 2) app.setAsDefaultProtocolClie
 else app.setAsDefaultProtocolClient(handoff.PROTOCOL, process.execPath, ['--']);
 
 let state, tray = null, mainWin = null, quitting = false, updateReady = false, trayHintShown = false;
-let updManifest = null, updReadyVer = null, updDismissed = null;   // in-app update banner (src/updates.js)
+let updManifest = null, updReadyVer = null, updDismissed = null, updAvailVer = null;   // in-app update banner (src/updates.js)
 const charts = new Map();            // key -> BrowserWindow (pop-out windows)
 const seenNotes = new Set();
 
@@ -341,7 +347,7 @@ function buildMenu() {
       { label: 'Help Center', click: () => shell.openExternal(ORIGIN + '/help') },
       { label: 'Check for updates', click: () => checkUpdates(true) },
       { label: 'About TradeZoro', click: () => dialog.showMessageBox({ type: 'info', title: 'TradeZoro', icon: ICON,
-        message: 'TradeZoro for Windows ' + app.getVersion(), detail: 'Education only. Not financial advice.' }) }
+        message: 'TradeZoro for ' + (IS_MAC ? 'macOS ' : process.platform === 'linux' ? 'Linux ' : 'Windows ') + app.getVersion(), detail: 'Education only. Not financial advice.' }) }
     ] }
   ];
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
@@ -369,14 +375,20 @@ function quit() { quitting = true; app.quit(); }
 // (src/preload.js draws it) with "Restart to update". /app-version.json on the site adds the notes and minVersion:
 // an app below minVersion gets a blocking "Please update" screen. Checks run at start and every 4 hours.
 let autoUpdater = null;
+const IS_MAC = process.platform === 'darwin';
+// Cannot install by itself: macOS (ad-hoc signed) and the Linux .deb (needs root). Both get a "Download" banner.
+// The AppImage replaces itself, so it updates like Windows.
+const NO_INSTALL = IS_MAC || (process.platform === 'linux' && !process.env.APPIMAGE);
 function setupUpdates() {
   checkUpdates(false);
   setInterval(() => checkUpdates(false), 4 * 60 * 60 * 1000);
   // Portable .exe cannot self-update, and a dev run has no release feed (the manifest check above still runs).
   if (!app.isPackaged || process.env.PORTABLE_EXECUTABLE_DIR) return;
   try { autoUpdater = require('electron-updater').autoUpdater; } catch (e) { return; }
-  autoUpdater.autoDownload = true;
-  autoUpdater.autoInstallOnAppQuit = true;     // a downloaded update installs the next time the app quits
+  // macOS (ad-hoc signed) and the .deb cannot install by themselves: only look, then point to /download.
+  autoUpdater.autoDownload = !NO_INSTALL;
+  autoUpdater.autoInstallOnAppQuit = !NO_INSTALL;     // a downloaded update installs the next time the app quits
+  if (NO_INSTALL) autoUpdater.on('update-available', (info) => { updAvailVer = info && info.version || null; pushUpdateState(); });
   autoUpdater.on('error', (err) => console.warn('update check failed:', err && err.message));
   autoUpdater.on('update-downloaded', (info) => onUpdateDownloaded(info && info.version));
   autoUpdater.checkForUpdates().catch(() => {});
@@ -396,7 +408,7 @@ function fetchManifest() {
 }
 
 function updateState() {
-  return Updates.bannerState({ installed: app.getVersion(), manifest: updManifest, ready: updReadyVer, dismissed: updDismissed, canInstall: !!autoUpdater });
+  return Updates.bannerState({ installed: app.getVersion(), manifest: updManifest, ready: updReadyVer, dismissed: updDismissed, canInstall: !!autoUpdater && !NO_INSTALL, available: NO_INSTALL ? updAvailVer : null });
 }
 function pushUpdateState() {
   const st = updateState();
@@ -406,8 +418,8 @@ ipcMain.handle('tz:update-state', (e) => (policy.isAppUrl(e.senderFrame && e.sen
 ipcMain.on('tz:update-action', (e, a) => {
   if (!policy.isAppUrl(e.senderFrame && e.senderFrame.url)) return;
   if (a === 'install' && updReadyVer) installUpdate();
-  else if (a === 'dismiss') { updDismissed = updReadyVer; pushUpdateState(); }   // in memory: shows again next launch
-  else if (a === 'download') shell.openExternal(new URL((updManifest && updManifest.url) || '/download', ORIGIN).href);
+  else if (a === 'dismiss') { updDismissed = updReadyVer || updAvailVer; pushUpdateState(); }   // in memory: shows again next launch
+  else if (a === 'download') shell.openExternal(new URL((!NO_INSTALL && updManifest && updManifest.url) || '/download', ORIGIN).href);
 });
 
 function checkUpdates(manual) {
@@ -419,7 +431,7 @@ function checkUpdates(manual) {
   }
   if (manual) updDismissed = null;
   autoUpdater.checkForUpdates().then((r) => {
-    if (manual && (!r || !r.isUpdateAvailable)) dialog.showMessageBox({ type: 'info', icon: ICON, message: 'You have the latest version (' + app.getVersion() + ').' });
+    if (manual && NO_INSTALL && r && r.isUpdateAvailable) { updDismissed = null; pushUpdateState(); } else if (manual && (!r || !r.isUpdateAvailable)) dialog.showMessageBox({ type: 'info', icon: ICON, message: 'You have the latest version (' + app.getVersion() + ').' });
   }).catch(() => { if (manual) dialog.showMessageBox({ type: 'warning', icon: ICON, message: 'Could not check for updates. Try again later.' }); });
 }
 

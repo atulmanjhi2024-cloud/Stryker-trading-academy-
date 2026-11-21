@@ -28,12 +28,17 @@ function parseManifest(json) {
 // dismissed = the ready version the member closed with X this run.
 //   { kind: 'block' }  installed < minVersion: full-screen "Please update", no X
 //   { kind: 'ready' }  an update is downloaded and not dismissed: top banner with "Restart to update"
+//   { kind: 'available' }  macOS only: a newer version exists, banner with "Download" (no silent install)
 //   null               nothing
-function bannerState({ installed, manifest, ready, dismissed, canInstall }) {
+function bannerState({ installed, manifest, ready, dismissed, canInstall, available }) {
   const notes = manifest && ready && compare(manifest.version, ready) === 0 ? manifest.notes : [];
   const base = { version: ready || (manifest && manifest.version) || '', note: notes[0] || '', ready: !!ready, canInstall: !!canInstall };
   if (manifest && manifest.minVersion && compare(installed, manifest.minVersion) < 0) return Object.assign({ kind: 'block', url: manifest.url }, base);
   if (ready && compare(ready, installed) > 0 && ready !== dismissed) return Object.assign({ kind: 'ready' }, base);
+  // macOS: no Apple signature, so Squirrel.Mac cannot install on its own. The app only says a version exists and sends
+  // the member to the download page (src/main.js sets `available` from electron-updater's update-available).
+  if (available && !ready && compare(available, installed) > 0 && available !== dismissed)
+    return { kind: 'available', version: available, note: '', ready: false, canInstall: false, url: (manifest && manifest.url) || '/download' };
   return null;
 }
 

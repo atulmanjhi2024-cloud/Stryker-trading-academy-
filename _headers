@@ -90,6 +90,10 @@
 /assets/zs/worker.js
   Content-Security-Policy: default-src 'none'; script-src 'self'; connect-src 'none'; worker-src 'self'; base-uri 'none'; form-action 'none'
 
+# thinkScript sandbox worker (assets/ts/worker.js): the same lock as the Zscript worker, for the same reason.
+/assets/ts/worker.js
+  Content-Security-Policy: default-src 'none'; script-src 'self'; connect-src 'none'; worker-src 'self'; base-uri 'none'; form-action 'none'
+
 /*.html
   Cache-Control: public, max-age=0, must-revalidate
   X-Content-Type-Options: nosniff

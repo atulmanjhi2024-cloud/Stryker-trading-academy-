@@ -361,7 +361,16 @@ export function mountIndicatorWindow(ws, opts){
     if (!Z()) return [];
     return [{ key: 'zn:new', name: 'New Zscript', author: 'You', kind: 'zsnew', desc: 'Write your own indicator in Zscript, our indicator language. Opens the editor.' }]
       .concat(Z().examples.map((x) => ({ key: 'zx:' + x.id.replace(/^zs-example:/, ''), name: x.name, author: 'TradeZoro', kind: 'zsex', source: x.source, badge: 'Example', desc: 'A Zscript example: add it, or open it in the editor to learn from it' })))
-      .concat((zsMine || []).map((t) => ({ key: 'zm:' + t.id, name: t.name, author: 'You', kind: 'zsmine', source: t.source, badge: 'Zscript', desc: 'Your saved Zscript' })));
+      .concat((zsMine || []).map((t) => ({ key: 'zm:' + t.id, name: t.name, author: 'You', kind: 'zsmine', source: t.source, badge: 'Zscript', desc: 'Your saved Zscript' })))
+      .concat(tsItems());
+  }
+  // thinkScript (assets/chart-thinkscript.js, window.STRYKER_TS): New thinkScript, its Examples, the member's saved studies.
+  const T = () => window.STRYKER_TS;
+  function tsItems(){
+    if (!T()) return [];
+    return [{ key: 'zn:ts', name: 'New thinkScript study', author: 'You', kind: 'zsnew', desc: 'Paste a thinkScript study and run it on the chart. Opens the editor.' }]
+      .concat(T().examples.map((x) => ({ key: 'zx:ts-' + x.id.replace(/^ts-example:/, ''), name: x.name, author: 'TradeZoro', kind: 'tsex', source: x.source, badge: 'Example', desc: 'A thinkScript example: add it, or open it in the editor' })))
+      .concat(T().store.all().map((t) => ({ key: 'zm:ts-' + t.id, name: t.name, author: 'You', kind: 'tsmine', source: t.source, badge: 'thinkScript', desc: 'Your saved thinkScript study' })));
   }
   let cacheAll = null;
   function allItems(){
@@ -461,7 +470,11 @@ export function mountIndicatorWindow(ws, opts){
         ok = !!r.ok;
         if (!r.ok && !r.heavy) toast(r.msg || 'Could not add the script.', 'error');
       } else if (it.kind === 'zsnew') {
-        close(); Z().openNew(); return false;
+        close(); if (it.key === 'zn:ts') T().open(); else Z().openNew(); return false;
+      } else if (it.kind === 'tsex' || it.kind === 'tsmine') {
+        const r = await T().addSource(it.name, it.source);
+        if (!r.ok) { close(); T().open(it.source, it.name); toast(r.msg || 'Could not add the study.', 'error'); return false; }
+        ok = true;
       } else if (it.kind === 'zsex' || it.kind === 'zsmine') {
         const r = await Z().addSource(it.name, it.source);
         if (!r.ok) { close(); Z().open(it.source, it.name); toast(r.msg || 'Could not add the script.', 'error'); return false; }

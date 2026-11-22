@@ -475,17 +475,25 @@ export async function runOnChart(chart, source){
 
 // ---------- editor panel (layout: assets/chart-script-editor.js, shared with the Pine import panel) ----------
 const LANG_PREF = 'stryker_script_lang';
-const prefZs = () => { try { return localStorage.getItem(LANG_PREF) !== 'pine'; } catch (e) { return true; } };   // Zscript is the default
-const setPref = (zs) => { try { localStorage.setItem(LANG_PREF, zs ? 'zs' : 'pine'); } catch (e) {} };
+const pref = () => { try { return localStorage.getItem(LANG_PREF) || 'zs'; } catch (e) { return 'zs'; } };   // Zscript is the default
+const setPref = (k) => { try { localStorage.setItem(LANG_PREF, k === true ? 'zs' : k === false ? 'pine' : k); } catch (e) {} };
+// LANGUAGE REGISTRY: the editor's language switch, in order. Other language panels (assets/chart-thinkscript.js, ...) add
+// themselves with STRYKER_ZS.addLang(k, label, { open, close, isOpen }) and put STRYKER_ZS.langSwitch(k) in their header.
+const LANGS = [['zs', 'Zscript'], ['pine', 'Pine (import)']], LANG_PANELS = {};
 
-// Segmented control [Zscript | Pine (import)] for the header of both editor panels.
+// Segmented control [Zscript | Pine (import) | ...] for the header of every editor panel.
 function langSwitch(active, onPick){
-  const seg = el('div', { class: 'stkc-langseg', role: 'tablist', 'aria-label': 'Script language' });
-  [['zs', 'Zscript'], ['pine', 'Pine (import)']].forEach(([k, label]) => {
+  const seg = el('div', { class: 'stkc-langseg', role: 'tablist', 'aria-label': 'Script language', 'data-active': active });
+  LANGS.forEach(([k, label]) => {
     const on = k === active;
     seg.appendChild(el('button', { type: 'button', role: 'tab', class: 'stkc-langseg-b' + (on ? ' on' : ''), 'data-k': k, 'aria-selected': on ? 'true' : 'false', tabindex: on ? '0' : '-1', text: label, onclick: () => { if (!on) onPick(k); } }));
   });
-  seg.addEventListener('keydown', (e) => { if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') { e.preventDefault(); const b = seg.querySelector('.stkc-langseg-b:not(.on)'); if (b) { b.click(); } } });
+  seg.addEventListener('keydown', (e) => {
+    if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+    e.preventDefault();
+    const bs = [...seg.querySelectorAll('.stkc-langseg-b')], i = bs.findIndex((b) => b.classList.contains('on'));
+    const b = bs[(i + (e.key === 'ArrowRight' ? 1 : bs.length - 1)) % bs.length]; if (b) b.click();
+  });
   return seg;
 }
 // Docs tab rows from the engine catalog: functions and namespaced variables/constants a member types most.
@@ -515,7 +523,9 @@ export function mountZscript(ws, opts){
     onView: (v) => { if (v === 'code' && ed) ed.focus(); }
   });
   const { panel, nameIn, target, edHost, addBtn, saveBtn, newBtn, panes } = S;
-  S.segSlot.appendChild(langSwitch('zs', (k) => switchTo(k)));
+  const segs = [];   // every language switch on the page, rebuilt when a language registers
+  const mkSeg = (k) => { const s = langSwitch(k, (x) => switchTo(x)); segs.push(s); return s; };
+  S.segSlot.appendChild(mkSeg('zs'));
   edHost.classList.add('stkc-zs-ed');
   edHost.appendChild(el('div', { class: 'stkc-zs-loading', text: 'Loading editor…' }));
   const lists = {}; ['chart', 'mine', 'examples'].forEach((k) => { lists[k] = el('ul', { class: 'stkc-tlist' }); panes[k].appendChild(lists[k]); });
@@ -524,7 +534,7 @@ export function mountZscript(ws, opts){
   // the same switch in the Pine panel's header
   if (pinePanel) {
     const slot = pinePanel.querySelector('.sed-seg-slot');
-    if (slot) { slot.innerHTML = ''; slot.appendChild(langSwitch('pine', (k) => switchTo(k))); }
+    if (slot) { slot.innerHTML = ''; slot.appendChild(mkSeg('pine')); }
   }
 
   let ed = null, edP = null, editingId = null, busy = false, draft = null, builtinsAll = [];
@@ -736,15 +746,28 @@ export function mountZscript(ws, opts){
     } else stopLint();
   }
   function switchTo(k){
-    setPref(k === 'zs');
-    if (k === 'zs') { if (P()) P().close(); setOpen(true); panel.querySelector('.stkc-langseg-b.on').focus(); }
-    else { setOpen(false); if (P()) { P().open(); const b = pinePanel && pinePanel.querySelector('.stkc-langseg-b.on'); if (b) b.focus(); } }
+    setPref(k);
+    if (k !== 'zs') setOpen(false);
+    if (k !== 'pine' && P()) P().close();
+    Object.keys(LANG_PANELS).forEach((x) => { if (x !== k) LANG_PANELS[x].close(); });
+    if (k === 'zs') setOpen(true);
+    else if (k === 'pine') { if (P()) P().open(); }
+    else if (LANG_PANELS[k]) LANG_PANELS[k].open();
+    const s = segs.find((x) => x.dataset.active === k && x.isConnected), b = s && s.querySelector('.stkc-langseg-b.on'); if (b) b.focus();
   }
   // The toolbar's script editor button opens the language used last (Zscript first).
   if (pineBtn) pineBtn.addEventListener('click', (e) => {
     if (!panel.hidden) { e.stopImmediatePropagation(); setOpen(false); return; }
-    if (prefZs() && pinePanel && pinePanel.hidden) { e.stopImmediatePropagation(); setOpen(true); }
+    const open = Object.keys(LANG_PANELS).find((x) => LANG_PANELS[x].isOpen());
+    if (open) { e.stopImmediatePropagation(); LANG_PANELS[open].close(); return; }
+    const k = pref();
+    if (k !== 'pine' && pinePanel && pinePanel.hidden) { e.stopImmediatePropagation(); if (LANG_PANELS[k]) LANG_PANELS[k].open(); else setOpen(true); }
   }, true);
+  function addLang(k, label, api){
+    if (!LANGS.some((x) => x[0] === k)) LANGS.push([k, label]);
+    LANG_PANELS[k] = api;
+    segs.filter((s) => s.isConnected).forEach((s) => { const n = mkSeg(s.dataset.active); s.replaceWith(n); });
+  }
   panel.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && !e.defaultPrevented) {
       if (panel.querySelector('.cm-panel.cm-search') && panel.querySelector('.cm-panel.cm-search').contains(e.target)) return;   // Escape closes the find bar first
@@ -788,8 +811,9 @@ export function mountZscript(ws, opts){
   }
   if (qsid) setTimeout(() => { addLibrary(qsid).finally(() => { try { const u = new URL(location.href); u.searchParams.delete('zs'); history.replaceState(null, '', u.pathname + (u.search || '') + u.hash); } catch (e) {} }); }, 0);
   window.STRYKER_ZS = {
-    open: (src, name) => { setPref(true); if (P()) P().close(); setOpen(true); if (src != null) load(name || '', src, null); },
-    openNew: () => { setPref(true); if (P()) P().close(); setOpen(true); load('', NEW_SRC, null); },
+    open: (src, name) => { switchTo('zs'); if (src != null) load(name || '', src, null); },
+    openNew: () => { switchTo('zs'); load('', NEW_SRC, null); },
+    addLang, langSwitch: mkSeg, switchLang: switchTo,
     close: () => setOpen(false), load, addToChart, addSource, addLibrary, libStub, libOf: libMetaOfHandle, libVersions, libSource, runOnChart, handles: zsHandles, titleOf, isZscript, examples: ZS_EXAMPLES, store: Store, toModel
   };
   return { setOpen };

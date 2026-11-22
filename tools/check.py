@@ -96,6 +96,7 @@ def check_module_import_versions():
     seen = {}
     # assets/zs/ (Zscript engine) is a module tree: its files import each other and ../creator-seal.js
     zs = sorted(glob.glob(os.path.join(ROOT, 'assets', 'zs', '**', '*.js'), recursive=True))
+    zs += sorted(glob.glob(os.path.join(ROOT, 'assets', 'ts', '*.js')))   # thinkScript engine, same module rules
     for path in sorted(glob.glob(os.path.join(ROOT, 'assets', '*.js'))) + zs:
         rel = os.path.relpath(path, ROOT)
         for n, line in enumerate(open(path, encoding='utf-8'), 1):
@@ -138,7 +139,7 @@ def check_versioned_sources():
 
 def check_js_syntax():
     from concurrent.futures import ThreadPoolExecutor
-    paths = sorted(glob.glob('assets/*.js')) + sorted(glob.glob('assets/zs/**/*.js', recursive=True))
+    paths = sorted(glob.glob('assets/*.js')) + sorted(glob.glob('assets/zs/**/*.js', recursive=True)) + sorted(glob.glob('assets/ts/*.js'))
     with ThreadPoolExecutor(8) as ex:
         results = list(ex.map(lambda p: subprocess.run(['node', '--check', p], capture_output=True, text=True), paths))
     for path, result in zip(paths, results):
@@ -742,6 +743,18 @@ def check_zscript_engine():
                 fail(f'Zscript zs-{n} tests failed: ' + ('; '.join(bad) or (r.stdout + r.stderr)[-300:]))
 
 
+def check_thinkscript_engine():
+    """thinkScript engine (assets/ts/): parser/compiler units, the study corpus against fixture values (1e-6) and the
+    worker lock-down test (tools/tests/ts-*.test.mjs). Only runs when assets/ts/ exists."""
+    if not os.path.isdir(os.path.join(ROOT, 'assets', 'ts')):
+        return
+    for n in ('lang', 'corpus', 'worker'):
+        r = subprocess.run(['node', f'tools/tests/ts-{n}.test.mjs'], capture_output=True, text=True, cwd=ROOT, timeout=300)
+        if r.returncode != 0:
+            bad = [l for l in r.stdout.splitlines() if l.startswith('FAIL')][:5]
+            fail(f'thinkScript ts-{n} tests failed: ' + ('; '.join(bad) or (r.stdout + r.stderr)[-300:]))
+
+
 def check_desktop_signin():
     """Windows app Google sign-in in the system browser (Owner bug 15 Nov): server handoff (mint, single use, expiry,
     verifier mismatch), the /dl edge cache per release tag, and the app's handoff/URL-policy unit tests."""
@@ -817,7 +830,7 @@ def main():
     # two browser checks start first so they overlap the rest
     fast = '--fast' in sys.argv   # static checks only; the browser suites run in GitHub (site-checks.yml)
     browser = [] if fast else [check_app_shell_browser, check_drawer_touch]
-    order = [check_desktop_signin, check_pro_features, check_compare_page, check_push_rules, check_stripe_void, check_metric_alerts, check_phantom, check_days_load, check_finatic, check_workspaces, check_account_sync, check_latency, check_zscript_engine, *browser, check_roadmap_log, check_roadmap_cards,
+    order = [check_desktop_signin, check_pro_features, check_compare_page, check_push_rules, check_stripe_void, check_metric_alerts, check_phantom, check_days_load, check_finatic, check_workspaces, check_account_sync, check_latency, check_zscript_engine, check_thinkscript_engine, *browser, check_roadmap_log, check_roadmap_cards,
              check_nav_features_menu, check_home_stats, check_charts_css_subset, check_merge_markers, check_unversioned_assets,
              check_module_import_versions, check_versioned_sources, check_js_syntax, check_html_structure,
              check_css_braces, check_referenced_assets_exist, check_build_markers, check_mobile_width_guards,

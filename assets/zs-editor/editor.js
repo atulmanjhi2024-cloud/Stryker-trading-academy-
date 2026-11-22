@@ -4,6 +4,7 @@
 // createZsEditor(parent, { doc, builtins, onChange, onRun, onSave, lint, lang, wrap })
 //   -> { view, get(), set(text), focus(), showDiagnostics(list), goto(line, col), setWrap(on), find(), insert(text, back) }
 //   lang      'zscript' (default) | 'pine' (Pine import: same highlighter, //@version header, no live lint)
+//   language  a CodeMirror language that replaces the highlighter (thinkScript, assets/chart-thinkscript.js); ariaLabel names the source
 //   wrap      soft-wrap long lines (the script editor's Wrap toggle; default on)
 //   Keys: Mod-Enter onRun, Mod-S onSave, Mod-/ comment (defaultKeymap), Mod-F find (searchKeymap).
 //   builtins  [{ name, kind, sig, doc }]  autocomplete + hover docs (from the engine catalog, assets/zs/catalog.js)
@@ -157,7 +158,7 @@ export function createZsEditor(parent, opts){
     const dot = prefix.lastIndexOf('.');
     const options = [];
     B.forEach((b) => {
-      if (!b.name.startsWith(prefix)) return;
+      if (!(opts.language ? b.name.toLowerCase().startsWith(prefix.toLowerCase()) : b.name.startsWith(prefix))) return;   // thinkScript names are case-insensitive
       if (dot < 0 && b.name.indexOf('.') >= 0) return;                      // top level: namespaces, not every member
       if (dot >= 0 && b.name.indexOf('.', dot + 1) >= 0) return;
       options.push({ label: b.name, type: typeOf(b.kind), detail: b.kind === 'function' ? (b.sig || '').replace(/^[\w.]+/, '') : '', info: b.doc || '',
@@ -205,7 +206,7 @@ export function createZsEditor(parent, opts){
       extensions: [
         lineNumbers(), highlightActiveLineGutter(), history(), drawSelection(), indentOnInput(), bracketMatching(), closeBrackets(),
         highlightActiveLine(), highlightSelectionMatches(), indentUnit.of('    '), EditorState.tabSize.of(4),
-        opts.lang === 'pine' ? pineLanguage : zscriptLanguage, syntaxHighlighting(highlight), theme,
+        opts.language || (opts.lang === 'pine' ? pineLanguage : zscriptLanguage), syntaxHighlighting(highlight), theme,
         wrapC.of(opts.wrap === false ? [] : EditorView.lineWrapping),
         autocompletion({ override: [complete], icons: false, activateOnTyping: true }),
         hover, lintExt, lintGutter(),
@@ -214,7 +215,7 @@ export function createZsEditor(parent, opts){
           { key: 'Mod-s', preventDefault: true, run: () => { if (opts.onSave) opts.onSave(); return true; } },
           ...closeBracketsKeymap, ...defaultKeymap, ...searchKeymap, ...historyKeymap, ...completionKeymap, indentWithTab
         ]),
-        EditorView.contentAttributes.of({ 'aria-label': opts.lang === 'pine' ? 'Pine import source' : 'Zscript source', autocapitalize: 'off', autocorrect: 'off', spellcheck: 'false' }),
+        EditorView.contentAttributes.of({ 'aria-label': opts.ariaLabel || (opts.lang === 'pine' ? 'Pine import source' : 'Zscript source'), autocapitalize: 'off', autocorrect: 'off', spellcheck: 'false' }),
         EditorView.updateListener.of((u) => { if (u.docChanged && opts.onChange) opts.onChange(); }),
         // keep the chart's keyboard shortcuts out of the editor
         EditorView.domEventHandlers({ keydown: (e) => { e.stopPropagation(); return false; } })

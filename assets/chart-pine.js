@@ -183,8 +183,8 @@ function hide(h){ try { h.setVisible(false); } catch (e) {} }
 
 // Pine indicators on a chart = script handles (natives carry nativeType, no source).
 function pineHandles(chart){
-  // Zscript indicators (//@zscript 1, assets/chart-zscript.js) are script handles too, but not Pine.
-  try { return chart.indicators().filter((h) => typeof h.source === 'string' && !h.nativeType && !/^\s*\/\/@zscript\s+1\b/.test(h.source)); } catch (e) { return []; }
+  // Zscript (//@zscript 1, assets/chart-zscript.js) and thinkScript (#@thinkscript 1, assets/chart-thinkscript.js) handles are not Pine.
+  try { return chart.indicators().filter((h) => typeof h.source === 'string' && !h.nativeType && !/^\s*(?:\/\/@zscript|#@thinkscript)\s+1\b/.test(h.source)); } catch (e) { return []; }
 }
 // Vela 0.6.17 leaves a script handle's title at "Indicator"; read the declared one.
 function titleOf(h){

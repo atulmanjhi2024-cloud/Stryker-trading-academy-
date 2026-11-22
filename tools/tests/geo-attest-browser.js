@@ -23,8 +23,10 @@ function stub(cfg) {
     const snap = (id, d) => ({ id, exists: !!d, data: () => d || {}, ref: {} });
     const list = () => ({ empty: true, size: 0, docs: [], forEach() {} });
     const docRef = (col, id) => ({
-      id, get: () => Promise.resolve(snap(id, DATA[col + '/' + id])),
-      set: (d, o) => { window.__sets.push({ path: col + '/' + id, d, o }); if (CFG.failSet && col === 'students') return Promise.reject({ code: 'unavailable' }); return Promise.resolve(); },
+      // CFG.cache = what the local Firestore cache holds (a default get() answers from it); {source:'server'} reads DATA.
+      id, get: (o) => { window.__gets = (window.__gets || []).concat([(o && o.source) || 'default']);
+        const k = col + '/' + id; return Promise.resolve(snap(id, !(o && o.source === 'server') && CFG.cache && k in CFG.cache ? CFG.cache[k] : DATA[k])); },
+      set: (d, o) => { window.__sets.push({ path: col + '/' + id, d, o }); if (CFG.failSet && col === 'students') { if (CFG.answerOnFail && d && d.sanctionsAttest) DATA[col + '/' + id] = Object.assign({}, DATA[col + '/' + id], { residenceCountry: 'US', sanctionsAttest: true }); return Promise.reject({ code: CFG.failSet === true ? 'unavailable' : CFG.failSet }); } return Promise.resolve(); },
       update: () => Promise.resolve(), delete: () => Promise.resolve(),
       onSnapshot: (cb) => { setTimeout(() => cb(snap(id, DATA[col + '/' + id])), 10); return () => {}; },
       collection: (sub) => colRef(col + '/' + id + '/' + sub)
@@ -204,11 +206,55 @@ const hideOverlays = (p) => p.evaluate(() => document.querySelectorAll('body *')
         window.__sets.filter((s) => s.path === 'students/u1' && s.d.sanctionsAttest === true).map((s) => s.d.residenceCountry)]), [true, ['IN']]);
       await ctx.close();
     }
-    // ---------- save fails -> error line, dialog stays ----------
+    // ---------- BUG 22 Nov (Mac app): answered on the server, but the local cache holds only a pending {theme} write ----------
     {
-      const { p, ctx } = await open(browser, 'dashboard-user.html', { signedIn: true, failSet: true, student: { plan: 'Starter' }, wait: 2500 }, 390);
-      await p.selectOption('#geo-gt-country', 'US'); await p.check('#geo-gt-attest'); await p.click('#geo-gt-save'); await p.waitForTimeout(400);
-      check('save fails: error shown, dialog stays, button usable', await p.evaluate(() => [!document.getElementById('geo-gt-err').hidden, !!document.getElementById('geo-gate'), document.getElementById('geo-gt-save').disabled]), [true, true, false]);
+      const { p, ctx } = await open(browser, 'charts.html', { signedIn: true, wait: 3000,
+        student: { plan: 'Pro', residenceCountry: 'US', sanctionsAttest: true, sanctionsAttestAt: 'TS0' },
+        cache: { 'students/u1': { theme: 'night' } } }, 1440);
+      check('stale cache, answered on server: no dialog, no second write', await p.evaluate(() => [!document.getElementById('geo-gate'),
+        window.__sets.filter((s) => s.d && 'residenceCountry' in s.d).length]), [true, 0]);
+      await ctx.close();
+    }
+    // ---------- save fails -> plain reason + code, Try again, Sign out (never a dead end) ----------
+    for (const [code, light, w] of [['unavailable', false, 390], ['permission-denied', false, 1440], ['permission-denied', true, 390], ['unavailable', true, 1440]]) {
+      const tag = code + ' ' + w + (light ? ' light' : ' dark');
+      const { p, ctx, errors } = await open(browser, 'dashboard-user.html', { signedIn: true, light, failSet: code, student: { plan: 'Starter' }, wait: 2500 }, w);
+      await p.selectOption('#geo-gt-country', 'US'); await p.check('#geo-gt-attest'); await p.click('#geo-gt-save'); await p.waitForTimeout(500);
+      const st = await p.evaluate(() => ({ err: document.getElementById('geo-gt-err').textContent, errShown: !document.getElementById('geo-gt-err').hidden,
+        gate: !!document.getElementById('geo-gate'), btn: document.getElementById('geo-gt-save').textContent, btnOff: document.getElementById('geo-gt-save').disabled,
+        out: !document.getElementById('geo-gt-out').hidden, outVisible: document.getElementById('geo-gt-out').offsetHeight > 0 }));
+      check('save fails (' + tag + '): reason + code shown, Try again + Sign out', [st.errShown, st.gate, st.btn, st.btnOff, st.out, st.outVisible, st.err.includes('(Error code: ' + code + ')')],
+        [true, true, 'Try again', false, true, true, true]);
+      check('save fails (' + tag + '): plain reason', code === 'unavailable' ? /can't reach TradeZoro/.test(st.err) : /didn't accept/.test(st.err), true);
+      // alignment: both buttons same width + left edge, even gap, text centred, nothing overflows the card
+      const m = await p.evaluate(() => {
+        const r = (id) => document.getElementById(id).getBoundingClientRect(); const a = r('geo-gt-save'), b = r('geo-gt-out'), c = document.querySelector('.geo-gate-card').getBoundingClientRect();
+        const cs = getComputedStyle(document.querySelector('.geo-gate-card'));
+        return { sameW: Math.abs(a.width - b.width) <= 1, sameX: Math.abs(a.left - b.left) <= 1, gap: Math.abs(b.top - a.bottom - 12) <= 1 ? 12 : +(b.top - a.bottom).toFixed(2),
+          inside: a.left >= c.left && a.right <= c.right && b.bottom <= c.bottom, padLR: Math.abs(a.left - c.left - (c.right - a.right)) <= 1,
+          noHScroll: document.documentElement.scrollWidth <= innerWidth, padL: cs.paddingLeft, padR: cs.paddingRight };
+      });
+      check('save fails (' + tag + '): buttons aligned, 12px gap, even padding, no h-scroll', [m.sameW, m.sameX, m.gap, m.inside, m.padLR, m.noHScroll, m.padL === m.padR], [true, true, 12, true, true, true, true]);
+      await p.screenshot({ path: path.join(OUT, 'save-failed-' + code + '-' + w + (light ? '-light' : '-dark') + '.png') });
+      if (code === 'unavailable' && !light) {
+        await p.evaluate(() => { window.__outCalls = 0; const a = firebase.auth(); const so = a.signOut; a.signOut = () => { sessionStorage.setItem('__so', '1'); return so(); }; });
+        await Promise.all([p.waitForURL(/\/login/, { timeout: 5000 }).catch(() => {}), p.click('#geo-gt-out')]);
+        check('save fails: Sign out signs out and goes to /login', [await p.evaluate(() => sessionStorage.getItem('__so')), /\/login/.test(p.url())], ['1', true]);
+      }
+      check('save fails (' + tag + '): no page errors', errors.filter((e) => !/Failed to fetch|NetworkError|net::/.test(e)), []);
+      await ctx.close();
+    }
+    // ---------- save refused but the answer IS on the server (another device / an earlier save): dialog closes ----------
+    {
+      const { p, ctx } = await open(browser, 'dashboard-user.html', { signedIn: true, failSet: 'permission-denied', answerOnFail: true, wait: 2500,
+        student: { plan: 'Starter' } }, 390);
+      await p.selectOption('#geo-gt-country', 'US'); await p.check('#geo-gt-attest'); await p.click('#geo-gt-save'); await p.waitForTimeout(500);
+      check('refused but already answered on server: dialog closes', await p.evaluate(() => !document.getElementById('geo-gate')), true);
+      await ctx.close();
+    }
+    {
+      const { p, ctx } = await open(browser, 'dashboard-user.html', { signedIn: true, wait: 2500, student: { plan: 'Starter' } }, 390);
+      check('member check asks for the server copy', await p.evaluate(() => (window.__gets || []).includes('server')), true);
       await ctx.close();
     }
     // ---------- legal pages don't prompt; terms show the section ----------

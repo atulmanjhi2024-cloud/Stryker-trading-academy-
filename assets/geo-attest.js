@@ -102,12 +102,28 @@
     if (typeof auth !== 'undefined' && auth) auth.signOut().catch(function () {});
   }
 
+  // Offline, a Firestore write never settles (it waits in the local queue), so give up after 20 s and say so.
   function save(uid, code) {
-    return db.collection('students').doc(uid).set({
+    var w = db.collection('students').doc(uid).set({
       residenceCountry: code,
       sanctionsAttest: true,
       sanctionsAttestAt: firebase.firestore.FieldValue.serverTimestamp()
     }, { merge: true });
+    return Promise.race([w, new Promise(function (_, no) { setTimeout(function () { no({ code: 'deadline-exceeded' }); }, 20000); })]);
+  }
+  // Always read the SERVER copy. The default get() answers from the local cache when the connection is slow, and a
+  // cached doc holding only a pending {theme} write (theme.js, every chart load in the desktop app) looks unanswered:
+  // the dialog then asks a member who already answered, and the rules refuse the second answer (bug 22 Nov, Mac app).
+  function serverDoc(uid) { return db.collection('students').doc(uid).get({ source: 'server' }); }
+  function answered(d) { return d.sanctionsAttest === true && !!d.residenceCountry; }
+  function report(what, code) {
+    console.warn('TradeZoro: ' + what, code);
+    try { if (typeof logActivity === 'function') logActivity('geo.' + what.replace(/\W+/g, '_'), 'Country confirmation: ' + what + ' (' + code + ')', { detail: String(code) }); } catch (e) { /* logging never blocks */ }
+  }
+  function errText(code) {
+    if (code === 'permission-denied') return 'Your account didn\'t accept this answer. It may already have a country on file. Sign out and sign back in. If this keeps happening, email support@tradezoro.com.';
+    if (code === 'unavailable' || code === 'deadline-exceeded') return 'We can\'t reach TradeZoro right now, so your answer wasn\'t saved. Check your internet connection, then press Try again.';
+    return 'Something went wrong and your answer wasn\'t saved. Press Try again, or sign out and email support@tradezoro.com.';
   }
 
   function showDialog(uid) {
@@ -121,14 +137,22 @@
       fieldsHtml('geo-gt') +
       '<p class="geo-gate-err" id="geo-gt-err" role="alert" hidden></p>' +
       '<button type="button" class="btn btn-primary btn-block" id="geo-gt-save" disabled>Continue</button>' +
+      '<button type="button" class="btn btn-secondary btn-block" id="geo-gt-out" hidden>Sign out</button>' +
       '<p class="geo-gate-legal">See <a href="/terms#restricted-regions">Restricted regions</a> in our Terms.</p>' +
       '</div>';
     document.body.appendChild(ov);
     document.documentElement.classList.add('geo-gate-open');
     var btn = ov.querySelector('#geo-gt-save');
     var err = ov.querySelector('#geo-gt-err');
-    var cur = { ok: false };
-    var w = wire(ov, 'geo-gt', function (s) { cur = s; btn.disabled = !(s.ok || s.blocked); btn.textContent = s.blocked ? 'Confirm' : 'Continue'; });
+    var out = ov.querySelector('#geo-gt-out');
+    var cur = { ok: false }, failed = false;
+    var w = wire(ov, 'geo-gt', function (s) { cur = s; btn.disabled = !(s.ok || s.blocked); btn.textContent = s.blocked ? 'Confirm' : (failed ? 'Try again' : 'Continue'); });
+    function close() { ov.remove(); document.documentElement.classList.remove('geo-gate-open'); }
+    out.addEventListener('click', function () {
+      out.disabled = true;
+      var go = function () { location.href = '/login'; };
+      if (typeof auth !== 'undefined' && auth) auth.signOut().then(go, go); else go();
+    });
     // Keep focus inside the dialog; Escape does nothing (the member must answer).
     ov.addEventListener('keydown', function (e) {
       if (e.key === 'Escape') { e.preventDefault(); return; }
@@ -147,13 +171,22 @@
       }
       if (!cur.ok) return;
       btn.disabled = true; err.hidden = true;
-      save(uid, cur.code).then(function () {
-        ov.remove(); document.documentElement.classList.remove('geo-gate-open');
-      }).catch(function (e) {
-        btn.disabled = false;
-        err.textContent = 'We couldn\'t save that. Check your connection and try again.';
-        err.hidden = false;
-        console.warn('TradeZoro: attestation not saved', e && e.code);
+      btn.textContent = 'Saving…';
+      save(uid, cur.code).then(close).catch(function (e) {
+        var code = (e && e.code) || 'unknown';
+        report('attestation not saved', code);
+        // Refused or timed out: the answer may already be on file (an earlier save, another device). Check the server.
+        return serverDoc(uid).then(function (snap) {
+          var d = snap.exists ? snap.data() || {} : {};
+          if (d.sanctionsLocked === true || G.isBlockedResidence(d.residenceCountry)) { lockPage(); return; }
+          if (answered(d)) { close(); return; }
+          throw e;
+        }).catch(function () {
+          failed = true;
+          btn.disabled = false; btn.textContent = 'Try again';
+          err.textContent = errText(code) + ' (Error code: ' + code + ')';
+          err.hidden = false; out.hidden = false;
+        });
       });
     });
     setTimeout(function () { w.sel.focus(); }, 50);
@@ -161,15 +194,14 @@
 
   function checkMember(user) {
     if (typeof db === 'undefined' || !db) return;
-    var ref = db.collection('students').doc(user.uid);
     var tries = 0;
     (function look() {
-      ref.get().then(function (snap) {
+      serverDoc(user.uid).then(function (snap) {
         // A brand-new account: ensureStudentDoc (progress.js) is still creating the doc. Wait for it.
         if (!snap.exists) { if (++tries < 8) setTimeout(look, 750); return; }
         var d = snap.data() || {};
         if (d.sanctionsLocked === true || G.isBlockedResidence(d.residenceCountry)) { lockPage(); return; }
-        if (d.sanctionsAttest === true && d.residenceCountry) return;
+        if (answered(d)) return;
         var saved = null;
         try { saved = JSON.parse(sessionStorage.getItem(KEY) || 'null'); } catch (e) { /* ignore */ }
         if (saved && saved.c && !G.isBlockedResidence(saved.c) && Date.now() - saved.t < 3600 * 1000) {
@@ -179,8 +211,10 @@
         }
         showDialog(user.uid);
       }).catch(function (e) {
-        // Fail open on a read error: the server-side checks are the real boundary.
-        console.warn('TradeZoro: attestation check failed', e && e.code);
+        // Server not reachable yet (slow start, offline): try again a few times, then fail open. The server-side
+        // checks (checkout, coupons, Stripe webhook) are the real boundary and refuse an unanswered account.
+        if (++tries < 8) { setTimeout(look, 1500); return; }
+        report('attestation check failed', (e && e.code) || 'unknown');
       });
     })();
   }

@@ -46,6 +46,19 @@ case("DENY", "alice attests on bob", 'alice', "update", B, new=dict(OLD, **ATT),
 case("DENY", "signed-out attests", None, "update", A, new=dict(OLD, **ATT), old=OLD)
 case("ALLOW", "admin corrects a country", 'admin', "update", A, new=dict(DONE, residenceCountry="US"), old=DONE)
 case("ALLOW", "admin sets sanctionsLocked", 'admin', "update", A, new=dict(DONE, sanctionsLocked=True), old=DONE)
+# BUG 22 Nov (jgray, Mac app): the cases from the brief, each with exactly what geo-attest.js save() sends (merge).
+FULL = {"plan": "Pro", "planId": "pro", "email": "a@b.c", "createdAt": "2026-11-21T17:19:52Z", "displayName": "Alice", "theme": "night",
+        "stripeCustomerId": "cus_x", "subscriptionStatus": "active", "trialEndsAt": 1, "marketDataAgreement": {"version": "v1"}}
+case("ALLOW", "(a) no students doc yet: save() is a create with only the 3 geo keys", 'alice', "create", A, new=dict(ATT))
+case("ALLOW", "(a) no doc yet: blocked answer alone is a create", 'alice', "create", A, new={"residenceCountry": "IR"})
+case("ALLOW", "(b0) full paid doc, never answered: first save", 'alice', "update", A, new=dict(FULL, **ATT), old=FULL)
+case("DENY", "(b) doc already answered (jgray): a second save() is refused", 'alice', "update", A,
+     new=dict(FULL, residenceCountry="US", sanctionsAttest=True, sanctionsAttestAt=TS), old=dict(FULL, residenceCountry="US", sanctionsAttest=True, sanctionsAttestAt="2026-11-21T17:20:06Z"))
+case("DENY", "(b) blocked answer stored alone, then a clean save() is refused", 'alice', "update", A, new=dict(FULL, **ATT), old=dict(FULL, residenceCountry="CU"))
+case("ALLOW", "(c) beta doc (beta/betaSince set server-side): first save", 'alice', "update", A,
+     new=dict(FULL, beta=True, betaSince="2026-11-22T10:00:00Z", **ATT), old=dict(FULL, beta=True, betaSince="2026-11-22T10:00:00Z"))
+case("DENY", "(c) member sets beta themselves", 'alice', "update", A, new=dict(FULL, beta=True), old=FULL)
+case("ALLOW", "answered member: unrelated merge write (theme) still allowed", 'alice', "update", A, new=dict(FULL, theme="day", **ATT), old=dict(FULL, **ATT))
 # regressions
 case("DENY", "student sets own plan Elite", 'alice', "update", A, new=dict(OLD, plan="Elite"), old=OLD)
 case("ALLOW", "new sign-up bootstrap plan Starter", 'alice', "create", A, new={"plan": "Starter"})

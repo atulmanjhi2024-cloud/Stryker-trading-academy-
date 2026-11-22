@@ -5103,6 +5103,8 @@ html.geo-gate-open, html.geo-gate-open body{ overflow:hidden; }
 @media (max-width:767px){.geo-gate{ align-items:flex-end; padding:0; }
 .geo-gate-card{ max-width:none; border-radius:20px 20px 0 0; border-bottom:0; padding:24px 16px max(24px, env(safe-area-inset-bottom)); }}
 #geo-gate .btn:disabled{ opacity:.45; cursor:not-allowed; box-shadow:none; filter:saturate(.6); }
+#geo-gate #geo-gt-out{ margin-top:12px; }
+#geo-gate #geo-gt-out[hidden]{ display:none; }
 .btn, .btn-sm, .btn-block, .cm-btn, .pv-cta, .pv-cta-xl, .dl-btn,
 .fb-btn, .fb-btn-xl, .dh-btn, .dh-btn-xl, .fb-top-cta, .pr-btn,
 .hcb-go-btn, .cd-go-btn, .gex-dl-btn{ border-radius:999px; }

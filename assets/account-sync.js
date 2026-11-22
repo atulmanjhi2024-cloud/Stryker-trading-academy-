@@ -62,6 +62,7 @@
     ['stryker_chart_layout_auto_{uid}', 'layoutAutosave', 'chart'],
     ['stryker_chart_layout_recent_{uid}', 'layoutRecent', 'chart'],
     ['stryker_ctype_favs', 'chartTypeFavs', 'chart'],
+    ['stryker_pos_tpl', 'positionTemplates', 'chart'],         // Long / Short Position saved templates + default (assets/chart-pos-templates.js)
     ['stryker_chart_favbar_orient', 'favToolbarOrient', 'chart'],
     ['stryker_chart_compact', 'compactLayout', 'chart'],       // Chart settings > Compact layout (assets/chart-compact.js)
     ['stk_legend_open_v1', 'legendOpen', 'chart'],

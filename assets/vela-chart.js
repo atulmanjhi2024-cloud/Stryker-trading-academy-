@@ -1223,6 +1223,8 @@ function legendFold(R) {
   if (!BT) try { Paper.mountPaper(ws, { toast, bar: document.querySelector('#stkc-bar .stkc-bar-r') }); } catch (e) { console.warn('TradeZoro: paper trading', e); }
   // Price tags on the right scale for order / TP / SL / position lines and drawings (assets/chart-axis-tags.js)
   import('./chart-axis-tags.js?v=1200').then((m) => m.mountAxisTags(ws)).catch((e) => console.warn('TradeZoro: axis tags', e));
+  // Saved templates for the Long / Short Position tool (assets/chart-pos-templates.js)
+  import('./chart-pos-templates.js?v=1200').then((m) => m.mountPositionTemplates(ws)).catch((e) => console.warn('TradeZoro: position templates', e));
   if (hlP) hlP.then((m) => m.mountHlTrade(ws, { bar: document.querySelector('#stkc-bar .stkc-bar-r') })).catch((e) => console.warn('TradeZoro: HL trade', e));
   if (!BT) try { Replay.mountBarReplay(ws, { toast, Paper, store: mods[9].sharedBarStore }); } catch (e) { console.warn('TradeZoro: bar replay', e); }
   // Right-side Watchlist panel + icon rail (phones: a full-screen sheet): assets/chart-watchlist.js.

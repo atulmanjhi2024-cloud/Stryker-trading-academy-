@@ -4,7 +4,7 @@
 //   const meta = await r.analyze(source);          // { ok, diagnostics, meta }
 //   const out = await r.run({ source, bars, inputs, symbol, tfMs, futuresDay, tick, securities });
 //   r.dispose();
-const WORKER_URL = new URL('./worker.js?v=1215', import.meta.url);
+const WORKER_URL = new URL('./worker.js?v=1216', import.meta.url);
 export const KILL_MS = { run: 25000, analyze: 10000 };
 const START_MS = 30000;   // a fresh worker still has to download the engine: a slow line is not a runaway script
 

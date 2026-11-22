@@ -134,6 +134,8 @@ function wrapAlerts(eng){
 
 function loadPine(){
   if (!enginePromise) {
+    // The in-process engine (LANG_MAIN) runs the page's pinets (import map): give it the same empty-live-stream guard as the worker (Owner bug 22 Nov, 'openTime' toasts).
+    import('pinets').then((pt) => import('./chart-pine-next-patches.js?v=1209').then((p) => p.patchEmptyLive(pt.PineTS))).catch(() => {});
     enginePromise = import(PINE_PKG).then((m) => {
       if (!m || !m.PineWorkerEngine) throw new Error('Pine engine did not load');
       // Cells created from now on (layout widened) get an engine automatically.

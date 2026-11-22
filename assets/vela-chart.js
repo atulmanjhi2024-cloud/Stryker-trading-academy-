@@ -81,6 +81,7 @@
 import { boxCanvas } from './chart-box-canvas.js?v=1209';
 // INDICATOR VERSIONS (Owner 13 Nov): a Version setting on every pinnable native, the legend update button (assets/chart-ind-versions.js).
 import { installIndVersions, mountIndVersions } from './chart-ind-versions.js?v=1209';
+import * as IndErr from './chart-ind-errors.js?v=1209';   // indicator errors: log + one friendly toast, never raw text
 import * as SymN from './chart-sym.js?v=1209';   // futures symbol forms -> 'futures:ROOT1!' (assets/chart-sym.js)
 const liveCellsNow = () => { try { return (window.STRYKER_VELA && window.STRYKER_VELA.context().cells) || []; } catch (e) { return []; } };
 const BOX_ON = (() => { try { return !/[?&]boxcanvas=0\b/.test(location.search) && localStorage.getItem('stk_box_canvas') !== '0'; } catch (e) { return true; } })();
@@ -934,8 +935,10 @@ function lateLists(provider){
   // Chart's own notices (alerts, script errors, provider errors) use the site toast so both look the same (Owner 17 Nov).
   try {
     const th = ws.toastHost || (ws.shell && ws.shell.toastHost);
-    if (th) { th.show = (m, kind, ms) => { try { window.showToast(['error', 'success', 'warning'].includes(kind) ? kind : 'info', String(m), ms > 0 ? { duration: ms } : {}); } catch (e) {} }; th.hide = () => {}; }
+    // Raw "[A] <error.message>" indicator errors are dropped here; assets/chart-ind-errors.js logs them and toasts a friendly line only for an indicator that keeps failing (Owner bug 22 Nov).
+    if (th) { th.show = (m, kind, ms) => { if (IndErr.isRawIndicatorToast(m, kind)) return; try { window.showToast(['error', 'success', 'warning'].includes(kind) ? kind : 'info', String(m), ms > 0 ? { duration: ms } : {}); } catch (e) {} }; th.hide = () => {}; }
   } catch (e) { console.warn('TradeZoro: toast route', e); }
+  try { IndErr.installIndicatorErrors(ws, (k, t) => window.showToast(k, t), (h) => (window.STRYKER_PINE && h.source ? window.STRYKER_PINE.titleOf(h) : h.title)); } catch (e) { console.warn('TradeZoro: indicator errors', e); }
   // FUTURES SYMBOL FORMS (Owner bug 17 Nov): 'CME_MINI:MNQ1!', 'CME:ES1!', 'MNQZ6' ... are written as 'futures:MNQ1!' at the source, so
   // every cell holds one form (the DOM, heatmap, book tools, paper ... all read it). The readers still accept the old forms
   // (assets/chart-sym.js) for anything that slips past this, e.g. a layout saved before this change.

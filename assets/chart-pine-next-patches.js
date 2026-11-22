@@ -546,11 +546,32 @@ export function patchPretranspiled(PineTS){
   return true;
 }
 
+// EMPTY LIVE STREAM (Owner bug 22 Nov: red toasts "[A] Cannot read properties of undefined (reading
+// 'openTime')" stacking on the apps). pinets 0.11.0 PineTS._updateMarketData reads
+// this.data[this.data.length - 1].openTime BEFORE its try block, so a live stream polled while the
+// chart has no bars (symbol/timeframe switch, closed market, feed reconnect, empty layout) throws a
+// TypeError that ends the stream and reaches Vela's indicator:error toast. With no bars there is
+// nothing to update: report "no change" and the stream keeps polling until bars arrive.
+// Reproduced in tools/tests/chart-pine-empty-live.test.mjs.
+export function patchEmptyLive(PineTS){
+  const proto = PineTS && PineTS.prototype;
+  if (!proto || proto.__stkEmptyLive || typeof proto._updateMarketData !== 'function') return false;
+  const upd = proto._updateMarketData;
+  proto._updateMarketData = function (...args) {
+    const d = this.data;
+    if (!Array.isArray(this.source) && !(Array.isArray(d) && d.length && d[d.length - 1])) return Promise.resolve({ newCandles: 0, updatedLastCandle: false });
+    return upd.apply(this, args);
+  };
+  proto.__stkEmptyLive = true;
+  return true;
+}
+
 // pinets = the pinets module (optional): adds the Indicator fix. scope = the worker global
 // (optional): adds the formatter cache.
 export function install(Context, pinets, scope){
   try { if (pinets && pinets.Indicator) patchIndicator(pinets.Indicator); } catch (e) {}
   try { if (pinets && pinets.PineTS) patchPretranspiled(pinets.PineTS); } catch (e) {}
+  try { if (pinets && pinets.PineTS) patchEmptyLive(pinets.PineTS); } catch (e) {}
   try { if (scope) cacheDateTimeFormat(scope); } catch (e) {}
   const proto = Context && Context.prototype;
   if (!proto || proto.__stkNextPatched || typeof proto.bindContextObject !== 'function') return false;

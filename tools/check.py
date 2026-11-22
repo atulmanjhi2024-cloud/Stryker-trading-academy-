@@ -715,6 +715,10 @@ def check_latency():
     r = subprocess.run(['node', 'tools/tests/chart-sym.test.mjs'], capture_output=True, text=True, cwd=ROOT, timeout=60)
     if r.returncode != 0:
         fail('chart-sym: ' + (r.stdout + r.stderr).strip()[-300:])
+    # indicator errors: empty-live-stream guard + friendly one-off toast (assets/chart-ind-errors.js, Owner bug 22 Nov 'openTime')
+    r = subprocess.run(['node', 'tools/tests/chart-ind-errors.test.mjs'], capture_output=True, text=True, cwd=ROOT, timeout=60)
+    if r.returncode != 0:
+        fail('chart-ind-errors: ' + (r.stdout + r.stderr).strip()[-300:])
     # layout link ids /charts/<ID> (assets/chart-layout-slug.js, Owner feature 17 Nov)
     r = subprocess.run(['node', 'tools/tests/chart-layout-slug.test.mjs'], capture_output=True, text=True, cwd=ROOT, timeout=60)
     if r.returncode != 0:

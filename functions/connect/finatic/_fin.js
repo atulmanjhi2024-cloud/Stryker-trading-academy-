@@ -34,6 +34,15 @@ export function pagesEntry(handle, { retryHere = true } = {}) {
       const a = Date.now();
       let r = null;
       try { r = await env.FINATIC_EDGE.fetch(new Request(request.url, { method: request.method, headers: h, body, redirect: 'manual' })); } catch (e) { r = null; }
+      // STALE EDGE WORKER (bug 22 Nov, "Admin only" when a member taps MetaTrader 5): the Worker is deployed by hand, so it can run
+      // older handlers than this Pages build (the 19 Nov one still had the admin-only gate; it also lacks newer routes). Its refusals
+      // "Admin only" (403) and "not_found" (404) come BEFORE any broker call or write, so running the same handler here is safe and
+      // gives the current rules. Any other answer, including every real order result, is returned untouched.
+      let stale = false;
+      if (r && (r.status === 403 || r.status === 404) && /^application\/json\b/i.test(r.headers.get('content-type') || '')) {
+        try { const j = await r.clone().json(); stale = (retryHere && r.status === 404 && j.code === 'not_found') || (r.status === 403 && j.error === 'Admin only'); } catch (e) {}
+      }
+      if (stale) { try { console.warn('finatic: edge Worker is older than this build (' + r.status + '), running here'); } catch (e) {} r = null; retryHere = true; }
       if (r && /^application\/json\b/i.test(r.headers.get('content-type') || '')) {
         const out = new Response(r.body, r);
         const st = r.headers.get('server-timing') || '', pl = r.headers.get('cf-placement') || '';

@@ -51,7 +51,7 @@ service cloud.firestore {
         'tradingViewGrantedUsername', 'tradingViewGrantedAt', 'role', 'banned',
         'stripeCustomerId', 'stripeSubscriptionId', 'billingProvider',
         'lapsedFromPlan', 'lapsedAtMillis',
-        'partner', 'planSource', 'trialUsedAt', 'trialEndsAt', 'trialProvider', 'trialCancelledAt', 'rithmicBeta', 'demo', 'liveFeed', 'liveFeedBy', 'liveFeedAt', 'liveFeedGrandfathered', 'liveFeedNote', 'liveData', 'marketDataAgreement', 'sanctionsLocked', 'sanctionsLockedAt', 'sanctionsLockReason'];
+        'partner', 'planSource', 'trialUsedAt', 'trialEndsAt', 'trialProvider', 'trialCancelledAt', 'rithmicBeta', 'demo', 'liveFeed', 'liveFeedBy', 'liveFeedAt', 'liveFeedGrandfathered', 'liveFeedNote', 'liveData', 'marketDataAgreement', 'sanctionsLocked', 'sanctionsLockedAt', 'sanctionsLockReason', 'beta', 'betaSince'];
     }
     function touchesPrivileged() {
       return request.resource.data.diff(resource.data).affectedKeys().hasAny([
@@ -60,7 +60,7 @@ service cloud.firestore {
         'tradingViewGrantedUsername', 'tradingViewGrantedAt', 'role', 'banned',
         'stripeCustomerId', 'stripeSubscriptionId', 'billingProvider',
         'lapsedFromPlan', 'lapsedAtMillis',
-        'partner', 'planSource', 'trialUsedAt', 'trialEndsAt', 'trialProvider', 'trialCancelledAt', 'rithmicBeta', 'demo', 'liveFeed', 'liveFeedBy', 'liveFeedAt', 'liveFeedGrandfathered', 'liveFeedNote', 'liveData', 'marketDataAgreement', 'sanctionsLocked', 'sanctionsLockedAt', 'sanctionsLockReason'
+        'partner', 'planSource', 'trialUsedAt', 'trialEndsAt', 'trialProvider', 'trialCancelledAt', 'rithmicBeta', 'demo', 'liveFeed', 'liveFeedBy', 'liveFeedAt', 'liveFeedGrandfathered', 'liveFeedNote', 'liveData', 'marketDataAgreement', 'sanctionsLocked', 'sanctionsLockedAt', 'sanctionsLockReason', 'beta', 'betaSince'
       ]);
     }
     function createsPrivileged() {
@@ -69,7 +69,7 @@ service cloud.firestore {
         'foundingMember', 'foundingCoupon', 'referralPoints', 'tradingViewAccessGranted',
         'tradingViewGrantedUsername', 'tradingViewGrantedAt', 'role', 'banned',
         'stripeCustomerId', 'stripeSubscriptionId', 'billingProvider',
-        'partner', 'planSource', 'trialUsedAt', 'trialEndsAt', 'trialProvider', 'trialCancelledAt', 'rithmicBeta', 'demo', 'liveFeed', 'liveFeedBy', 'liveFeedAt', 'liveFeedGrandfathered', 'liveFeedNote', 'liveData', 'marketDataAgreement', 'sanctionsLocked', 'sanctionsLockedAt', 'sanctionsLockReason'
+        'partner', 'planSource', 'trialUsedAt', 'trialEndsAt', 'trialProvider', 'trialCancelledAt', 'rithmicBeta', 'demo', 'liveFeed', 'liveFeedBy', 'liveFeedAt', 'liveFeedGrandfathered', 'liveFeedNote', 'liveData', 'marketDataAgreement', 'sanctionsLocked', 'sanctionsLockedAt', 'sanctionsLockReason', 'beta', 'betaSince'
       ]);
     }
     // SANCTIONS ATTESTATION (Owner order 09 Nov 2026, assets/geo-attest.js). The member sets residenceCountry
@@ -102,6 +102,10 @@ service cloud.firestore {
     // The update rule exists because an admin edits their own notification
     // preferences on their own admins/{uid} document (admin-settings.js).
     // ---------------------------------------------------------------------
+    // Beta tester program (Owner 2026-11-22): students.beta is written ONLY by the Pages Functions (service account, functions/api/beta).
+    // Testers are emails in settings/betaTesters (admin read/write only, see /settings below). betaReports/{id} = server copy of each bug report.
+    match /betaReports/{id} { allow read: if isAdmin(); allow write: if false; }
+
     match /admins/{uid} {
       allow read:           if signedIn();
       allow update:         if isAdmin() && isSelf(uid);
@@ -750,7 +754,7 @@ service cloud.firestore {
     // ---------------------------------------------------------------------
     // settings/liveBlocked ({<uid>: true} = that member's live orders are refused, 21 Nov 2026) lists member uids: admins only.
     match /settings/{doc} {
-      allow read:  if doc in ['site', 'logo', 'favicon', 'commerce', 'seo'] || (signedIn() && doc != 'liveBlocked') || isAdmin();
+      allow read:  if doc in ['site', 'logo', 'favicon', 'commerce', 'seo'] || (signedIn() && !(doc in ['liveBlocked', 'betaTesters'])) || isAdmin();
       allow write: if isAdmin();
     }
     match /tvSession/{doc}      { allow read, write: if false; }   // functions only

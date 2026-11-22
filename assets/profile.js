@@ -141,7 +141,7 @@ function renderProfile(uid, profile, isOwnProfile, postCount){
       '<div style="height:100px; background:' + bannerGradientFor(plan) + ';"></div>' +
       '<div style="text-align:center; padding:0 32px 40px; margin-top:-52px;">' +
         '<div style="display:flex; justify-content:center; margin-bottom:14px;"><div style="border-radius:50%; border:4px solid var(--bg-2); overflow:hidden; line-height:0;">' + avatarHtml + '</div></div>' +
-        '<h2 style="font-size:21px; margin-bottom:4px;">' + escapeProfileText(name) + roleTag + '</h2>' +
+        '<h2 style="font-size:21px; margin-bottom:4px;">' + escapeProfileText(name) + roleTag + (profile.beta === true ? '<span class="beta-tag" title="TradeZoro beta tester">Beta</span>' : '') + '</h2>' +
         (profile.username
           ? '<p class="profile-username">@' + escapeProfileText(profile.username) + '</p>'
           : '') +

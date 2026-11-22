@@ -42,7 +42,9 @@
           if (!plan || typeof findPlan !== 'function' || !findPlan(plan) || typeof rankOf !== 'function') return resolve({ free: false });
           // ALL TOOLS FREE (Owner 2026-11-13): no tool is limited by plan any more, so nobody is "free" for a tool gate. paid = holds the
           // paid plan (the live data feed); only the live futures order book uses it, and the server decides that (/api/chart/rt l2).
-          resolve({ free: false, paid: rankOf(plan) >= 1, plan: plan });
+          // BETA (Owner 2026-11-22): a beta tester counts as paid (Pro) for the live order book; plan/billing fields are untouched. Server: _rt.js isBetaDoc.
+          var beta = !!(res[1] && res[1].exists && res[1].data().beta === true);
+          resolve({ free: false, paid: rankOf(plan) >= 1 || beta, plan: plan, beta: beta });
         }).catch(function () { resolve({ free: false }); });
       });
     });

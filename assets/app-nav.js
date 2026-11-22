@@ -35,6 +35,12 @@
 
   if (storedAuthed()) setAuthedClass(true);
 
+  // Beta tester program (assets/beta.js): badge placeholders, isBeta() and, for beta testers + admins, the Report a bug button.
+  if (storedAuthed() && !document.getElementById('tz-beta-js')) {
+    var bm = document.querySelector('meta[name="stryker-build"]'), bs = document.createElement('script');
+    bs.id = 'tz-beta-js'; bs.src = '/assets/beta.js?v=' + (bm ? bm.content : '0'); bs.async = true; document.head.appendChild(bs);
+  }
+
   // Which pill/dock item is "current" for this page. Pages are served both as
   // /courses.html and (on Cloudflare Pages) as /courses, so the extension is
   // stripped before matching — otherwise the highlight silently disappears on

@@ -353,7 +353,7 @@ function renderPostCard(post){
               ? staffBadgeHtml(isBotAuthor ? 'TradeZoro staff' : 'TradeZoro Team') : '')
           : (isAuthorStaff && typeof staffBadgeHtml === 'function' ? staffBadgeHtml() : roleTag)) +
         (isBotAuthor ? botBadgeHtml() : '') +
-        shieldBadge + '</div>' +
+        shieldBadge + (isBotAuthor || isTeamPost ? '' : '<span data-beta-uid="' + escapeHtml(post.authorUid || '') + '"></span>') + '</div>' +
       '<div class="floor-post-time">' + timeAgo(createdDate) + editedLabel + flairLabel + '</div></div>' +
       (isOwnPost
         ? '<div class="floor-post-menu-wrap">' +
@@ -540,7 +540,7 @@ function toggleReplies(post, cardEl){
         rEl.innerHTML =
           replyAvatarHtml +
           '<div class="floor-reply-body">' +
-            '<div class="floor-reply-head"><span class="floor-reply-name">' + escapeHtml(r.authorName || 'Trader') + replyRoleTag + '</span>' +
+            '<div class="floor-reply-head"><span class="floor-reply-name">' + escapeHtml(r.authorName || 'Trader') + replyRoleTag + '<span data-beta-uid="' + escapeHtml(r.authorUid || '') + '"></span></span>' +
             '<span class="floor-reply-time">' + timeAgo(rDate) + '</span></div>' +
             '<div class="floor-reply-text">' + escapeHtml(r.text) + '</div>' +
           '</div>';

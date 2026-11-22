@@ -6,7 +6,8 @@
     "notes": [
       "In-app update banner: new versions show at the top of the app."
     ],
-    "minVersionCode": 1
+    "minVersionCode": 1,
+    "beta": null
   },
   "windows": {
     "version": "2.0.1",
@@ -14,6 +15,7 @@
     "notes": [
       "Fixes the chart being cut off when the window is resized."
     ],
-    "minVersion": "1.0.0"
+    "minVersion": "1.0.0",
+    "beta": null
   }
 }

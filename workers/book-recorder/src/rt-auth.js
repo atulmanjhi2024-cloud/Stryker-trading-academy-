@@ -73,6 +73,10 @@ export function isActiveProDoc(f, paid, nowMs = Date.now()) {
   return true;
 }
 
+// Beta tester (Owner 2026-11-22): students/{uid}.beta === true, written ONLY by the server (functions/api/beta, the Discord role sync); counts as Pro
+// for the live data gate below. Billing fields are never touched. Needs the live rule that makes `beta` privileged (reports/workers/w-beta.md).
+export const isBetaDoc = (f) => !!(f && f.beta && f.beta.booleanValue === true);
+
 // Signed agreement = students/{uid}.marketDataAgreement { version: MDA_VERSION, nonProfessional: true }, written ONLY by the callable
 // acceptMarketDataAgreement (privileged in firestore.rules). Old version / missing / odd shapes = no. Fails closed.
 export function hasAgreementDoc(f) {
@@ -215,7 +219,7 @@ export async function isLiveDataToken(token, opts = {}) {
       const r = await f('https://firestore.googleapis.com/v1/projects/' + RT_PROJECT + '/databases/(default)/documents/students/' + encodeURIComponent(uid), { headers: { authorization: 'Bearer ' + token } });
       if (r.status === 200) {
         const fl = ((await r.json()) || {}).fields || {};
-        v = !!(fl.demo && fl.demo.booleanValue === true) || isActiveProDoc(fl, await paidPlanNames(f), opts.nowMs || Date.now());
+        v = !!(fl.demo && fl.demo.booleanValue === true) || isBetaDoc(fl) || isActiveProDoc(fl, await paidPlanNames(f), opts.nowMs || Date.now());
       }
     }
     if (v) ttl = 60000;

@@ -646,6 +646,8 @@ document.addEventListener('DOMContentLoaded', () => {
     auth.onAuthStateChanged(function (user) {
       try { if (user) localStorage.setItem(KEY, '1'); else localStorage.removeItem(KEY); } catch (e) {}
       apply(!!user);
+      // Beta tester program (assets/beta.js): every signed-in page loads it once (badges, isBeta(), Report a bug for beta testers + admins).
+      if (user && !document.getElementById('tz-beta-js')) { var bm = document.querySelector('meta[name="stryker-build"]'), bs = document.createElement('script'); bs.id = 'tz-beta-js'; bs.async = true; bs.src = '/assets/beta.js?v=' + (bm ? bm.content : '0'); document.head.appendChild(bs); }
     });
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', run);

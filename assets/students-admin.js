@@ -9,6 +9,7 @@
 // admin write those three keys. Filter "Live data on" + the "Live data: N users" count live in the filter row.
 
 let ALL_STUDENTS = [];
+window.__betaAdminStudents = () => ALL_STUDENTS;
 // Per-member live trading kill (21 Nov 2026): settings/liveBlocked { <uid>: true } = the broker order route refuses that member's live
 // orders (functions/connect/finatic/_owner.js memberBlocked, read at most every 5 s). Admin-only doc. Loaded once for the list.
 let LIVE_BLOCKED = {};
@@ -89,6 +90,7 @@ function renderStudentsTable(students){
         '<div class="record-stat"><span class="rs-label">Streak</span><span class="rs-val">' + (s.currentStreak || 0) + ' day' + ((s.currentStreak || 0) === 1 ? '' : 's') + '</span></div>' +
         '<div class="record-stat"><span class="rs-label">Member since</span><span class="rs-val">' + memberSince + '</span></div>' +
       '</div>' +
+      (s.beta === true ? '<div class="record-stats"><div class="record-stat"><span class="rs-label">Beta</span><span class="rs-val">Active</span></div></div>' : '') +
       '<div class="live-feed-row">' +
         '<label class="live-feed-switch"><input type="checkbox" role="switch" data-live-feed="' + s.uid + '"' + (liveOn ? ' checked' : '') + '>' +
           '<span class="live-feed-track" aria-hidden="true"></span><span class="live-feed-label">Live chart data</span></label>' +
@@ -430,6 +432,7 @@ function loadStudents(){
     .then(([snap]) => {
       ALL_STUDENTS = [];
       snap.forEach((doc) => { if (!doc.data().test) ALL_STUDENTS.push(Object.assign({ uid: doc.id }, doc.data())); });
+      if (window.__betaAdminRepaint) window.__betaAdminRepaint();
       // Through applyFilters rather than straight to render, so the count
       // label is populated on first paint and any role filter already chosen
       // is respected after a reload.
@@ -582,6 +585,8 @@ document.addEventListener('DOMContentLoaded', () => {
       list = demoAll;
     } else if (CURRENT_ROLE_FILTER === 'live') {
       list = list.filter(s => liveWhy(s, CURRENT_ADMIN_UIDS.has(s.uid)).length > 0);
+    } else if (CURRENT_ROLE_FILTER === 'beta') {
+      list = list.filter(s => s.beta === true);
     } else if (CURRENT_ROLE_FILTER === 'plan-pro' || CURRENT_ROLE_FILTER === 'plan-free') {
       const wantPro = CURRENT_ROLE_FILTER === 'plan-pro';
       list = list.filter(s => (typeof rankOf === 'function' && s.plan && rankOf(s.plan) >= 1) === wantPro);

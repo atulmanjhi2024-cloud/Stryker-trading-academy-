@@ -8,6 +8,7 @@
 <title>Users — TradeZoro Admin</title>
 <link rel="preload" href="assets/fonts/archivo-latin-variable.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="preload" href="assets/fonts/archivo-tnum-latin-variable.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="assets/beta.css?v=1211">
 <link rel="stylesheet" href="assets/style.css?v=1211">
 <script src="assets/skeleton.js?v=1211"></script>
 <script src="assets/sanitize.js?v=1211"></script>
@@ -204,6 +205,16 @@
       <p><b>Real admin access control is on.</b> This page is only reachable by accounts with a matching document in the <code>admins</code> Firestore collection — Firestore's security rules check that server-side, so it can't be bypassed from the browser. Progress data here is view-only, but you can grant or revoke admin, moderator and staff roles for any user using the buttons on their row.</p>
     </div>
 
+    <div class="panel" id="beta-admin">
+      <div class="toolbar"><h2 style="font-size:16.5px;" id="beta-admin-count">Beta testers</h2></div>
+      <form class="ba-form" id="beta-admin-form" autocomplete="off">
+        <input type="email" id="beta-admin-email" class="ba-in" placeholder="Add a tester by email" aria-label="Tester email" maxlength="254" required>
+        <button type="submit" class="btn btn-primary btn-sm" id="beta-admin-add">Add</button>
+      </form>
+      <p class="ba-msg" id="beta-admin-msg" role="status"></p>
+      <div id="beta-admin-list" class="ba-list"></div>
+    </div>
+
     <div class="panel" id="students-top">
       <div class="toolbar">
         <h2 style="font-size:16.5px;" id="students-count">Loading users…</h2>
@@ -224,6 +235,7 @@
           <button type="button" class="users-role-btn" data-role="admin">Admins</button>
           <button type="button" class="users-role-btn" data-role="bot">Bots</button>
           <button type="button" class="users-role-btn users-live-btn" data-role="live">Live data on</button>
+          <button type="button" class="users-role-btn" data-role="beta">Beta</button>
           <button type="button" class="users-role-btn" data-role="demo">Demo</button>
         </div>
         <span class="users-filter-count"><span id="users-filter-count"></span> · <span id="users-live-count">Live data: …</span><span id="users-demo-note" hidden></span></span>
@@ -271,6 +283,7 @@
 <script src="assets/staff-team.js?v=1211"></script>
 <script src="assets/admin-live-feed.js?v=1211"></script>
 <script src="assets/pager.js?v=1211"></script>
+<script src="assets/beta-admin.js?v=1211"></script>
 <script src="assets/students-admin.js?v=1211"></script>
 <script src="assets/notes-admin.js?v=1211"></script>
 <script src="assets/theme.js?v=1211"></script>

@@ -783,6 +783,18 @@ def check_pro_features():
             fail('pro.html / pro-page.js / pro-features-data.js contain a "$": /pro shows no prices')
 
 
+def check_dl_logos():
+    """Owner 22 Nov: the header Download menu shows the real OS logos (Windows/Apple/Linux/Android). A header rebuild once
+    wiped them; fail if any menu link to /dl/ or the .apk uses the generic icon."""
+    import glob, re
+    bad = []
+    rx = re.compile(r'<a\b[^>]*href="(/dl/[^"]+|[^"]*\.apk[^"]*)"[^>]*>\s*<svg class="ci"[^>]*>', re.S)
+    for f in glob.glob('**/*.html', recursive=True) + ['tools/site-header.html']:
+        if 'node_modules' in f: continue
+        s = open(f, encoding='utf-8').read()
+        if rx.search(s): bad.append(f)
+    if bad: fail('Download menu lost its OS logos (generic icon) in: ' + ', '.join(bad[:8]) + (' ...' if len(bad) > 8 else '') + ' (run tools/gen-dl-menu.py)')
+
 def main():
     import time
     from concurrent.futures import ThreadPoolExecutor
@@ -806,7 +818,7 @@ def main():
              check_module_import_versions, check_versioned_sources, check_js_syntax, check_html_structure,
              check_css_braces, check_referenced_assets_exist, check_build_markers, check_mobile_width_guards,
              check_assets_changed_without_bump, check_share_images, check_help_center,
-             check_feature_image_frames, check_app_shell, check_sidebar_closed_before_main]
+             check_feature_image_frames, check_app_shell, check_sidebar_closed_before_main, check_dl_logos]
     with ThreadPoolExecutor(len(order)) as ex:
         list(ex.map(timed, order))
     FAILURES.sort()

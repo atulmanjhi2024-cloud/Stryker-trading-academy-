@@ -24,6 +24,14 @@ if (location.protocol === 'https:' && (host === 'tradezoro.com' || host === 'www
     onShown: (cb) => { if (typeof cb === 'function') ipcRenderer.on('tz:shown', (e, v) => { try { cb(v === true); } catch (x) {} }); }
   });
   updateBanner();
+  // The embedded chart in the main window (src/main.js): the window's top bar (src/app/bar.js) runs in this isolated
+  // world and talks to the app through this bridge. Pop-out chart windows do not get it.
+  if (process.argv.includes('--tz-embedded-chart')) {
+    globalThis.__tzdBar = {
+      act: (a, arg) => ipcRenderer.send('tz:bar', str(a, 20), str(arg, 80)),
+      onState: (cb) => ipcRenderer.on('tz:bar-state', (e, v) => { try { cb(v || {}); } catch (x) {} })
+    };
+  }
 }
 
 // In-app update banner, drawn by the app (not the site) in a shadow root so site CSS cannot touch it.

@@ -1,7 +1,20 @@
-# TradeZoro for Windows (desktop/)
+# TradeZoro Desktop (desktop/), Windows, macOS, Linux
 
-An Electron app that opens https://tradezoro.com in its own secure window. The site is loaded live, so every
-site deploy is in the app the same day; only the app shell (this folder) needs a release.
+## 2.0: our own app, not a website wrapper
+- `src/app/` is the app UI (plain JS, no bundler): frameless window with our own title bar, icon sidebar, command
+  palette (Ctrl/Cmd+K), and native screens Home, Watchlist, Alerts, GEX, Market Stats, Journal, Learn, Settings and
+  sign-in. Built on the site tokens (true black, #03c988, 8-pt grid), light + dark.
+- Charts: the real ZoroCharts page runs in a WebContentsView over the Charts screen (site header/menu/dock hidden),
+  so every tool and indicator works. Pop out to its own window. Same Firebase session as the app (one sign-in).
+- Data: same Firebase project and tradezoro.com APIs as the Android app and the site (`src/app/data.js`).
+- Desktop: tray / menu-bar prices from the watchlist, OS notifications for alerts, global show/hide hotkey
+  (Ctrl/Cmd+Shift+Space by default), start at login, window size/position remembered, native menus.
+- Tests: `npm test` (unit), `xvfb-run -a node test/app-smoke.js <dir>` (Playwright + Electron, stub sign-in and
+  sample data, every screen, chart tab, alignment gate, screenshots), `node test/tour.js <mp4>` (10 s tour).
+  `TZ_DESKTOP_STUB=1` only works unpackaged.
+- A tag with a suffix (`desktop-v2.0.0-beta`) publishes a PRE-RELEASE that installed apps never update to.
+
+The notes below are from 1.x and still apply to the chart view and pop-out chart windows.
 
 ## What it adds over a browser tab
 - Pop-out windows: Ctrl+Shift+N opens a new chart window, Ctrl+Shift+P pops out the current page (keeps

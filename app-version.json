@@ -9,10 +9,12 @@
     "minVersionCode": 1
   },
   "windows": {
-    "version": "1.2.0",
-    "url": "/dl/TradeZoro-Setup.exe?r=1.2.0",
+    "version": "2.0.0",
+    "url": "/dl/TradeZoro-Setup.exe?r=2.0.0",
     "notes": [
-      "Now also on macOS and Linux. Windows has no changes in this version."
+      "All-new desktop app: one clean top bar, your screens under your profile picture, full-width chart.",
+      "Home, Watchlist, Alerts, GEX, Market Stats, Journal and Learn screens, quick search (Ctrl+K), tray prices and desktop alerts.",
+      "Dark, Light or System theme."
     ],
     "minVersion": "1.0.0"
   }

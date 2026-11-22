@@ -1,6 +1,7 @@
 # TradeZoro for Windows: build on Windows and publish to a GitHub Release (UNSIGNED for now: no code-signing
 # certificate yet, see desktop/README.md). The installed app auto-updates from these releases (electron-updater
 # reads latest.yml from the newest non-prerelease release), so the release is created as a normal, "latest" one.
+# Tags with a suffix (desktop-v2.0.0-beta) are created as a PRE-RELEASE for testing: members' apps ignore them.
 # Run by pushing a tag  desktop-vX.Y.Z  (the version in desktop/package.json is set from the tag), or by hand.
 name: Desktop release
 
@@ -49,7 +50,7 @@ jobs:
 
       - name: Version from tag
         run: |
-          VER="${TAG#desktop-v}"
+          VER="${TAG#desktop-v}"; VER="${VER%%-*}"   # desktop-v2.0.0-beta builds 2.0.0 (update files stay latest*.yml)
           echo "$VER" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$' || { echo "tag must look like desktop-v1.2.3, got $TAG"; exit 1; }
           npm version "$VER" --no-git-tag-version --allow-same-version
           echo "VER=$VER" >> "$GITHUB_ENV"
@@ -113,7 +114,8 @@ jobs:
           sed -i 's/^          //' notes.md
           gh release view "$TAG" >/dev/null 2>&1 && gh release delete "$TAG" --yes || true
           # Draft: nothing changes for members until someone publishes it (gh release edit "$TAG" --draft=false --latest).
-          if [ "$DRAFT" = "true" ]; then MODE="--draft"; else MODE="--latest"; fi
+          # A tag with a suffix (desktop-v2.0.0-beta) is a PRE-RELEASE: installed apps never update to it (they read /releases/latest).
+          if [ "$DRAFT" = "true" ]; then MODE="--draft"; elif [ "$TAG" != "${TAG%-*}" ]; then MODE="--prerelease"; else MODE="--latest"; fi
           gh release create "$TAG" dist/TradeZoro-Setup.exe dist/TradeZoro-Setup.exe.blockmap dist/TradeZoro-Portable.exe dist/latest.yml dist/SHA256SUMS.txt \
             --title "TradeZoro for Windows $VER" --notes-file notes.md --target "$GITHUB_SHA" $MODE
 
@@ -142,7 +144,7 @@ jobs:
 
       - name: Version from tag
         run: |
-          VER="${TAG#desktop-v}"
+          VER="${TAG#desktop-v}"; VER="${VER%%-*}"   # desktop-v2.0.0-beta builds 2.0.0 (update files stay latest*.yml)
           echo "$VER" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$' || { echo "tag must look like desktop-v1.2.3, got $TAG"; exit 1; }
           npm version "$VER" --no-git-tag-version --allow-same-version
           echo "VER=$VER" >> "$GITHUB_ENV"
@@ -229,13 +231,19 @@ jobs:
 
       - name: Version from tag
         run: |
-          VER="${TAG#desktop-v}"
+          VER="${TAG#desktop-v}"; VER="${VER%%-*}"   # desktop-v2.0.0-beta builds 2.0.0 (update files stay latest*.yml)
           echo "$VER" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$' || { echo "tag must look like desktop-v1.2.3, got $TAG"; exit 1; }
           npm version "$VER" --no-git-tag-version --allow-same-version
           echo "VER=$VER" >> "$GITHUB_ENV"
 
       - run: npm ci
       - run: npm test
+
+      - name: App smoke test (Playwright + Electron, sample data, no orders)
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq xvfb >/dev/null
+          npm i --no-save playwright-core@1.56.1
+          PW_CORE=playwright-core TZ_SMOKE_CHART=0 CI=true xvfb-run -a -s "-screen 0 2560x1440x24" node test/app-smoke.js dist/smoke
 
       - name: Build AppImage + deb (x64)
         run: npx electron-builder --linux AppImage deb --x64 --publish never

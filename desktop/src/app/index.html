@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en" data-platform="%PLATFORM%" data-version="%VERSION%" data-stub="%STUB%" data-theme="night">
+<head>
+<meta charset="utf-8">
+<!-- TradeZoro Desktop 2.0: the app's own UI. Loaded by src/main.js as a data: URL with the tradezoro.com base, so it
+     shares the member's Firebase session with the embedded chart. Scripts only from the app bundle (tzapp://). -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src tzapp:; style-src tzapp: 'unsafe-inline'; img-src tzapp: data: https:; font-src tzapp:; connect-src https://tradezoro.com https://*.googleapis.com https://data-api.binance.vision https://book-recorder.theelitegrey.workers.dev; frame-src https://tradezoro.com https://strykertrades-e0cd8.firebaseapp.com; base-uri 'none'; form-action 'none'">
+<title>TradeZoro</title>
+<link rel="stylesheet" href="tzapp://app/app.css">
+</head>
+<body>
+<div id="app" class="app">
+  <!-- The window's one top bar (Owner 22 Nov): logo, screen title, search, "..." menu, profile picture (= app menu), window
+       controls. On Charts the chart page's own top row takes this place (src/app/bar.js, the same bar). -->
+  <header class="tb" id="tb">
+    <div id="tb-logo"></div>
+    <h1 class="tb-title" id="tb-title"></h1>
+    <span class="tb-sp"></span>
+    <span class="chip chip-warn" id="tb-sample" hidden>Sample data</span>
+    <button class="chip chip-upd" id="tb-upd" type="button" hidden></button>
+    <div id="tb-search"></div>
+    <div id="tb-end"></div>
+  </header>
+  <main class="main" id="main"></main>
+</div>
+<div id="layer"></div>
+<script src="tzapp://app/fbconfig.js"></script>
+<script src="tzapp://app/vendor/firebase-app-compat.js"></script>
+<script src="tzapp://app/vendor/firebase-auth-compat.js"></script>
+<script src="tzapp://app/vendor/firebase-firestore-compat.js"></script>
+<script src="tzapp://app/core.js"></script>
+<script src="tzapp://app/seed.js"></script>
+<script src="tzapp://app/vendor/market-stats-core.js"></script>
+<script src="tzapp://app/data.js"></script>
+<script src="tzapp://app/bar.js"></script>
+<script src="tzapp://app/ui.js"></script>
+</body>
+</html>

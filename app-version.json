@@ -9,12 +9,10 @@
     "minVersionCode": 1
   },
   "windows": {
-    "version": "2.0.0",
-    "url": "/dl/TradeZoro-Setup.exe?r=2.0.0",
+    "version": "2.0.1",
+    "url": "/dl/TradeZoro-Setup.exe?r=2.0.1",
     "notes": [
-      "All-new desktop app: one clean top bar, your screens under your profile picture, full-width chart.",
-      "Home, Watchlist, Alerts, GEX, Market Stats, Journal and Learn screens, quick search (Ctrl+K), tray prices and desktop alerts.",
-      "Dark, Light or System theme."
+      "Fixes the chart being cut off when the window is resized."
     ],
     "minVersion": "1.0.0"
   }

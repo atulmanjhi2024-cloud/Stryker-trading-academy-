@@ -51,7 +51,7 @@ else app.setAsDefaultProtocolClient(handoff.PROTOCOL, process.execPath, ['--']);
 
 let state, tray = null, mainWin = null, chartView = null, quitting = false, updateReady = false, trayHintShown = false;
 let updManifest = null, updReadyVer = null, updDismissed = null, updAvailVer = null;   // update banner (src/updates.js)
-let chartBounds = null, chartVisible = false, trayQuotes = [], hotkey = null, chartTheme = 'night';
+let chartVisible = false, trayQuotes = [], hotkey = null, chartTheme = 'night';
 const charts = new Map();            // key -> BrowserWindow (pop-out chart windows)
 const seenNotes = new Set();
 
@@ -134,6 +134,8 @@ function shellHtml() {
     .replace(/%PLATFORM%/g, process.platform).replace(/%VERSION%/g, app.getVersion()).replace(/%STUB%/g, STUB ? '1' : '0');
   return 'data:text/html;charset=utf-8;base64,' + Buffer.from(html).toString('base64');
 }
+// Minimum 960x600: at 900px and below the chart page switches to its tablet layout (market status on a second row,
+// workspace tabs hidden), so the window stops just above it. Every size from there up re-lays out live.
 function createMain() {
   const wa = screen.getPrimaryDisplay().workArea;
   const s = restoreBounds('main', { width: Math.min(1440, wa.width), height: Math.min(900, wa.height) });
@@ -150,6 +152,7 @@ function createMain() {
   wc.setWindowOpenHandler(({ url }) => { openExternal(url); return { action: 'deny' }; });
   wc.on('will-attach-webview', (e) => e.preventDefault());
   for (const ev of ['maximize', 'unmaximize', 'enter-full-screen', 'leave-full-screen', 'focus', 'blur']) mainWin.on(ev, () => { send('tz:win', winState()); pushBarState(); });
+  for (const ev of ['resize', 'resized', 'maximize', 'unmaximize', 'restore', 'enter-full-screen', 'leave-full-screen', 'show']) mainWin.on(ev, layoutChart);
   for (const ev of ['show', 'hide', 'minimize', 'restore']) mainWin.on(ev, () => { send('tz:shown', mainWin.isVisible() && !mainWin.isMinimized()); syncChartShown(); });
   mainWin.on('close', (e) => {
     if (quitting) return;
@@ -191,10 +194,14 @@ function ensureChart(url) {
   wc.loadURL(url || CHART);
   return chartView;
 }
+// The chart covers the whole content area, sized here from the window itself on every resize (2.0.1). It used to follow
+// the app document's ResizeObserver, but with the chart covering that document Windows reports it occluded and
+// Chromium pauses its rendering, so the chart kept its old size and was cut off when the window shrank (Owner 22 Nov).
 function layoutChart() {
-  if (!chartView) return;
-  const on = chartVisible && !!chartBounds && chartBounds.width > 0 && chartBounds.height > 0;
-  if (on) chartView.setBounds(chartBounds);
+  if (!chartView || !mainWin || mainWin.isDestroyed()) return;
+  const [width, height] = mainWin.getContentSize();
+  const on = chartVisible && width > 0 && height > 0;
+  if (on) chartView.setBounds({ x: 0, y: 0, width, height });
   chartView.setVisible(on);
   chartView.webContents.executeJavaScript(`document.documentElement.classList.toggle('tzd-off', ${!on})`, true).catch(() => {});
   syncChartShown();
@@ -291,11 +298,7 @@ on('tz:win-action', (a) => {
 });
 handle('tz:info', () => ({ platform: process.platform, version: app.getVersion(), stub: STUB, win: winState(), prefs: prefs(),
   login: loginSupported() ? app.getLoginItemSettings().openAtLogin : null, hotkeyOk: !!hotkey, dark: nativeTheme.shouldUseDarkColors }));
-on('tz:chart-bounds', (b) => {
-  if (!b || ![b.x, b.y, b.width, b.height].every(Number.isFinite)) return;
-  chartBounds = { x: Math.round(b.x), y: Math.round(b.y), width: Math.max(0, Math.round(b.width)), height: Math.max(0, Math.round(b.height)) };
-  layoutChart();
-});
+on('tz:chart-bounds', () => layoutChart());   // the app document's nudge; the size itself comes from the window
 on('tz:chart-show', (v) => { chartVisible = !!v; if (chartVisible) ensureChart(); layoutChart(); if (chartVisible && chartView) chartView.webContents.focus(); });
 on('tz:chart-symbol', (id) => chartSymbol(id));
 on('tz:chart-reload', () => { if (chartView) chartView.webContents.reload(); });
@@ -588,6 +591,8 @@ app.whenReady().then(() => {
   ses.setPermissionRequestHandler((wc, perm, cb, details) => cb(OK.has(perm) && policy.isAppUrl(details.requestingUrl || wc.getURL())));
   ses.setPermissionCheckHandler((wc, perm, origin) => OK.has(perm) && policy.isAppUrl(origin));
   createMain();
+  // a monitor with another scale (or a scale change): the content size in DIPs changes without always a 'resize'
+  screen.on('display-metrics-changed', layoutChart);
   createTray();
   buildMenu();
   registerHotkey();

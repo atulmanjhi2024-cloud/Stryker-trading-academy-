@@ -11,7 +11,9 @@
   (Ctrl/Cmd+Shift+Space by default), start at login, window size/position remembered, native menus.
 - Tests: `npm test` (unit), `xvfb-run -a node test/app-smoke.js <dir>` (Playwright + Electron, stub sign-in and
   sample data, every screen, chart tab, alignment gate, screenshots), `node test/tour.js <mp4>` (10 s tour).
-  `TZ_DESKTOP_STUB=1` only works unpackaged.
+  `TZ_DESKTOP_STUB=1` only works unpackaged. `xvfb-run -a node test/resize.js <dir>` (2.0.1): resizes the window
+  1920 -> 1280 -> 960 (minimum) -> back, maximize, full screen, half-screen snap; the chart must fill the window with
+  its price scale, time axis, avatar and window controls inside. The main process sizes the chart view from the window.
 - A tag with a suffix (`desktop-v2.0.0-beta`) publishes a PRE-RELEASE that installed apps never update to.
 
 The notes below are from 1.x and still apply to the chart view and pop-out chart windows.

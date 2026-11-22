@@ -50,10 +50,10 @@ import { current as verCurrent, baseOf as verBase, verOf as verPinned } from './
 import { createShell, el, ib, ICONS, libRow, emptyState, renderDocs, descOf, ago, download, pickFile, fileName } from './chart-script-editor.js?v=1214';
 
 const PINE_PKG = 'https://cdn.jsdelivr.net/npm/@luxalgo/vela-pinets@0.2.11/dist/index.js';
-const RUN_LIMIT_MS = 20000;
+const RUN_LIMIT_MS = 90000;   // Owner 22 Nov: 20 s cut off normal scripts on slower machines (engine download + first run). Hotfix; the progress-based limit replaces this.
 // Time limit = the script's OWN compute time (not its wait in the worker queue, not the ms other scripts' runs
 // overlapped it). A phone is slower, so a first run gets 40 s there. Hard wall-clock backstop: 3x the limit.
-const RUN_LIMIT_PHONE_MS = 40000;
+const RUN_LIMIT_PHONE_MS = 120000;
 const runLimitMs = () => (typeof window !== 'undefined' && (window.innerWidth <= 700 || (window.matchMedia && window.matchMedia('(pointer:coarse)').matches))) ? RUN_LIMIT_PHONE_MS : RUN_LIMIT_MS;
 const MAX_PER_CELL = 8;
 const SRC_MAX = 65536;

@@ -110,7 +110,7 @@ class CryptoFeed {
           if (!this.backfilled) this.buf.push(t); else { this.add([t]); this.bump(); }
         } catch (x) {}
       };
-      w.onopen = () => { const re = this.retry > 0; this.retry = 0; if (re && this.backfilled) this.catchUp(); };
+      w.onopen = () => { this.retry = 0; if (this.backfilled) this.catchUp(); };   // any open after the backfill (first or re-) fills from the last id seen
       w.onclose = () => { if (this.stopped) return; this.retryWs(); };
     };
     this.openWs = open;
@@ -124,13 +124,14 @@ class CryptoFeed {
     this.tm = setTimeout(() => this.openWs(this.retry), Math.min(15000, 1000 * Math.pow(2, this.retry)));
   }
   // after a socket drop: fill the gap since the last id seen
-  async catchUp() {
+  // (from, to): fetch ids from..to-1 only (the hole between the backfill's newest page and the socket's first trade)
+  async catchUp(from = this.lastId + 1, to = Infinity) {
     try {
-      let from = this.lastId + 1, n = 0;
-      while (n++ < 12 && !this.stopped) {
+      let n = 0;
+      while (n++ < 12 && !this.stopped && from < to) {
         const page = await this.get('&limit=1000&fromId=' + from);
         if (!page.length) break;
-        this.add(page); from = page[page.length - 1].a + 1;
+        this.add(page.filter((t) => t.a < to)); from = page[page.length - 1].a + 1;
         if (page.length < 1000) break;
       }
       if (this.status !== 'live') { this.status = 'live'; this.err = ''; }
@@ -164,10 +165,14 @@ class CryptoFeed {
         if (froms[froms.length - 1] === 0) break;
       }
       this.coverFrom = Math.ceil(oldestT / 60000) * 60000;
+      const headId = first.length ? first[first.length - 1].a : -1;
+      const bufMin = this.buf.length ? this.buf.reduce((m, t) => Math.min(m, t.a), Infinity) : Infinity;
       this.add(this.buf); this.buf.length = 0;
       this.backfilled = true;
       this.status = 'live'; this.err = '';
       this.trim(); this.setBigThr(); this.bump();
+      // trades between the first REST page and the socket's first message were never seen: fetch them (a few trades per load were lost)
+      if (headId >= 0 && bufMin > headId + 1) await this.catchUp(headId + 1, bufMin);
     } catch (e) {
       // keep whatever arrived, keep the stream going, and try the backfill again soon
       this.add(this.buf); this.buf.length = 0;

@@ -688,6 +688,7 @@ function footprintLayer() {
     render(a) { stats = false; try { return this.paint(a); } finally { applyStats(); } },
     paint(a) {
       const t0 = performance.now();
+      if (typeof window !== 'undefined') window.__stkFpPaints = (window.__stkFpPaints || 0) + 1;   // read by tools/tests/fp-live-binance-browser.js
       const g = canvas && canvas.getContext('2d');
       on = false;
       if (!g) return;
@@ -1355,6 +1356,8 @@ if (typeof window !== 'undefined') {
     minuteBars: (root, from, to) => minuteBars(root, from, to, false).bars,
     loaded: (root) => { const s = stores.get(root); return s ? [...s.days.entries()].map(([d, e]) => ({ d, n: e.bars ? e.bars.length : -1, err: e.err })) : []; },
     crypto: () => { const f = [...cryptoFeeds().values()][0]; if (!f) return null; const b = f.bars(), l = b[b.length - 1]; return { status: f.status, err: f.err, minutes: b.filter((x) => x.t >= f.coverFrom).length, lastT: l ? l.t : 0, lastVol: l ? l.vol : 0, tick: f.tick, coverFrom: f.coverFrom, vols: b.map((x) => [x.t, x.vol, x.delta, x.trades]) }; },
+    // trades the crypto feed holds with time in [from, to): { n, vol, minId, maxId } (tools/tests/fp-live-binance-browser.js)
+    cryptoWindow: (from, to) => { const f = [...cryptoFeeds().values()][0], r = { n: 0, vol: 0, minId: Infinity, maxId: -1 }; if (!f) return r; f.mins.forEach((m) => { for (const x of m.trades) if (x[4] >= from && x[4] < to) { r.n++; r.vol += x[2]; if (x[0] < r.minId) r.minId = x[0]; if (x[0] > r.maxId) r.maxId = x[0]; } }); return r; },
     aggregate, rows, poc, tier: () => testTier() || tierNow, sessionOf, get version() { return version; }
   };
 }

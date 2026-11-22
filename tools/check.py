@@ -724,6 +724,10 @@ def check_latency():
     r = subprocess.run(['node', 'tools/tests/chart-layout-slug.test.mjs'], capture_output=True, text=True, cwd=ROOT, timeout=60)
     if r.returncode != 0:
         fail('chart-layout-slug: ' + (r.stdout + r.stderr).strip()[-300:])
+    # crypto footprint: no trade lost between the aggTrades backfill and the live socket (assets/chart-footprint-crypto.js, 22 Nov)
+    r = subprocess.run(['node', 'tools/tests/fp-crypto-gap.test.mjs'], capture_output=True, text=True, cwd=ROOT, timeout=60)
+    if r.returncode != 0:
+        fail('fp-crypto-gap: ' + (r.stdout + r.stderr).strip()[-300:])
 
 
 def check_zscript_engine():

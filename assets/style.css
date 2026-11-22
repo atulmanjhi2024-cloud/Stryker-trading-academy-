@@ -6410,6 +6410,28 @@ body.charts-page .stkchart-credit{
 #stkc-bar.stkc-ob-phone .vela-mb-settings{ display:none; }
 #stkc-bar.stkc-ob-phone .vela-mb-drawings{ color:var(--gold); }
 #stkc-bar.stkc-ob-phone > .stkc-bar-l{ flex:1 1 auto; min-width:0; }
+/* Narrow iPhones (<=400): the Indicators button duplicates the chart's own "Indicators (n)" row, so it goes; that room lets the
+   workspace name shrink (ellipsis) instead of running into the symbol, and the P&L chip keeps its own space (Mr.P, 2026-11-21). */
+@media (max-width:400px){
+  #stkc-bar.stkc-ob-phone .vela-mb-indicators{ display:none; }
+  #stkc-bar.stkc-ob-phone > .stkc-bar-l{ overflow:hidden; }
+  #stkc-bar.stkc-ob-phone > .stkc-bar-l > .stkws-menu{ flex:0 1 auto; min-width:0; }
+  #stkc-bar.stkc-ob-phone > .stkc-bar-r{ flex:none; }
+  #stkc-bar.stkc-ob-phone #stkc-hideprice-btn{ display:none; }   /* lowest priority: also in the chart's own menu */
+  html.stk-cps .stkas-b{ padding:0 4px; }
+  html.stk-cps #stkc-bar .stkas, html.stk-cps #stkc-bar .mclock{ margin:0; }
+  #stkc-bar.stkc-ob-phone .vela-mb-item{ min-width:30px; padding:0 5px; }
+  #stkc-bar.stkc-ob-phone .vela-mb-symbol{ min-width:40px; }
+  #stkc-bar.stkc-ob-phone > .stkc-bar-r{ gap:0; }
+  #stkc-bar.stkc-ob-phone > .stkc-bar-l{ gap:2px; }
+  #stkc-bar.stkc-ob-phone > .stkc-bar-l > .stkws-menu{ max-width:72px; }
+  #stkc-bar.stkc-ob-phone .stkws-btn{ max-width:none; width:100%; box-sizing:border-box; }
+  #stkc-bar.stkc-ob-phone .vela-mb-symbol{ max-width:64px; }
+}
+@media (max-width:380px){
+  #stkc-bar.stkc-ob-phone > .stkc-bar-l > .stkws-menu{ max-width:52px; }
+  #stkc-bar.stkc-ob-phone .vela-mb-symbol{ min-width:34px; }
+}
 #stkc-bar.stkc-ob-phone .stkc-btn{ border-color:transparent; }
 #stkc-bar.stkc-ob-phone .stkc-btn:hover{ background:var(--bg-2); }
 .stkc-ob-pop .vela-mb-item{ all:unset; display:inline-flex; align-items:center; justify-content:center; width:34px; height:34px; border-radius:7px; color:var(--ink-1); cursor:pointer; }
@@ -9545,6 +9567,10 @@ html.stk-cps .stkas-i[data-k="bal"], html.stk-cps .stkas-i[data-k="rp"]{ display
 html.stk-cps .stkas.chip-bal .stkas-i[data-k="bal"]{ display:inline-flex; }
 html.stk-cps .stkas.chip-bal .stkas-i[data-k="up"]{ display:none; }
 html.stk-cps .stkas-l{ display:none; }
+/* Phone: compact amount in the chip (full amount stays in the popover). Desktop keeps the full text. */
+.stkas-s{ display:none; }
+html.stk-cps .stkas-f{ display:none; } html.stk-cps .stkas-s{ display:inline; }
+.stkas-b, .stkas-v{ font-variant-numeric:tabular-nums; white-space:nowrap; }
 html.stk-cps .stkas-pop{ position:fixed; right:8px; top:52px; z-index:9071; min-width:220px; padding:12px 16px; border:1px solid var(--line); border-radius:12px; background:var(--bg-2); box-shadow:0 18px 40px -16px rgba(0,0,0,.5); }
 html.stk-cps .stkas-pop:not([hidden]){ display:block; }
 html.stk-cps .stkas-row{ display:flex; justify-content:space-between; gap:16px; padding:4px 0; font:13px/20px var(--font-mono); color:var(--ink-2); }

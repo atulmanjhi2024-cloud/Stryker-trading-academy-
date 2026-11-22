@@ -170,6 +170,12 @@ function money(n, sign){
   const s = Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   return (n < 0 ? '-' : (sign && n > 0 ? '+' : '')) + '$' + s;
 }
+// Phone chip: "-$65,045.30" is 11 characters wide and ran into the symbol and tool icons (Mr.P, iPhone, 2026-11-21); the chip shows -$65.0K there.
+function moneyShort(n){
+  if (!Number.isFinite(n) || Math.abs(n) < 1000) return money(n);
+  const a = Math.abs(n), t = a >= 1e6 ? (a / 1e6).toFixed(2) + 'M' : (a / 1e3).toFixed(1) + 'K';
+  return (n < 0 ? '-' : '') + '$' + t;
+}
 function specOf(sym){ return acct ? acct.spec(sym) : PE.specOf(sym); }
 // The member's "Enable paper trading" switch, read from the LIVE account (bar replay follows it).
 function liveOf(){ return replay ? liveAcct : acct; }
@@ -984,7 +990,8 @@ function updateStrip(){
   stripSig = sig;
   for (const k of ['bal', 'rp', 'up']) {
     const it = strip.querySelector('[data-k=' + k + ']'), v = it.querySelector('.stkas-v');
-    v.textContent = vals[k]; v.className = 'stkas-v ' + cls[k];
+    const num = k === 'bal' ? d.bal : k === 'rp' ? d.rp : d.up;
+    v.textContent = ''; v.append(h('span', { class: 'stkas-f', text: vals[k] }), h('span', { class: 'stkas-s', text: num == null ? vals[k] : moneyShort(num) })); v.className = 'stkas-v ' + cls[k];
     if (k === 'rp') it.title = d.rpTip || 'Realized P&L today';
     if (k === 'bal') it.title = d.balTip || 'Balance';
   }

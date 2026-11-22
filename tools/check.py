@@ -454,38 +454,33 @@ def check_feature_image_frames():
 
 
 def check_nav_features_menu():
-    """The Features hero menu ships on every page with the marketing nav.
+    """One shared public header (tools/site-header.html, stamped by tools/sync-site-header.py).
 
-    - Any page with .nav-links (marketing nav) must include nav-features.css
-      and nav-features.js exactly once each. Fix a new page with
-      `python3 tools/add-nav-features.py`.
-    - The FEATURES list in assets/nav-features.js must match the live
-      feature pages (features/*.html) one to one, each with its two thumbs."""
+    - Every public page with #site-nav must carry exactly that header (minus extra classes such as dual-pub).
+    - No page may load the retired assets/nav-features.js/.css or contain the old bento panel markup.
+    - Every Products-menu link in the shared header must point at a page that exists."""
+    hdr = open(os.path.join(ROOT, 'tools', 'site-header.html'), encoding='utf-8').read().strip()
+    tag = '<header class="hn" id="site-nav">'
     for path in html_files():
         html = open(path, encoding='utf-8').read()
-        if 'class="nav-links' not in html:
+        if re.search(r'nav-features\.(js|css)|nfx-(panel|bento|row|chev|mlist)', html):
+            fail(f'{path}: still uses the old Features bento menu (nav-features / nfx-*); run python3 tools/sync-site-header.py')
+        if 'id="site-nav"' not in html:
             continue
-        for asset in ('nav-features.css', 'nav-features.js'):
-            n = len(re.findall(r'(?:href|src)="/?assets/' + re.escape(asset) + r'\?v=', html))
-            if n != 1:
-                fail(f'{path}: marketing nav page includes assets/{asset} {n} times (need exactly 1; '
-                     f'run python3 tools/add-nav-features.py)')
-    js_path = os.path.join(ROOT, 'assets', 'nav-features.js')
-    if not os.path.exists(js_path):
-        fail('assets/nav-features.js missing')
-        return
-    js = open(js_path, encoding='utf-8').read()
-    items = re.findall(r"\{ id: '([a-z0-9-]+)', name: '[^']+', url: '([^']+)'", js)
-    ids = [i for i, _ in items]
-    pages = sorted(os.path.basename(p)[:-5] for p in glob.glob(os.path.join(ROOT, 'features', '*.html')))
-    if sorted(ids) != pages or len(set(ids)) != len(ids):
-        fail(f'assets/nav-features.js FEATURES {sorted(ids)} does not match features/*.html {pages}')
-    for fid, url in items:
-        if url != '/features/' + fid:
-            fail(f'assets/nav-features.js: {fid} links to {url}, expected /features/{fid}')
-        for w in (360, 720) if re.search(r"id: '" + fid + r"'[^}]*big: 1", js) else (360,):
-            if not os.path.exists(os.path.join(ROOT, 'assets', 'images', 'navfx', f'{fid}-{w}.webp')):
-                fail(f'assets/images/navfx/{fid}-{w}.webp missing (Features menu thumb)')
+        m = re.search(r'<header class="hn( [^"]*)?" id="site-nav">', html)
+        if not m:
+            fail(f'{path}: #site-nav is not the shared header (run python3 tools/sync-site-header.py)')
+            continue
+        i = m.start(); j = html.index('</header>', i) + 9
+        if html[i:j].replace(m.group(0), tag, 1) != hdr:
+            fail(f'{path}: header differs from tools/site-header.html (run python3 tools/sync-site-header.py)')
+    for href in re.findall(r'<a href="(/[a-z0-9/-]+)(?:[#?][^"]*)?"', hdr):
+        rel = href.strip('/')
+        if rel and not any(os.path.exists(os.path.join(ROOT, rel + '.html')) or os.path.isdir(os.path.join(ROOT, rel)) for _ in (0,)):
+            fail(f'tools/site-header.html links to {href} but no such page exists')
+    for need in ('site-header.css', 'home-a.js', 'menu-hover.js'):
+        if not os.path.exists(os.path.join(ROOT, 'assets', need)):
+            fail(f'assets/{need} missing')
 
 
 def check_home_stats():

@@ -114,12 +114,13 @@ function loadItems() {
 const about = fs.readFileSync(path.join(ROOT, 'about.html'), 'utf8');
 const ver = (h) => h.replace(/\?v=\d+/g, '?v=' + BUILD);
 const absol = (h) => h.replace(/(\s(?:href|src|srcset)=")(?!https?:|\/|#|mailto:|data:|tel:)/g, '$1/').replace(/(srcset="[^"]*)/g, (m) => m.replace(/(,\s*)(?!https?:|\/)(assets\/)/g, '$1/$2'));
-const NAV = about.slice(about.indexOf('<nav class="nav"'), about.indexOf('</nav>') + 6);
+const NAV = about.slice(about.indexOf('<header class="hn'), about.indexOf('</header>') + 9)
+  + (about.match(/\s*<script src="\/?assets\/dl-menu\.js[^>]*><\/script>/) || [''])[0].trim();
 const FOOTER = about.slice(about.indexOf('<footer>'), about.indexOf('</footer>') + 9);
 const HEAD_START = about.indexOf('<link rel="preload"') >= 0 && about.indexOf('<link rel="preload"') < about.indexOf('<link rel="stylesheet"')
   ? about.indexOf('<link rel="preload"') : about.indexOf('<link rel="stylesheet"');
 const HEAD_ASSETS = ver(about.slice(HEAD_START, about.indexOf('</head>')).trim())
-  .replace(/(<link rel="stylesheet" href="assets\/style\.css\?v=\d+">)/, `$1\n<link rel="stylesheet" href="assets/indicator-pages.css?v=${BUILD}">`);
+  .replace(/(<link rel="stylesheet" href="assets\/style\.css\?v=\d+">\n(?:<link rel="stylesheet" href="\/assets\/site-header\.css\?v=\d+">\n)?)/, `$1<link rel="stylesheet" href="assets/indicator-pages.css?v=${BUILD}">\n`);
 if (!HEAD_ASSETS.includes('indicator-pages.css') || /application\/ld\+json|<title|canonical/.test(HEAD_ASSETS)) throw new Error('about.html <head> layout changed; update gen-indicator-pages.js');
 const SCRIPTS = '\n' + ver(about.slice(about.indexOf('</footer>') + 9, about.indexOf('</body>')).trim());
 if (!SCRIPTS.includes('auth.js') || !SCRIPTS.includes('theme.js')) throw new Error('about.html footer scripts changed; update gen-indicator-pages.js');
@@ -178,8 +179,10 @@ ${NAV}
 ${parts.main}
 </main>
 ${FOOTER}
-${SCRIPTS}
+${SCRIPTS.replace(/<script src="\/assets\/(home-a|menu-hover)\.js[^>]*><\/script>\n?/g, '').trimEnd()}
 <script src="assets/indicator-pages.js?v=${BUILD}" defer></script>
+<script src="/assets/home-a.js?v=${BUILD}" defer></script>
+<script src="/assets/menu-hover.js?v=${BUILD}" defer></script>
 </body>
 </html>
 `));

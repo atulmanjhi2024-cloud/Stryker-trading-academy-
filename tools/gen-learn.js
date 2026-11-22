@@ -182,12 +182,12 @@ ${JSON.stringify(jsonld, null, 2)}
 
 // Nav and footer are the site's standard public ones (as on about.html).
 const about = fs.readFileSync(path.join(ROOT, 'about.html'), 'utf8');
-const NAV = about.slice(about.indexOf('<nav class="nav"'), about.indexOf('</nav>') + 6)
-  .replace(/<a href="features(\.html)?">Features<\/a>/, (m) => m.includes('academy') ? m : m + '\n      <a href="academy">Mentis</a>');
+const NAV = about.slice(about.indexOf('<header class="hn'), about.indexOf('</header>') + 9)
+  + (about.match(/\s*<script src="\/?assets\/dl-menu\.js[^>]*><\/script>/) || [''])[0].trim();
 const FOOTER = about.slice(about.indexOf('<footer>'), about.indexOf('</footer>') + 9)
   ;  // about.html's footer already links Learn
 // Internal links are clean URLs (no .html) since build 327.
-if (!/href="\/?learn(\.html)?"/.test(FOOTER) || !/<nav /.test(NAV)) throw new Error('nav/footer anchors moved; update gen-learn.js');
+if (!/href="\/?learn(\.html)?"/.test(FOOTER) || !/<header class="hn/.test(NAV)) throw new Error('nav/footer anchors moved; update gen-learn.js');
 
 // Everything else in <head> (stylesheet, scripts, icons, theme snippet) and
 // the scripts after the footer are copied from about.html, so Learn pages load
@@ -197,7 +197,7 @@ const ver = (html) => html.replace(/\?v=\d+/g, '?v=' + BUILD);
 const HEAD_START = about.indexOf('<link rel="preload"') >= 0 && about.indexOf('<link rel="preload"') < about.indexOf('<link rel="stylesheet"')
   ? about.indexOf('<link rel="preload"') : about.indexOf('<link rel="stylesheet"');
 const HEAD_ASSETS = ver(about.slice(HEAD_START, about.indexOf('</head>')).trim())
-  .replace(/(<link rel="stylesheet" href="assets\/style\.css\?v=\d+">)/, `$1\n<link rel="stylesheet" href="${V('assets/learn.css')}">`);
+  .replace(/(<link rel="stylesheet" href="assets\/style\.css\?v=\d+">\n(?:<link rel="stylesheet" href="\/assets\/site-header\.css\?v=\d+">\n)?)/, `$1<link rel="stylesheet" href="${V('assets/learn.css')}">\n`);
 if (!HEAD_ASSETS.includes('learn.css') || /application\/ld\+json|<title|canonical/.test(HEAD_ASSETS)) throw new Error('about.html <head> layout changed; update gen-learn.js');
 const SCRIPTS = '\n' + ver(about.slice(about.indexOf('</footer>') + 9, about.indexOf('</body>')).trim());
 if (!SCRIPTS.includes('auth.js') || !SCRIPTS.includes('theme.js')) throw new Error('about.html footer scripts changed; update gen-learn.js');

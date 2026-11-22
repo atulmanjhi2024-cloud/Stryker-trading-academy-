@@ -27,7 +27,7 @@ function toDual(html, opts) {
   // body class
   html = html.replace(/<body([^>]*)>/, (m, a) => /class="/.test(a) ? '<body' + a.replace('class="', 'class="dual-shell ') + '>' : '<body' + a + ' class="dual-shell">');
   // marketing header and footer get the hide-when-signed-in marker
-  html = html.replace('<nav class="nav" id="site-nav">', '<nav class="nav dual-pub" id="site-nav">').replace('<nav class="nav cx-pubnav" id="site-nav">', '<nav class="nav dual-pub" id="site-nav">');
+  html = html.replace('<header class="hn" id="site-nav">', '<header class="hn dual-pub" id="site-nav">').replace('<nav class="nav" id="site-nav">', '<nav class="nav dual-pub" id="site-nav">').replace('<nav class="nav cx-pubnav" id="site-nav">', '<nav class="nav dual-pub" id="site-nav">');
   if (!html.includes('dual-pub')) throw new Error('marketing nav not found');
   html = html.replace(/\n<footer>/, '\n<footer class="dual-pub">');
   // dock + app-nav.js right after the skip link (if the page has none yet)

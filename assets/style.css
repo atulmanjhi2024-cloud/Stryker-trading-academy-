@@ -3719,7 +3719,7 @@ a.gm-brief-signal:hover{ color:var(--ink-0); }
    -------------------------------------------------------------------------- */
 
 .jz-top{ display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1.4fr); gap:16px; margin-bottom:18px; }
-@media (max-width:900px){ .jz-top{ grid-template-columns:1fr; } }
+@media (max-width:900px){ .jz-top{ grid-template-columns:minmax(0,1fr); } }
 
 .jz-hero{ display:flex; flex-direction:column; justify-content:center; margin-bottom:0 !important; }
 .jz-hero-label{
@@ -3762,7 +3762,7 @@ a.gm-brief-signal:hover{ color:var(--ink-0); }
 .jz-wl-split i.is-loss{ background:var(--bear); }
 
 .jz-charts{ display:grid; grid-template-columns:1fr 1fr; gap:16px; }
-@media (max-width:900px){ .jz-charts{ grid-template-columns:1fr; } }
+@media (max-width:900px){ .jz-charts{ grid-template-columns:minmax(0,1fr); } }
 .jz-bottom{ display:grid; grid-template-columns:minmax(0,1.3fr) minmax(0,1fr); gap:16px; }
 @media (max-width:900px){ .jz-bottom{ grid-template-columns:1fr; } }
 
@@ -13519,3 +13519,14 @@ html.stk-compact body.charts-page .stkcmp-float .gm-icon-wrap, html.stk-compact 
 html.stk-compact body.charts-page .stkcmp-float .account-trigger{ height:28px; padding:0 2px; }
 @media (pointer:coarse){ html.stk-compact body.charts-page .stkcmp-float .icon-btn{ width:44px; height:44px; } html.stk-compact body.charts-page .stkcmp-float{ height:48px; } }
 .side-link > svg{ width:20px; height:20px; }   /* same 20px slot as the product tiles so labels line up */
+
+/* iPhone drawer fit (bug 1574110294395846698). dvh keeps the last menu item above Safari's
+   toolbar; the header row never grows past the screen, so the bell is not pushed off the edge. */
+html .dash-shell > .sidebar{ height:calc(100vh - var(--dash-head-h, var(--topbar-h))); height:calc(100dvh - var(--dash-head-h, var(--topbar-h))); bottom:auto; padding-left:max(16px, env(safe-area-inset-left)); }
+@media (max-width:420px){
+  .mobile-topnav{ padding-left:max(12px, env(safe-area-inset-left)); padding-right:max(12px, env(safe-area-inset-right)); }
+  .mobile-topnav .topnav-left{ gap:8px; flex:0 1 auto; }
+  .mobile-topnav .topnav-right{ gap:6px; flex:0 0 auto; }
+  .mobile-topnav .topnav-right .icon-btn{ width:34px; height:34px; }
+  .mobile-topnav .topnav-right .account-trigger{ width:34px; height:34px; }
+}

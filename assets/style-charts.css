@@ -5997,3 +5997,9 @@ html.stk-compact body.charts-page .stkcmp-float .account-trigger{ height:28px; p
 @media (pointer:coarse){html.stk-compact body.charts-page .stkcmp-float .icon-btn{ width:44px; height:44px; }
 html.stk-compact body.charts-page .stkcmp-float{ height:48px; }}
 .side-link > svg{ width:20px; height:20px; }
+html .dash-shell > .sidebar{ height:calc(100vh - var(--dash-head-h, var(--topbar-h))); height:calc(100dvh - var(--dash-head-h, var(--topbar-h))); bottom:auto; padding-left:max(16px, env(safe-area-inset-left)); }
+@media (max-width:420px){.mobile-topnav{ padding-left:max(12px, env(safe-area-inset-left)); padding-right:max(12px, env(safe-area-inset-right)); }
+.mobile-topnav .topnav-left{ gap:8px; flex:0 1 auto; }
+.mobile-topnav .topnav-right{ gap:6px; flex:0 0 auto; }
+.mobile-topnav .topnav-right .icon-btn{ width:34px; height:34px; }
+.mobile-topnav .topnav-right .account-trigger{ width:34px; height:34px; }}

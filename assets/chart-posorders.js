@@ -62,9 +62,10 @@ let cur = null;
 function render(force) {
   placeBtn();
   const d = data(), on = !!(P.enabled || P.live), nP = d ? d.nPos : 0, nO = d ? d.nOrd : 0, n = nP + nO;
-  btn.hidden = !on; if (!on && ui.open) toggle(false);
-  const bd = btn.querySelector('.stkpo-n'); bd.textContent = n ? String(n) : ''; bd.hidden = !n;
-  btn.setAttribute('aria-label', 'Positions & Orders' + (n ? ', ' + n + ' open' : '')); btn.title = 'Positions & Orders';
+  // write only on change: an observer on the bar must see no churn while nothing changed
+  if (btn.hidden !== !on) btn.hidden = !on; if (!on && ui.open) toggle(false);
+  const bd = btn.querySelector('.stkpo-n'), nt = n ? String(n) : ''; if (bd.textContent !== nt) bd.textContent = nt; if (bd.hidden !== !n) bd.hidden = !n;
+  const al = 'Positions & Orders' + (n ? ', ' + n + ' open' : ''); if (btn.getAttribute('aria-label') !== al) btn.setAttribute('aria-label', al); if (btn.title !== 'Positions & Orders') btn.title = 'Positions & Orders';
   if (!ui.open || !d) return;
   cur = d;
   for (const b of dock.querySelectorAll('[role=tab]')) { const o = b.dataset.t === ui.tab; b.classList.toggle('on', o); b.setAttribute('aria-selected', String(o)); b.tabIndex = o ? 0 : -1; }
@@ -79,7 +80,10 @@ function placeBtn() {
   if (!btn) return;
   const b = bar(), lat = b && b.querySelector('.stklat-chip'), tw = document.getElementById('stkpt-tw');
   const anchor = b ? (lat && lat.parentNode === b ? lat : tw && tw.parentNode === b ? tw : null) : (tw || null);
-  if (anchor) { if (btn.nextElementSibling !== anchor || btn.parentNode !== anchor.parentNode) anchor.parentNode.insertBefore(btn, anchor); }
+  // the Trade view button (chart-tradeview.js) lives right after this one, so "in place" means: next sibling is the anchor, or the Trade view button and then the anchor.
+  // Without that tolerance the two scripts moved each other every 500 ms (both buttons removed + re-added = flicker).
+  const nx = btn.nextElementSibling, inPlace = anchor && btn.parentNode === anchor.parentNode && (nx === anchor || (nx && nx.id === 'stktv-btn' && nx.nextElementSibling === anchor));
+  if (anchor) { if (!inPlace) anchor.parentNode.insertBefore(btn, anchor); }
   else if (b && btn.parentNode !== b) b.appendChild(btn);
   placeDock();
 }

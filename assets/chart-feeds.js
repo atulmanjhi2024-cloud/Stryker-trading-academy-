@@ -169,10 +169,10 @@ export function mountFeedBadges(ws) {
     if (!cur.mkt && st.L2.state === 'locked') { const bs = window.__stkBookSources, pv = (/^([a-z0-9_-]+):/i.exec(cur.sym) || [])[1]; st.L2.state = bs && pv && typeof bs[pv.toLowerCase()] === 'function' ? 'lit' : 'dim'; st.L2.locked = ''; }
     if (cur.sure) for (const L of ['L1', 'L2']) if (st[L].state === 'locked') { st[L].state = 'lit'; st[L].locked = ''; st[L].wait = true; }
     last = st;
-    row.hidden = !st.show;
+    if (row.hidden !== !st.show) row.hidden = !st.show;
     dock();
     place();
-    wrap.hidden = !st.show;
+    if (wrap.hidden !== !st.show) wrap.hidden = !st.show;
     if (!st.show) { note.hidden = true; sheet.hidden = true; openL = ''; return; }
     const lv = visibleLevels(st);
     if (row.dataset.sig !== lv.join() + ['L1', 'L2', 'L3'].map((L) => st[L].state).join()) {

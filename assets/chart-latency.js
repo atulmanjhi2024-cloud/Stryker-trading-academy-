@@ -5,7 +5,7 @@
 // the Book panel api (window.__stkBookPanel.feedState / reconnect, assets/chart-book-panel.js), /api/ping (functions/api/ping.js).
 //
 // Chip (bottom-right of the chart's bottom bar): signal bars coloured by the round trip to our edge
-// (green < 160 ms, amber < 300, red above, grey = no answer) + "42 ms"; a small dot breathes while candles are arriving.
+// (green < 160 ms, amber < 300, red above, grey = no answer) + "42 ms"; a small steady dot shows while candles are arriving.
 // Popover (hover or click on desktop; a bottom sheet on phones): one row per real feed on screen
 //   Site & API      round trip of /api/ping (every 5 s, only while the tab is visible), average + jitter over 60 s
 //   each chart symbol  last update age; exchange -> you delay where the messages carry an exchange time
@@ -40,6 +40,8 @@ const CSS = `
 .stklat-chip[hidden]{ display:none; }
 .stklat-chip:focus-visible{ outline:2px solid var(--gold); outline-offset:2px; }
 .stklat-bars{ display:block; flex:none; }
+.stklat-v{ display:inline-block; min-width:6ch; text-align:right; font-variant-numeric:tabular-nums; }   /* "9 ms" .. "1234 ms" never change the chip width, so the bar items left of it do not shift */
+.vela-bb-clock{ display:inline-block; min-width:8.6ch; font-variant-numeric:tabular-nums; }   /* the seconds tick never moves the UTC label / buttons beside it */
 .stklat-bars rect{ fill:currentColor; opacity:.22; }
 .stklat-bars rect.on{ opacity:1; }
 .stklat-chip[data-q="good"] .stklat-bars, .stklat-q[data-q="good"]{ color:var(--gold); }
@@ -47,8 +49,7 @@ const CSS = `
 .stklat-chip[data-q="poor"] .stklat-bars, .stklat-q[data-q="poor"]{ color:var(--bear, #f23645); }
 .stklat-chip[data-q="none"] .stklat-bars, .stklat-q[data-q="none"]{ color:var(--ink-3); }
 .stklat-pulse{ flex:none; width:6px; height:6px; border-radius:50%; background:var(--gold); opacity:0; transition:opacity .25s cubic-bezier(.2,0,0,1); }
-.stklat-chip.is-live .stklat-pulse{ opacity:.9; animation:stklat-breathe 2.4s cubic-bezier(.2,0,0,1) infinite; }
-@keyframes stklat-breathe{ 0%,100%{ opacity:.9; } 50%{ opacity:.3; } }
+.stklat-chip.is-live .stklat-pulse{ opacity:.9; }   /* steady dot: no looping animation in the bar (it read as a flicker) */
 .stklat-pop{ position:fixed; z-index:9060; width:360px; max-width:calc(100vw - 16px); max-height:calc(100dvh - 96px); overflow-y:auto; overscroll-behavior:contain; box-sizing:border-box;
   padding:16px; border:1px solid var(--line); border-radius:16px; background:var(--bg-2); color:var(--ink-1);
   box-shadow:0 18px 40px -12px rgba(0,0,0,.6); font:400 13px/18px -apple-system,BlinkMacSystemFont,"SF Pro Text",Roboto,"Segoe UI",system-ui,sans-serif;
@@ -113,7 +114,7 @@ const CSS = `
   .stklat-perf{ min-height:48px; }
 }
 html.stk-perf *, html.stk-perf *::before, html.stk-perf *::after{ animation:none !important; transition:none !important; }
-@media (prefers-reduced-motion:reduce){ .stklat-chip, .stklat-pop, .stklat-scrim, .stklat-sw, .stklat-sw::after{ transition:none !important; } .stklat-chip.is-live .stklat-pulse{ animation:none; } }
+@media (prefers-reduced-motion:reduce){ .stklat-chip, .stklat-pop, .stklat-scrim, .stklat-sw, .stklat-sw::after{ transition:none !important; } }
 `;
 
 function barsSvg(n) {
@@ -245,12 +246,18 @@ export function mountLatency(ws) {
     const t = Date.now(), s = L.siteStats(t), ms = s.down ? null : s.cur;
     const q = L.quality(ms);
     if (chip.dataset.q !== q.q) chip.dataset.q = q.q;
-    chip.querySelector('.stklat-bars').outerHTML = barsSvg(q.bars);
-    chip.querySelector('.stklat-v').textContent = s.down ? 'Offline' : L.fmtMs(ms);
+    // update in place: the bars are 4 fixed rects (toggle .on), the label is one text node; nothing is re-created per tick
+    const rs = chip.querySelectorAll('.stklat-bars rect');
+    for (let i = 0; i < rs.length; i++) { const on = i < q.bars; if (rs[i].classList.contains('on') !== on) rs[i].classList.toggle('on', on); }
+    const vEl = chip.querySelector('.stklat-v'), vt = s.down ? 'Offline' : L.fmtMs(ms);
+    if (vEl.textContent !== vt) vEl.textContent = vt;
     const syms = symbols(), act = syms[0];
     const f = act ? L.feedStats(L.feedKey(...splitSym(act.sym)), t) : null;
-    chip.classList.toggle('is-live', !!(f && f.age != null && f.age < 3000) && !perfMode());
-    chip.setAttribute('aria-label', 'Connection: ' + (s.down ? 'offline' : ms == null ? 'measuring' : Math.round(ms) + ' milliseconds, ' + q.word.toLowerCase()) + '. Show details');
+    // hysteresis: lit under 3 s, goes dark only after 8 s, so a slow tick does not blink the dot
+    const live = !!(f && f.age != null && f.age < (chip.classList.contains('is-live') ? 8000 : 3000)) && !perfMode();
+    if (chip.classList.contains('is-live') !== live) chip.classList.toggle('is-live', live);
+    const al = 'Connection: ' + (s.down ? 'offline' : ms == null ? 'measuring' : Math.round(ms) + ' milliseconds, ' + q.word.toLowerCase()) + '. Show details';
+    if (chip.getAttribute('aria-label') !== al) chip.setAttribute('aria-label', al);
   }
 
   // ---------------------------------------------------------------- popover

@@ -1,88 +1,11 @@
-// TradeZoro - sanctions attestation (Owner order 09 Nov 2026). Catches citizens and VPN users the edge block can't see.
+// TradeZoro - stored-lock check only. NO country question is ever shown (Owner 22 Nov 2026: the edge IP block is the location check).
+// If students/{uid} already has sanctionsLocked or a blocked residenceCountry (server data), the page shows the region message and signs out.
 // Depends on: assets/geo-block-list.js (window.TZGeoBlock), assets/auth.js (auth), assets/progress.js (db).
-//
-// 1. SIGN-UP (signup.html): a required "Country of residence" picker and a required attestation checkbox sit above
-//    BOTH the Google button and the email form; neither path starts until both are answered. Picking a blocked place
-//    shows the region message and keeps every sign-up button disabled. The answer is kept in sessionStorage and
-//    written to students/{uid} by part 2 on the first page after sign-up.
-// 2. EVERY SIGNED-IN PAGE that loads banned-check.js (it injects this file; legal pages excepted): if students/{uid} has no sanctionsAttest,
-//    a full-screen dialog the member must answer covers the page (no close button, Escape does nothing). A saved
-//    sign-up answer is written silently instead. Saving writes residenceCountry, sanctionsAttest: true and
-//    sanctionsAttestAt (server time) ONCE; firestore.rules refuses any later change by the member.
-// 3. A blocked residence (picked now, or stored) locks the page with the region message and signs the member out.
-//    The real locks are server-side: Cloud Functions refuse checkout / free checkout / coupons for a blocked
-//    residence, and the Stripe webhook sets students.sanctionsLocked on a blocked card or billing country.
 (function () {
   var G = window.TZGeoBlock;
   if (!G) return;
-  var KEY = 'tz_geo_attest';   // sessionStorage: {c: residence code, t: ms} from the sign-up form
 
   function esc(s) { return String(s).replace(/[&<>"]/g, function (ch) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]; }); }
-
-  // ---------- shared markup (sign-up block and the member dialog use the same fields) ----------
-  function fieldsHtml(idp) {
-    return '<div class="field geo-field">' +
-        '<label for="' + idp + '-country">Country of residence</label>' +
-        '<select id="' + idp + '-country" required autocomplete="country"></select>' +
-      '</div>' +
-      '<p class="geo-region-msg" id="' + idp + '-msg" role="alert" hidden>' + esc(G.REGION_MESSAGE) + '</p>' +
-      '<label class="geo-attest" for="' + idp + '-attest">' +
-        '<input type="checkbox" id="' + idp + '-attest" required>' +
-        '<span>' + esc(G.ATTEST_TEXT) + '</span>' +
-      '</label>';
-  }
-  function wire(root, idp, onChange) {
-    var sel = root.querySelector('#' + idp + '-country');
-    var box = root.querySelector('#' + idp + '-attest');
-    var msg = root.querySelector('#' + idp + '-msg');
-    G.fillSelect(sel);
-    function state() {
-      var code = sel.value || '';
-      var blocked = !!code && G.isBlockedResidence(code);
-      msg.hidden = !blocked;
-      sel.setAttribute('aria-invalid', blocked ? 'true' : 'false');
-      var ok = !!code && !blocked && box.checked;
-      onChange({ code: code, blocked: blocked, ok: ok });
-    }
-    sel.addEventListener('change', state);
-    box.addEventListener('change', state);
-    state();
-    return { sel: sel, box: box, state: state };
-  }
-
-  // ---------- 1. sign-up form ----------
-  function setupSignup() {
-    var form = document.getElementById('signup-form');
-    var box = document.querySelector('.auth-box');
-    if (!form || !box || document.getElementById('geo-signup')) return;
-    var wrap = document.createElement('div');
-    wrap.id = 'geo-signup';
-    wrap.className = 'geo-signup';
-    wrap.innerHTML = fieldsHtml('geo-su');
-    var social = box.querySelector('.social-row');
-    box.insertBefore(wrap, social || form);
-    var hint = document.createElement('p');
-    hint.className = 'geo-hint'; hint.id = 'geo-su-hint';
-    hint.textContent = 'Choose your country and tick the box above to continue.';
-    box.insertBefore(hint, social || form);
-    var buttons = Array.prototype.slice.call(document.querySelectorAll('[data-google-signin], #signup-form button[type="submit"]'));
-    var current = { ok: false };
-    wire(wrap, 'geo-su', function (s) {
-      current = s;
-      buttons.forEach(function (b) { b.disabled = !s.ok; b.setAttribute('aria-disabled', s.ok ? 'false' : 'true'); });
-      hint.hidden = s.ok || s.blocked;
-      try { if (s.ok) sessionStorage.setItem(KEY, JSON.stringify({ c: s.code, t: Date.now() })); else sessionStorage.removeItem(KEY); } catch (e) { /* storage blocked: the member dialog asks again */ }
-    });
-    // auth.js re-enables buttons in its finally(); stop a sign-up that slips past (capture phase runs first).
-    function guard(e) {
-      if (current.ok) return;
-      e.preventDefault(); e.stopImmediatePropagation();
-      hint.hidden = current.blocked;
-      (current.code ? wrap.querySelector('#geo-su-attest') : wrap.querySelector('#geo-su-country')).focus();
-    }
-    form.addEventListener('submit', guard, true);
-    document.querySelectorAll('[data-google-signin]').forEach(function (b) { b.addEventListener('click', guard, true); });
-  }
 
   // ---------- 2/3. signed-in pages ----------
   function lockPage() {
@@ -102,94 +25,13 @@
     if (typeof auth !== 'undefined' && auth) auth.signOut().catch(function () {});
   }
 
-  // Offline, a Firestore write never settles (it waits in the local queue), so give up after 20 s and say so.
-  function save(uid, code) {
-    var w = db.collection('students').doc(uid).set({
-      residenceCountry: code,
-      sanctionsAttest: true,
-      sanctionsAttestAt: firebase.firestore.FieldValue.serverTimestamp()
-    }, { merge: true });
-    return Promise.race([w, new Promise(function (_, no) { setTimeout(function () { no({ code: 'deadline-exceeded' }); }, 20000); })]);
-  }
   // Always read the SERVER copy. The default get() answers from the local cache when the connection is slow, and a
   // cached doc holding only a pending {theme} write (theme.js, every chart load in the desktop app) looks unanswered:
   // the dialog then asks a member who already answered, and the rules refuse the second answer (bug 22 Nov, Mac app).
   function serverDoc(uid) { return db.collection('students').doc(uid).get({ source: 'server' }); }
-  function answered(d) { return d.sanctionsAttest === true && !!d.residenceCountry; }
   function report(what, code) {
     console.warn('TradeZoro: ' + what, code);
     try { if (typeof logActivity === 'function') logActivity('geo.' + what.replace(/\W+/g, '_'), 'Country confirmation: ' + what + ' (' + code + ')', { detail: String(code) }); } catch (e) { /* logging never blocks */ }
-  }
-  function errText(code) {
-    if (code === 'permission-denied') return 'Your account didn\'t accept this answer. It may already have a country on file. Sign out and sign back in. If this keeps happening, email support@tradezoro.com.';
-    if (code === 'unavailable' || code === 'deadline-exceeded') return 'We can\'t reach TradeZoro right now, so your answer wasn\'t saved. Check your internet connection, then press Try again.';
-    return 'Something went wrong and your answer wasn\'t saved. Press Try again, or sign out and email support@tradezoro.com.';
-  }
-
-  function showDialog(uid) {
-    if (document.getElementById('geo-gate')) return;
-    var ov = document.createElement('div');
-    ov.id = 'geo-gate';
-    ov.className = 'geo-gate';
-    ov.innerHTML = '<div class="geo-gate-card" role="dialog" aria-modal="true" aria-labelledby="geo-gate-title" aria-describedby="geo-gate-desc">' +
-      '<h2 id="geo-gate-title">Confirm your country</h2>' +
-      '<p id="geo-gate-desc" class="geo-gate-sub">We need this once before you continue. TradeZoro is a US company and US rules decide where we can offer our services.</p>' +
-      fieldsHtml('geo-gt') +
-      '<p class="geo-gate-err" id="geo-gt-err" role="alert" hidden></p>' +
-      '<button type="button" class="btn btn-primary btn-block" id="geo-gt-save" disabled>Continue</button>' +
-      '<button type="button" class="btn btn-secondary btn-block" id="geo-gt-out" hidden>Sign out</button>' +
-      '<p class="geo-gate-legal">See <a href="/terms#restricted-regions">Restricted regions</a> in our Terms.</p>' +
-      '</div>';
-    document.body.appendChild(ov);
-    document.documentElement.classList.add('geo-gate-open');
-    var btn = ov.querySelector('#geo-gt-save');
-    var err = ov.querySelector('#geo-gt-err');
-    var out = ov.querySelector('#geo-gt-out');
-    var cur = { ok: false }, failed = false;
-    var w = wire(ov, 'geo-gt', function (s) { cur = s; btn.disabled = !(s.ok || s.blocked); btn.textContent = s.blocked ? 'Confirm' : (failed ? 'Try again' : 'Continue'); });
-    function close() { ov.remove(); document.documentElement.classList.remove('geo-gate-open'); }
-    out.addEventListener('click', function () {
-      out.disabled = true;
-      var go = function () { location.href = '/login'; };
-      if (typeof auth !== 'undefined' && auth) auth.signOut().then(go, go); else go();
-    });
-    // Keep focus inside the dialog; Escape does nothing (the member must answer).
-    ov.addEventListener('keydown', function (e) {
-      if (e.key === 'Escape') { e.preventDefault(); return; }
-      if (e.key !== 'Tab') return;
-      var f = Array.prototype.filter.call(ov.querySelectorAll('select, input, button, a[href]'), function (x) { return !x.disabled; });
-      if (!f.length) return;
-      var first = f[0], last = f[f.length - 1];
-      if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
-      else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
-    });
-    btn.addEventListener('click', function () {
-      if (cur.blocked) {
-        // A blocked answer is stored too (attest stays absent): the server then refuses every purchase for this account.
-        db.collection('students').doc(uid).set({ residenceCountry: cur.code }, { merge: true }).catch(function () {}).then(lockPage);
-        return;
-      }
-      if (!cur.ok) return;
-      btn.disabled = true; err.hidden = true;
-      btn.textContent = 'Saving…';
-      save(uid, cur.code).then(close).catch(function (e) {
-        var code = (e && e.code) || 'unknown';
-        report('attestation not saved', code);
-        // Refused or timed out: the answer may already be on file (an earlier save, another device). Check the server.
-        return serverDoc(uid).then(function (snap) {
-          var d = snap.exists ? snap.data() || {} : {};
-          if (d.sanctionsLocked === true || G.isBlockedResidence(d.residenceCountry)) { lockPage(); return; }
-          if (answered(d)) { close(); return; }
-          throw e;
-        }).catch(function () {
-          failed = true;
-          btn.disabled = false; btn.textContent = 'Try again';
-          err.textContent = errText(code) + ' (Error code: ' + code + ')';
-          err.hidden = false; out.hidden = false;
-        });
-      });
-    });
-    setTimeout(function () { w.sel.focus(); }, 50);
   }
 
   function checkMember(user) {
@@ -201,15 +43,6 @@
         if (!snap.exists) { if (++tries < 8) setTimeout(look, 750); return; }
         var d = snap.data() || {};
         if (d.sanctionsLocked === true || G.isBlockedResidence(d.residenceCountry)) { lockPage(); return; }
-        if (answered(d)) return;
-        var saved = null;
-        try { saved = JSON.parse(sessionStorage.getItem(KEY) || 'null'); } catch (e) { /* ignore */ }
-        if (saved && saved.c && !G.isBlockedResidence(saved.c) && Date.now() - saved.t < 3600 * 1000) {
-          save(user.uid, saved.c).then(function () { try { sessionStorage.removeItem(KEY); } catch (e) { /* ignore */ } })
-            .catch(function () { showDialog(user.uid); });
-          return;
-        }
-        showDialog(user.uid);
       }).catch(function (e) {
         // Server not reachable yet (slow start, offline): try again a few times, then fail open. The server-side
         // checks (checkout, coupons, Stripe webhook) are the real boundary and refuse an unanswered account.
@@ -220,7 +53,6 @@
   }
 
   function start() {
-    if (document.getElementById('signup-form')) setupSignup();
     if (/^\/(login|signup)(\.html)?$/.test(location.pathname)) return;   // the sign-in pages route away first
     if (typeof auth === 'undefined' || !auth) return;
     var done = false;
@@ -229,5 +61,5 @@
   // Loaded by a plain tag (signup.html) or injected by banned-check.js, which can land after DOMContentLoaded.
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start); else start();
 
-  window.TZGeoAttest = { checkMember: checkMember, showDialog: showDialog, lockPage: lockPage };
+  window.TZGeoAttest = { checkMember: checkMember, lockPage: lockPage };
 })();

@@ -17,7 +17,7 @@
 (function () {
 
   // Sanctions attestation (Owner order 09 Nov 2026): every page that runs this lockout check also loads the
-  // country-of-residence prompt (assets/geo-attest.js, list in assets/geo-block-list.js), same ?v= build as the page.
+  // stored-lock check, no UI (assets/geo-attest.js, list in assets/geo-block-list.js), same ?v= build as the page.
   // signup.html loads both with plain tags instead, so the sign-up buttons are gated before anything else runs.
   if (!window.TZGeoBlock && !/^\/(terms|privacy|cookies|gdpr|refund-policy|market-data-terms|unavailable)(\.html)?$/.test(location.pathname)) {
     var bm = document.querySelector('meta[name="stryker-build"]');

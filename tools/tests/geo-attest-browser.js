@@ -1,10 +1,6 @@
-// Sanctions attestation, browser test (Owner order 09 Nov 2026): sign-up picker + checkbox, the one-time member
-// prompt, the blocked-residence lock, and screenshots of the block page and the attestation (390/1440, dark/light).
-//
-//   (setsid nohup python3 -m http.server 8000 --directory ../.. >/dev/null 2>&1 &)
-//   flock /tmp/stryker-chrome.lock node tools/tests/geo-attest-browser.js [outdir]
-//
-// Firebase is stubbed (students doc + recorded writes); every non-local request is aborted.
+// No country question anywhere (Owner 22 Nov 2026): signed-in page shows no dialog and writes nothing, signup has no picker and
+// its buttons are enabled, a stored blocked residence / server lock still locks the page. The IP block is covered by geo-block.test.mjs.
+//   (python3 -m http.server 8000 &)   flock /tmp/stryker-chrome.lock node tools/tests/geo-attest-browser.js [outdir]
 const fs = require('fs');
 const path = require('path');
 const { launch, BASE } = require('./lib');
@@ -59,7 +55,6 @@ function stub(cfg) {
       localStorage.setItem('stryker_install_dismissed', '1');
       localStorage.setItem('stryker_cookie_notice', '1');
       if (CFG.light) localStorage.setItem('stryker_theme', 'day'); else localStorage.removeItem('stryker_theme');
-      if (CFG.saved) sessionStorage.setItem('tz_geo_attest', JSON.stringify({ c: CFG.saved, t: Date.now() }));
     } catch (e) { /* ignore */ }
   };
   return '(' + body.toString() + ')(' + JSON.stringify(cfg) + ')';
@@ -86,170 +81,33 @@ async function open(browser, url, cfg, width) {
 }
 const hideOverlays = (p) => p.evaluate(() => document.querySelectorAll('body *').forEach((e) => {
   const cs = getComputedStyle(e);
-  if (cs.position === 'fixed' && !e.closest('#geo-gate') && e.id !== 'geo-gate' && e.offsetHeight > 60) e.style.display = 'none';
+  if (cs.position === 'fixed' && e.offsetHeight > 60) e.style.display = 'none';
 }));
 
 (async () => {
   const browser = await launch();
   try {
-    // ---------- block page ----------
     for (const [w, light] of [[390, false], [1440, false], [390, true], [1440, true]]) {
-      const { p, ctx } = await open(browser, 'unavailable.html', { light, wait: 300 }, w);
-      const t = await p.evaluate(() => ({ h: document.querySelector('h1').textContent, m: document.querySelector('.msg').textContent,
-        bg: getComputedStyle(document.body).backgroundColor, sw: document.documentElement.scrollWidth <= innerWidth }));
-      check('block page ' + w + (light ? ' light' : ' dark') + ': text + no overflow', [t.h, t.m, t.sw],
-        ['Not available in your region', "TradeZoro isn't available in your region. Due to US regulations, we can't offer our services in this location.", true]);
-      check('block page ' + w + (light ? ' light' : ' dark') + ': background', t.bg, light ? 'rgb(245, 245, 247)' : 'rgb(5, 5, 6)');
-      await p.screenshot({ path: path.join(OUT, 'block-' + w + (light ? '-light' : '-dark') + '.png') });
-      await ctx.close();
-    }
-
-    // ---------- sign-up ----------
-    for (const [w, light] of [[390, false], [1440, false], [390, true], [1440, true]]) {
+      const tag = w + (light ? ' light' : ' dark');
       const { p, ctx, errors } = await open(browser, 'signup.html', { light }, w);
-      const tag = w + (light ? ' light' : ' dark');
-      const st = () => p.evaluate(() => ({ g: document.querySelector('[data-google-signin]').disabled, e: document.querySelector('#signup-form button[type=submit]').disabled,
-        msg: !document.getElementById('geo-su-msg').hidden }));
-      check('signup ' + tag + ': picker + checkbox present, above Google', await p.evaluate(() => {
-        const g = document.getElementById('geo-signup'); const s = document.querySelector('.social-row');
-        return [!!g, !!document.getElementById('geo-su-country'), !!document.getElementById('geo-su-attest'),
-          !!(g.compareDocumentPosition(s) & Node.DOCUMENT_POSITION_FOLLOWING), document.getElementById('geo-su-country').options.length > 240];
-      }), [true, true, true, true, true]);
-      check('signup ' + tag + ': both sign-up buttons disabled at start', await st(), { g: true, e: true, msg: false });
-      if (w === 390 && !light) {
-        await hideOverlays(p);
-        await p.locator('#geo-signup').screenshot({ path: path.join(OUT, 'signup-empty-390-dark.png') });
-      }
-      await p.selectOption('#geo-su-country', 'RU');
-      await p.check('#geo-su-attest');
-      check('signup ' + tag + ': Russia -> region message, still disabled', await st(), { g: true, e: true, msg: true });
-      check('signup ' + tag + ': Russia option labelled "(not available)"', await p.evaluate(() => document.querySelector('#geo-su-country option[value=RU]').textContent), 'Russia (not available)');
+      check('signup ' + tag + ': no country picker / attest checkbox', await p.evaluate(() => [!!document.querySelector('#geo-signup, select[autocomplete=country], .geo-attest, .geo-hint')]), [false]);
+      check('signup ' + tag + ': Google + email buttons enabled', await p.evaluate(() => [document.querySelector('[data-google-signin]').disabled,
+        document.querySelector('#signup-form button[type=submit]').disabled]), [false, false]);
+      check('signup ' + tag + ': no page errors, no h-scroll', [errors, await p.evaluate(() => document.documentElement.scrollWidth <= innerWidth)], [[], true]);
       await hideOverlays(p);
-      await p.locator('.auth-box').screenshot({ path: path.join(OUT, 'signup-blocked-' + w + (light ? '-light' : '-dark') + '.png') });
-      await p.selectOption('#geo-su-country', 'UA-43');
-      check('signup ' + tag + ': Ukraine - Crimea -> blocked', await st(), { g: true, e: true, msg: true });
-      await p.selectOption('#geo-su-country', 'IN');
-      check('signup ' + tag + ': India + ticked -> enabled', await st(), { g: false, e: false, msg: false });
-      check('signup ' + tag + ': answer kept for the first page', await p.evaluate(() => JSON.parse(sessionStorage.getItem('tz_geo_attest')).c), 'IN');
-      await p.uncheck('#geo-su-attest');
-      check('signup ' + tag + ': unticked -> disabled again', await st(), { g: true, e: true, msg: false });
-      // a forced click/submit while unanswered does nothing
-      await p.evaluate(() => { document.querySelector('[data-google-signin]').disabled = false; document.querySelector('[data-google-signin]').click();
-        const f = document.getElementById('signup-form'); f.querySelector('button[type=submit]').disabled = false; f.requestSubmit(); });
-      await p.waitForTimeout(200);
-      check('signup ' + tag + ': forced Google click / submit while unanswered start nothing', await p.evaluate(() => [window.__popup || 0, window.__created || 0]), [0, 0]);
-      await p.check('#geo-su-attest');
-      await hideOverlays(p);
-      await p.locator('.auth-box').screenshot({ path: path.join(OUT, 'signup-ready-' + w + (light ? '-light' : '-dark') + '.png') });
-      check('signup ' + tag + ': no page errors', errors, []);
-      check('signup ' + tag + ': no horizontal overflow', await p.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+      await p.screenshot({ path: path.join(OUT, 'signup-' + w + (light ? '-light' : '-dark') + '.png') });
       await ctx.close();
     }
-
-    // ---------- existing member, no answer yet: must answer ----------
-    for (const [w, light] of [[390, false], [1440, false], [390, true], [1440, true]]) {
-      const tag = w + (light ? ' light' : ' dark');
-      const { p, ctx, errors } = await open(browser, 'dashboard-user.html', { signedIn: true, light, student: { plan: 'Starter', displayName: 'Test Trader' }, wait: 2500 }, w);
-      check('member ' + tag + ': dialog shown', await p.evaluate(() => !!document.getElementById('geo-gate') && getComputedStyle(document.getElementById('geo-gate')).display !== 'none'), true);
-      check('member ' + tag + ': dialog covers the viewport, no close button', await p.evaluate(() => {
-        const r = document.getElementById('geo-gate').getBoundingClientRect();
-        return [r.top <= 0 && r.left <= 0 && r.width >= innerWidth && r.height >= innerHeight, !document.querySelector('#geo-gate .tz-x, #geo-gate [aria-label=Close]')];
-      }), [true, true]);
-      await p.keyboard.press('Escape');
-      await p.mouse.click(5, 5);
-      check('member ' + tag + ': Escape / outside click do not close it', await p.evaluate(() => !!document.getElementById('geo-gate')), true);
-      check('member ' + tag + ': Continue disabled until answered', await p.evaluate(() => document.getElementById('geo-gt-save').disabled), true);
-      await p.waitForTimeout(400);
-      await p.screenshot({ path: path.join(OUT, 'member-prompt-' + w + (light ? '-light' : '-dark') + '.png') });
-      await p.selectOption('#geo-gt-country', 'GB');
-      await p.check('#geo-gt-attest');
-      await p.click('#geo-gt-save');
-      await p.waitForTimeout(400);
-      const set = await p.evaluate(() => window.__sets.filter((s) => s.path === 'students/u1' && 'sanctionsAttest' in s.d));
-      check('member ' + tag + ': saves residenceCountry + attest + server time, merge', set.map((s) => [s.d.residenceCountry, s.d.sanctionsAttest, s.d.sanctionsAttestAt, s.o && s.o.merge]), [['GB', true, 'TS', true]]);
-      check('member ' + tag + ': dialog closed after saving', await p.evaluate(() => !document.getElementById('geo-gate')), true);
-      check('member ' + tag + ': no page errors', errors.filter((e) => !/Failed to fetch|NetworkError|net::/.test(e)), []);
+    for (const page of ['dashboard-user.html', 'settings.html', 'charts.html']) {
+      const { p, ctx, errors } = await open(browser, page, { signedIn: true, student: { plan: 'Starter', displayName: 'Test Trader' }, wait: 2500 }, 390);
+      check(page + ': signed-in, no country dialog, no residence write', await p.evaluate(() => [!document.getElementById('geo-gate'), !document.querySelector('.geo-gate, .geo-attest'),
+        window.__sets.filter((s) => s.d && ('residenceCountry' in s.d || 'sanctionsAttest' in s.d)).length, window.__signedOut]), [true, true, 0, 0]);
+      check(page + ': no page errors', errors.filter((e) => !/Failed to fetch|NetworkError|net::/.test(e)), []);
       await ctx.close();
     }
-
-    // ---------- member picks a blocked country -> locked ----------
-    {
-      const { p, ctx } = await open(browser, 'dashboard-user.html', { signedIn: true, student: { plan: 'Starter' }, wait: 2500 }, 390);
-      await p.selectOption('#geo-gt-country', 'IR');
-      check('member picks Iran: region message + Confirm', await p.evaluate(() => [!document.getElementById('geo-gt-msg').hidden, document.getElementById('geo-gt-save').textContent, document.getElementById('geo-gt-save').disabled]), [true, 'Confirm', false]);
-      await p.screenshot({ path: path.join(OUT, 'member-blocked-choice-390-dark.png') });
-      await p.click('#geo-gt-save');
-      await p.waitForTimeout(500);
-      check('member picks Iran: stored (no attest), page locked, signed out', await p.evaluate(() => [
-        window.__sets.filter((s) => s.path === 'students/u1' && 'residenceCountry' in s.d).map((s) => [s.d.residenceCountry, 'sanctionsAttest' in s.d]),
-        document.querySelector('h1') && document.querySelector('h1').textContent, window.__signedOut > 0]), [[['IR', false]], 'Not available in your region', true]);
-      await p.screenshot({ path: path.join(OUT, 'member-locked-390-dark.png') });
-      await ctx.close();
-    }
-    // ---------- stored blocked residence / server lock -> locked on load ----------
-    for (const [label, student] of [['stored RU', { plan: 'Starter', residenceCountry: 'RU' }], ['server lock', { plan: 'Pro', residenceCountry: 'US', sanctionsAttest: true, sanctionsLocked: true }]]) {
+    for (const [label, student] of [['stored RU', { plan: 'Starter', residenceCountry: 'RU' }], ['server lock', { plan: 'Pro', sanctionsLocked: true }]]) {
       const { p, ctx } = await open(browser, 'charts.html', { signedIn: true, student, wait: 3000 }, 1440);
-      check('locked on load (' + label + ')', await p.evaluate(() => [document.querySelector('h1') && document.querySelector('h1').textContent, window.__signedOut > 0]), ['Not available in your region', true]);
-      if (label === 'server lock') await p.screenshot({ path: path.join(OUT, 'member-locked-1440-dark.png') });
-      await ctx.close();
-    }
-    // ---------- already answered -> nothing shown ----------
-    {
-      const { p, ctx } = await open(browser, 'settings.html', { signedIn: true, student: { plan: 'Starter', residenceCountry: 'IN', sanctionsAttest: true }, wait: 2500 }, 390);
-      check('answered member: no dialog, no writes of the fields', await p.evaluate(() => [!document.getElementById('geo-gate'), window.__sets.filter((s) => s.d && 'residenceCountry' in s.d).length]), [true, 0]);
-      await ctx.close();
-    }
-    // ---------- just signed up: the sign-up answer is saved silently ----------
-    {
-      const { p, ctx } = await open(browser, 'dashboard-user.html', { signedIn: true, saved: 'IN', student: { plan: 'Starter' }, wait: 2500 }, 390);
-      check('fresh sign-up: saved silently, no dialog', await p.evaluate(() => [!document.getElementById('geo-gate'),
-        window.__sets.filter((s) => s.path === 'students/u1' && s.d.sanctionsAttest === true).map((s) => s.d.residenceCountry)]), [true, ['IN']]);
-      await ctx.close();
-    }
-    // ---------- BUG 22 Nov (Mac app): answered on the server, but the local cache holds only a pending {theme} write ----------
-    {
-      const { p, ctx } = await open(browser, 'charts.html', { signedIn: true, wait: 3000,
-        student: { plan: 'Pro', residenceCountry: 'US', sanctionsAttest: true, sanctionsAttestAt: 'TS0' },
-        cache: { 'students/u1': { theme: 'night' } } }, 1440);
-      check('stale cache, answered on server: no dialog, no second write', await p.evaluate(() => [!document.getElementById('geo-gate'),
-        window.__sets.filter((s) => s.d && 'residenceCountry' in s.d).length]), [true, 0]);
-      await ctx.close();
-    }
-    // ---------- save fails -> plain reason + code, Try again, Sign out (never a dead end) ----------
-    for (const [code, light, w] of [['unavailable', false, 390], ['permission-denied', false, 1440], ['permission-denied', true, 390], ['unavailable', true, 1440]]) {
-      const tag = code + ' ' + w + (light ? ' light' : ' dark');
-      const { p, ctx, errors } = await open(browser, 'dashboard-user.html', { signedIn: true, light, failSet: code, student: { plan: 'Starter' }, wait: 2500 }, w);
-      await p.selectOption('#geo-gt-country', 'US'); await p.check('#geo-gt-attest'); await p.click('#geo-gt-save'); await p.waitForTimeout(500);
-      const st = await p.evaluate(() => ({ err: document.getElementById('geo-gt-err').textContent, errShown: !document.getElementById('geo-gt-err').hidden,
-        gate: !!document.getElementById('geo-gate'), btn: document.getElementById('geo-gt-save').textContent, btnOff: document.getElementById('geo-gt-save').disabled,
-        out: !document.getElementById('geo-gt-out').hidden, outVisible: document.getElementById('geo-gt-out').offsetHeight > 0 }));
-      check('save fails (' + tag + '): reason + code shown, Try again + Sign out', [st.errShown, st.gate, st.btn, st.btnOff, st.out, st.outVisible, st.err.includes('(Error code: ' + code + ')')],
-        [true, true, 'Try again', false, true, true, true]);
-      check('save fails (' + tag + '): plain reason', code === 'unavailable' ? /can't reach TradeZoro/.test(st.err) : /didn't accept/.test(st.err), true);
-      // alignment: both buttons same width + left edge, even gap, text centred, nothing overflows the card
-      const m = await p.evaluate(() => {
-        const r = (id) => document.getElementById(id).getBoundingClientRect(); const a = r('geo-gt-save'), b = r('geo-gt-out'), c = document.querySelector('.geo-gate-card').getBoundingClientRect();
-        const cs = getComputedStyle(document.querySelector('.geo-gate-card'));
-        return { sameW: Math.abs(a.width - b.width) <= 1, sameX: Math.abs(a.left - b.left) <= 1, gap: Math.abs(b.top - a.bottom - 12) <= 1 ? 12 : +(b.top - a.bottom).toFixed(2),
-          inside: a.left >= c.left && a.right <= c.right && b.bottom <= c.bottom, padLR: Math.abs(a.left - c.left - (c.right - a.right)) <= 1,
-          noHScroll: document.documentElement.scrollWidth <= innerWidth, padL: cs.paddingLeft, padR: cs.paddingRight };
-      });
-      check('save fails (' + tag + '): buttons aligned, 12px gap, even padding, no h-scroll', [m.sameW, m.sameX, m.gap, m.inside, m.padLR, m.noHScroll, m.padL === m.padR], [true, true, 12, true, true, true, true]);
-      await p.screenshot({ path: path.join(OUT, 'save-failed-' + code + '-' + w + (light ? '-light' : '-dark') + '.png') });
-      if (code === 'unavailable' && !light) {
-        await p.evaluate(() => { window.__outCalls = 0; const a = firebase.auth(); const so = a.signOut; a.signOut = () => { sessionStorage.setItem('__so', '1'); return so(); }; });
-        await Promise.all([p.waitForURL(/\/login/, { timeout: 5000 }).catch(() => {}), p.click('#geo-gt-out')]);
-        check('save fails: Sign out signs out and goes to /login', [await p.evaluate(() => sessionStorage.getItem('__so')), /\/login/.test(p.url())], ['1', true]);
-      }
-      check('save fails (' + tag + '): no page errors', errors.filter((e) => !/Failed to fetch|NetworkError|net::/.test(e)), []);
-      await ctx.close();
-    }
-    // ---------- save refused but the answer IS on the server (another device / an earlier save): dialog closes ----------
-    {
-      const { p, ctx } = await open(browser, 'dashboard-user.html', { signedIn: true, failSet: 'permission-denied', answerOnFail: true, wait: 2500,
-        student: { plan: 'Starter' } }, 390);
-      await p.selectOption('#geo-gt-country', 'US'); await p.check('#geo-gt-attest'); await p.click('#geo-gt-save'); await p.waitForTimeout(500);
-      check('refused but already answered on server: dialog closes', await p.evaluate(() => !document.getElementById('geo-gate')), true);
+      check('still locked on load (' + label + ')', await p.evaluate(() => [document.querySelector('h1') && document.querySelector('h1').textContent, window.__signedOut > 0]), ['Not available in your region', true]);
       await ctx.close();
     }
     {
@@ -257,7 +115,6 @@ const hideOverlays = (p) => p.evaluate(() => document.querySelectorAll('body *')
       check('member check asks for the server copy', await p.evaluate(() => (window.__gets || []).includes('server')), true);
       await ctx.close();
     }
-    // ---------- legal pages don't prompt; terms show the section ----------
     {
       const { p, ctx } = await open(browser, 'terms.html#restricted-regions', { signedIn: true, student: { plan: 'Starter' }, wait: 2500 }, 390);
       check('terms: no prompt, Restricted regions section present', await p.evaluate(() => [!document.getElementById('geo-gate'), !!document.getElementById('restricted-regions'),

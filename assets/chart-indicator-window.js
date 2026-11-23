@@ -372,10 +372,19 @@ export function mountIndicatorWindow(ws, opts){
       .concat(T().examples.map((x) => ({ key: 'zx:ts-' + x.id.replace(/^ts-example:/, ''), name: x.name, author: 'TradeZoro', kind: 'tsex', source: x.source, badge: 'Example', desc: 'A thinkScript example: add it, or open it in the editor' })))
       .concat(T().store.all().map((t) => ({ key: 'zm:ts-' + t.id, name: t.name, author: 'You', kind: 'tsmine', source: t.source, badge: 'thinkScript', desc: 'Your saved thinkScript study' })));
   }
+  // MQL5 (assets/chart-mql5.js, window.STRYKER_MQ5): New MQL5 indicator, its examples, the member's saved ones.
+  const M = () => window.STRYKER_MQ5;
+  let mqMine = null;
+  function mqItems(){
+    if (!M()) return [];
+    return [{ key: 'qn:new', name: 'New MQL5 indicator', author: 'You', kind: 'mqnew', desc: 'Paste an MQL5 indicator (.mq5) and run it on the chart. Opens the editor.' }]
+      .concat(M().examples.map((x) => ({ key: 'qx:' + x.id, name: x.name, author: 'TradeZoro', kind: 'mqex', source: x.source, badge: 'MQL5', desc: 'An MQL5 example: add it, or open it in the editor' })))
+      .concat((mqMine || []).map((t) => ({ key: 'qm:' + t.id, name: t.name, author: 'You', kind: 'mqmine', source: t.source, badge: 'MQL5', desc: 'Your saved MQL5 indicator' })));
+  }
   let cacheAll = null;
   function allItems(){
     if (cacheAll) return cacheAll;
-    const all = builtins().concat(mineItems(), commItems(), cindItems(), zsItems());
+    const all = builtins().concat(mineItems(), commItems(), cindItems(), zsItems(), mqItems());
     const pop = new Set(all.filter((x) => x.kind === 'community' && x.adds > 0).sort((a, b) => b.adds - a.adds).slice(0, 5).map((x) => x.key));
     all.forEach((x) => decorate(x, pop));
     // The chart's native catalog fills in a moment AFTER a workspace / symbol switch. A list built before that has no
@@ -388,7 +397,7 @@ export function mountIndicatorWindow(ws, opts){
   // rail group, markets, tags and search index for one item
   function railOf(it){
     if (it.kind === 'community' || it.kind === 'cind') return 'community';
-    if (it.kind === 'mine' || /^z[nxm]:/.test(it.key)) return 'mine';
+    if (it.kind === 'mine' || /^[zq][nxm]:/.test(it.key)) return 'mine';
     const t = it.key.startsWith('b:') ? it.key.slice(2) : '';
     if (GEXT.has(t)) return 'gex';
     if (it.cat === GROUP_OF || t === 'stk_hlintel') return 'orderflow';
@@ -426,6 +435,7 @@ export function mountIndicatorWindow(ws, opts){
     const tasks = [Favs.load(), loadMeta()];
     if (S()) tasks.push(S().list().then((r) => { mine = r.items || []; }).catch(() => { mine = []; }));
     if (Z()) tasks.push(Z().store.list().then((r) => { zsMine = r.items || []; }).catch(() => { zsMine = []; }));
+    if (M()) tasks.push(M().store.list().then((r) => { mqMine = r.items || []; }).catch(() => { mqMine = []; }));
     if (L() && fbUser()) {
       tasks.push(L().listPublic().then((a) => { community = a; communityErr = false; }).catch((e) => { console.warn('TradeZoro: community list', e); community = []; communityErr = true; }));
       tasks.push(L().isAdmin().then((a) => { isAdmin = a; }));
@@ -437,7 +447,7 @@ export function mountIndicatorWindow(ws, opts){
   }
 
   // ---- add / remove ----
-  const canAdd = (it) => !it.gone && it.kind !== 'onchart' && it.kind !== 'zsnew' && !(it.kind === 'cind' && it.locked);
+  const canAdd = (it) => !it.gone && it.kind !== 'onchart' && it.kind !== 'zsnew' && it.kind !== 'mqnew' && !(it.kind === 'cind' && it.locked);
   const canMulti = (it) => canAdd(it) && !it.key.startsWith('p:');
   async function addItem(it, rowEl, o){
     o = o || {};
@@ -474,6 +484,12 @@ export function mountIndicatorWindow(ws, opts){
       } else if (it.kind === 'tsex' || it.kind === 'tsmine') {
         const r = await T().addSource(it.name, it.source);
         if (!r.ok) { close(); T().open(it.source, it.name); toast(r.msg || 'Could not add the study.', 'error'); return false; }
+        ok = true;
+      } else if (it.kind === 'mqnew') {
+        close(); M().openNew(); return false;
+      } else if (it.kind === 'mqex' || it.kind === 'mqmine') {
+        const r = await M().addSource(it.name, it.source);
+        if (!r.ok) { close(); M().open(it.source, it.name); toast(r.msg || 'Could not add the indicator.', 'error'); return false; }
         ok = true;
       } else if (it.kind === 'zsex' || it.kind === 'zsmine') {
         const r = await Z().addSource(it.name, it.source);
@@ -646,7 +662,7 @@ export function mountIndicatorWindow(ws, opts){
       e.preventDefault();
       if (e.shiftKey && it) addWithSettings(it);
       else if (sel.size) addSelected();
-      else if (canAdd(it) || it.kind === 'zsnew') addItem(it, rowOf(it.key));
+      else if (canAdd(it) || it.kind === 'zsnew' || it.kind === 'mqnew') addItem(it, rowOf(it.key));
       return;
     }
     if (inSearch) return;   // letters and space type in the search field
@@ -674,7 +690,7 @@ export function mountIndicatorWindow(ws, opts){
     if (it && !isPhone()) renderDetail(els.detail, it);
   }
   async function toggleFav(it, btn){
-    if (it.kind === 'onchart' || it.kind === 'zsnew' || !els) return;
+    if (it.kind === 'onchart' || it.kind === 'zsnew' || it.kind === 'mqnew' || !els) return;
     try {
       const on = await Favs.toggle(it.key, it.name);
       if (!els) return;
@@ -734,6 +750,7 @@ export function mountIndicatorWindow(ws, opts){
       });
     }
     if (a.cell && Z()) Z().handles(a.cell.chart).forEach((hd, i) => out.push({ key: 'zz:' + i, name: Z().titleOf(hd.source), author: 'Zscript', kind: 'onchart', handle: hd }));
+    if (a.cell && M()) M().handles(a.cell.chart).forEach((hd, i) => out.push({ key: 'zq:' + i, name: M().titleOf(hd.source), author: 'MQL5', kind: 'onchart', handle: hd }));
     out.forEach((x) => { x.rail = 'onchart'; x.tagList = []; x.desc = 'On this chart now'; });
     return out;
   }
@@ -779,7 +796,7 @@ export function mountIndicatorWindow(ws, opts){
     switch (section) {
       case 'fav': return { title: 'Favourites', items: favItems(all), empty: 'Star any indicator to keep it here. On a computer, press F on a highlighted row.' };
       case 'onchart': return { title: 'On this chart', items: onChartItems(), empty: 'Nothing on this chart yet.', keep: true };
-      case 'mine': case 'zscript': return { title: RAIL_NAME[section], note: Z() ? 'your Pine scripts and Zscripts' : null, items: all.filter((x) => x.rail === 'mine'), keep: true,
+      case 'mine': case 'zscript': return { title: RAIL_NAME[section], note: Z() ? (M() ? 'your Pine scripts, Zscripts and MQL5 indicators' : 'your Pine scripts and Zscripts') : null, items: all.filter((x) => x.rail === 'mine'), keep: true,
         empty: S() && S().signedIn() ? 'No saved scripts yet. Write one in the editor and press Save.' : 'Sign in to keep scripts on your account.' };
       case 'stryker': return { title: 'TradeZoro', note: 'made by TradeZoro', items: strykerItems(all), keep: true };
       case 'all': {
@@ -816,7 +833,7 @@ export function mountIndicatorWindow(ws, opts){
       all: all.filter((x) => browsable(x) && marketOk(x)).length, fav: favItems(all).filter(marketOk).length, onchart: onChartItems().length,
       community: all.filter((x) => (x.kind === 'community' || x.kind === 'cind' || x.third) && marketOk(x)).length, stryker: strykerItems(all).filter(marketOk).length
     };
-    n.mine = n.zscript = all.filter((x) => x.rail === 'mine' && x.kind !== 'zsnew').length;
+    n.mine = n.zscript = all.filter((x) => x.rail === 'mine' && x.kind !== 'zsnew' && x.kind !== 'mqnew').length;
     ['orderflow', 'gex', 'volume', 'trend', 'momentum', 'volatility', 'levels'].forEach((k) => { n[k] = all.filter((x) => browsable(x) && x.rail === k && marketOk(x)).length; });
     const q = els.search.value.trim();
     els.rail.querySelectorAll('.stkiw-tab').forEach((b) => {
@@ -885,7 +902,7 @@ export function mountIndicatorWindow(ws, opts){
       addItem(it, li);
     });
     const acts = h('span', { class: 'stkiw-acts' });
-    if (it.kind !== 'onchart' && it.kind !== 'zsnew') {
+    if (it.kind !== 'onchart' && it.kind !== 'zsnew' && it.kind !== 'mqnew') {
       const star = h('button', { type: 'button', class: 'stkiw-star' + (fav ? ' on' : ''), html: SVG(I_STAR, 20) });
       setStar(star, fav, it.name);
       star.addEventListener('click', async (e) => { e.stopPropagation(); star.disabled = true; await toggleFav(it, star); star.disabled = false; });
@@ -895,9 +912,9 @@ export function mountIndicatorWindow(ws, opts){
     if (it.kind === 'onchart') {
       acts.appendChild(h('button', { type: 'button', class: 'stkiw-ib stkc-del', 'aria-label': 'Remove ' + it.name + ' from the chart', title: 'Remove from the chart', html: SVG(I_TRASH, 20),
         onclick: (e) => { e.stopPropagation(); try { if (it.handle) it.handle.remove(); else ws.active.removeFromChart(it.index); } catch (err) {} try { ws.context().stateChanged(); } catch (err) {} render(); } }));
-    } else if (canAdd(it) || it.kind === 'zsnew') {
-      acts.appendChild(h('button', { type: 'button', class: 'stkiw-add', 'aria-label': it.kind === 'zsnew' ? 'Open the Zscript editor' : 'Add ' + it.name + ' to the chart', title: it.kind === 'zsnew' ? 'Open the editor' : 'Add to chart (Enter)',
-        onclick: (e) => { e.stopPropagation(); addItem(it, li); } }, [h('span', { class: 'stkiw-add-i', html: SVG(I_PLUS, 18) }), h('span', { class: 'stkiw-add-t', text: it.kind === 'zsnew' ? 'Open' : 'Add' })]));
+    } else if (canAdd(it) || it.kind === 'zsnew' || it.kind === 'mqnew') {
+      acts.appendChild(h('button', { type: 'button', class: 'stkiw-add', 'aria-label': it.kind === 'zsnew' || it.kind === 'mqnew' ? 'Open the editor' : 'Add ' + it.name + ' to the chart', title: it.kind === 'zsnew' || it.kind === 'mqnew' ? 'Open the editor' : 'Add to chart (Enter)',
+        onclick: (e) => { e.stopPropagation(); addItem(it, li); } }, [h('span', { class: 'stkiw-add-i', html: SVG(I_PLUS, 18) }), h('span', { class: 'stkiw-add-t', text: it.kind === 'zsnew' || it.kind === 'mqnew' ? 'Open' : 'Add' })]));
     }
     [th, name, acts].forEach((n) => li.appendChild(n));
     li.addEventListener('mouseenter', () => { if (!isPhone() && hiKey !== it.key) highlight(it.key, false); });
@@ -912,7 +929,7 @@ export function mountIndicatorWindow(ws, opts){
     const m = meta[it.key] || null;
     box.appendChild(thumbEl(it, true));
     const ttl = h('div', { class: 'stkiw-d-ttl' }, [h('h3', { text: it.name })]);
-    if (it.kind !== 'onchart' && it.kind !== 'zsnew' && !it.gone) {
+    if (it.kind !== 'onchart' && it.kind !== 'zsnew' && it.kind !== 'mqnew' && !it.gone) {
       const st = h('button', { type: 'button', class: 'stkiw-star' + (Favs.has(it.key) ? ' on' : ''), html: SVG(I_STAR, 20) });
       setStar(st, Favs.has(it.key), it.name);
       st.addEventListener('click', async () => { st.disabled = true; await toggleFav(it, st); st.disabled = false; });
@@ -952,8 +969,8 @@ export function mountIndicatorWindow(ws, opts){
     const acts = h('div', { class: 'stkiw-d-acts' });
     if (it.kind === 'onchart') acts.appendChild(h('p', { class: 'stkiw-d-note', text: 'On this chart now. Change or remove it from the chart legend.' }));
     else if (it.kind === 'cind' && it.locked) acts.appendChild(h('a', { class: 'stkiw-btn is-primary', href: '/c/' + encodeURIComponent(it.ci.cid) + '?tab=indicators', text: 'Get access' }));
-    else if (canAdd(it) || it.kind === 'zsnew') {
-      acts.appendChild(h('button', { type: 'button', class: 'stkiw-btn is-primary stkiw-d-add', html: SVG(I_PLUS, 20) + '<span>' + (it.kind === 'zsnew' ? 'Open the editor' : 'Add to chart') + '</span>',
+    else if (canAdd(it) || it.kind === 'zsnew' || it.kind === 'mqnew') {
+      acts.appendChild(h('button', { type: 'button', class: 'stkiw-btn is-primary stkiw-d-add', html: SVG(I_PLUS, 20) + '<span>' + (it.kind === 'zsnew' || it.kind === 'mqnew' ? 'Open the editor' : 'Add to chart') + '</span>',
         onclick: () => { closeSheet(); addItem(it, rowOf(it.key)); } }));
       if (canMulti(it)) acts.appendChild(h('button', { type: 'button', class: 'stkiw-btn is-tonal stkiw-d-set', html: SVG(I_SLIDERS, 20) + '<span>Add & open settings</span>', onclick: () => addWithSettings(it) }));
     }

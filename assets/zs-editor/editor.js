@@ -62,6 +62,44 @@ const streamDef = (name) => ({
 });
 export const zscriptLanguage = StreamLanguage.define(streamDef('zscript'));
 const pineLanguage = StreamLanguage.define(streamDef('pine'));
+// MQL5 (assets/chart-mql5.js): C-style comments, #property / #define lines, C++ keywords and types.
+const MQ_KW = new Set('if else for while do switch case default break continue return new delete sizeof operator this class struct enum union template typename typedef namespace public private protected virtual override static const input sinput extern export import'.split(' '));
+const MQ_TY = new Set('void bool char uchar short ushort int uint long ulong float double string datetime color'.split(' '));
+const mql5Language = StreamLanguage.define({
+  name: 'mql5',
+  startState: () => ({ block: false, ind: 0, open: false }),
+  copyState: (s) => ({ block: s.block, ind: s.ind, open: s.open }),
+  token(stream, state){
+    if (stream.sol() && /\S/.test(stream.string)) { state.ind = stream.indentation(); state.open = /\{\s*(?:\/\/.*)?$/.test(stream.string); }
+    if (state.block) { if (stream.skipTo('*/')) { stream.match('*/'); state.block = false; } else stream.skipToEnd(); return 'comment'; }
+    if (stream.eatSpace()) return null;
+    if (stream.match('/*')) { state.block = true; return 'comment'; }
+    if (stream.match('//')) { stream.skipToEnd(); return 'comment'; }
+    if (stream.sol() || /^\s*$/.test(stream.string.slice(0, stream.start))) { if (stream.match(/^#\s*\w+/)) return 'meta'; }
+    const ch = stream.peek();
+    if (ch === '"' || ch === "'") {
+      stream.next();
+      let esc = false, c;
+      while ((c = stream.next()) != null) { if (c === ch && !esc) break; esc = !esc && c === '\\'; }
+      return 'string';
+    }
+    if (stream.match(/^(?:0[xX][0-9a-fA-F]+|\d+\.?\d*(?:[eE][-+]?\d+)?|\.\d+)/)) return 'number';
+    if (stream.match(/^[A-Za-z_]\w*/)) {
+      const w = stream.current();
+      if (MQ_KW.has(w)) return 'keyword';
+      if (w === 'true' || w === 'false' || w === 'NULL' || w === 'EMPTY_VALUE') return 'atom';
+      if (MQ_TY.has(w)) return 'typeName';
+      if (/^\s*\(/.test(stream.string.slice(stream.pos))) return 'function';
+      return 'variableName';
+    }
+    if (stream.match(/^(?:\+\+|--|&&|\|\||[-+*/%<>=!]=?|[?:&|^~])/)) return 'operator';
+    stream.next();
+    return null;
+  },
+  indent: (state, after) => state.ind + (state.open ? 3 : 0) - (/^\s*\}/.test(after || '') ? 3 : 0),
+  languageData: { commentTokens: { line: '//', block: { open: '/*', close: '*/' } }, indentOnInput: /^\s*\}$/ },
+  tokenTable: { meta: tags.meta, function: tags.function(tags.variableName), typeName: tags.typeName }
+});
 
 const highlight = HighlightStyle.define([
   { tag: tags.comment, color: 'var(--zs-comment)', fontStyle: 'italic' },
@@ -206,7 +244,7 @@ export function createZsEditor(parent, opts){
       extensions: [
         lineNumbers(), highlightActiveLineGutter(), history(), drawSelection(), indentOnInput(), bracketMatching(), closeBrackets(),
         highlightActiveLine(), highlightSelectionMatches(), indentUnit.of('    '), EditorState.tabSize.of(4),
-        opts.language || (opts.lang === 'pine' ? pineLanguage : zscriptLanguage), syntaxHighlighting(highlight), theme,
+        opts.language || (opts.lang === 'pine' ? pineLanguage : opts.lang === 'mql5' ? mql5Language : zscriptLanguage), syntaxHighlighting(highlight), theme,
         wrapC.of(opts.wrap === false ? [] : EditorView.lineWrapping),
         autocompletion({ override: [complete], icons: false, activateOnTyping: true }),
         hover, lintExt, lintGutter(),
@@ -215,7 +253,7 @@ export function createZsEditor(parent, opts){
           { key: 'Mod-s', preventDefault: true, run: () => { if (opts.onSave) opts.onSave(); return true; } },
           ...closeBracketsKeymap, ...defaultKeymap, ...searchKeymap, ...historyKeymap, ...completionKeymap, indentWithTab
         ]),
-        EditorView.contentAttributes.of({ 'aria-label': opts.ariaLabel || (opts.lang === 'pine' ? 'Pine import source' : 'Zscript source'), autocapitalize: 'off', autocorrect: 'off', spellcheck: 'false' }),
+        EditorView.contentAttributes.of({ 'aria-label': opts.ariaLabel || (opts.lang === 'pine' ? 'Pine import source' : opts.lang === 'mql5' ? 'MQL5 source' : 'Zscript source'), autocapitalize: 'off', autocorrect: 'off', spellcheck: 'false' }),
         EditorView.updateListener.of((u) => { if (u.docChanged && opts.onChange) opts.onChange(); }),
         // keep the chart's keyboard shortcuts out of the editor
         EditorView.domEventHandlers({ keydown: (e) => { e.stopPropagation(); return false; } })

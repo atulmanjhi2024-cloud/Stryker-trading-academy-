@@ -761,6 +761,18 @@ def check_thinkscript_engine():
         if r.returncode != 0:
             bad = [l for l in r.stdout.splitlines() if l.startswith('FAIL')][:5]
             fail(f'thinkScript ts-{n} tests failed: ' + ('; '.join(bad) or (r.stdout + r.stderr)[-300:]))
+def check_mql5_engine():
+    """MQL5 engine (assets/mq5/): front end, run model, limits, 400+ built-ins, classic indicators vs textbook formulas
+    and a 25+ indicator corpus (tools/tests/mq5-engine.test.mjs); the help page's built-in list is current."""
+    if not os.path.isdir(os.path.join(ROOT, 'assets', 'mq5')):
+        return
+    r = subprocess.run(['node', 'tools/tests/mq5-engine.test.mjs'], capture_output=True, text=True, cwd=ROOT, timeout=300)
+    if r.returncode != 0:
+        bad = [l for l in r.stdout.splitlines() if l.startswith('FAIL')][:5]
+        fail('MQL5 engine tests failed: ' + ('; '.join(bad) or (r.stdout + r.stderr)[-300:]))
+    r = subprocess.run(['node', 'tools/gen-mql5-help.mjs', '--check'], capture_output=True, text=True, cwd=ROOT, timeout=60)
+    if r.returncode != 0:
+        fail('help/mql5-on-tradezoro.html built-in list is out of date: run node tools/gen-mql5-help.mjs. ' + (r.stdout + r.stderr)[-200:])
 
 
 def check_desktop_signin():
@@ -838,7 +850,7 @@ def main():
     # two browser checks start first so they overlap the rest
     fast = '--fast' in sys.argv   # static checks only; the browser suites run in GitHub (site-checks.yml)
     browser = [] if fast else [check_app_shell_browser, check_drawer_touch]
-    order = [check_desktop_signin, check_pro_features, check_compare_page, check_push_rules, check_stripe_void, check_metric_alerts, check_phantom, check_days_load, check_finatic, check_workspaces, check_account_sync, check_latency, check_zscript_engine, check_thinkscript_engine, *browser, check_roadmap_log, check_roadmap_cards,
+    order = [check_desktop_signin, check_pro_features, check_compare_page, check_push_rules, check_stripe_void, check_metric_alerts, check_phantom, check_days_load, check_finatic, check_workspaces, check_account_sync, check_latency, check_zscript_engine, check_thinkscript_engine, check_mql5_engine, *browser, check_roadmap_log, check_roadmap_cards,
              check_nav_features_menu, check_home_stats, check_charts_css_subset, check_merge_markers, check_unversioned_assets,
              check_module_import_versions, check_versioned_sources, check_js_syntax, check_html_structure,
              check_css_braces, check_referenced_assets_exist, check_build_markers, check_mobile_width_guards,

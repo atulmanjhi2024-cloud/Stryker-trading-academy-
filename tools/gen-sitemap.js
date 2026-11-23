@@ -68,6 +68,7 @@ const PAGES = [
   ['/download',             '0.5', 'monthly'],
   ['/help/desktop-bridge',  '0.5', 'monthly'],
   ['/help/thinkscript-on-tradezoro', '0.5', 'monthly'],
+  ['/help/mql5-on-tradezoro',  '0.5', 'monthly'],
   ['/help/install-mac-app', '0.5', 'monthly'],
   ['/help/connect-broker',  '0.5', 'monthly'],
   ['/help/connect-broker-interactive-brokers', '0.4', 'monthly'],

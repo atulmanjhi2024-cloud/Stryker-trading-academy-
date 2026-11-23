@@ -94,6 +94,10 @@
 /assets/ts/worker.js
   Content-Security-Policy: default-src 'none'; script-src 'self'; connect-src 'none'; worker-src 'self'; base-uri 'none'; form-action 'none'
 
+# MQL5 sandbox worker (assets/mq5/worker.js): same lock as the Zscript worker, for pasted MQL5 indicators.
+/assets/mq5/worker.js
+  Content-Security-Policy: default-src 'none'; script-src 'self'; connect-src 'none'; worker-src 'self'; base-uri 'none'; form-action 'none'
+
 /*.html
   Cache-Control: public, max-age=0, must-revalidate
   X-Content-Type-Options: nosniff

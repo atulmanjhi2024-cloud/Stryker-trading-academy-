@@ -604,6 +604,8 @@ function lateLists(provider){
   const zsP = import('./zs-config.js?v=1224').then((c) => (c.zsEnabled() ? import('./chart-zscript.js?v=1224') : null)).catch((e) => { console.warn('TradeZoro: Zscript module', e); return null; });
   // thinkScript studies (assets/chart-thinkscript.js): one more language in the same editor; it rides on the Zscript panel.
   const tsP = zsP.then((z) => (z ? import('./chart-thinkscript.js?v=1224') : null)).catch((e) => { console.warn('TradeZoro: thinkScript module', e); return null; });
+  // MQL5 (assets/chart-mql5.js): pasted MQL5 indicators, a third language in the same editor; needs the Zscript editor.
+  const mqP = zsP.then((z) => (z ? import('./chart-mql5.js?v=1224') : null)).catch((e) => { console.warn('TradeZoro: MQL5 module', e); return null; });
   try {
     mods = await Promise.all([
       import(VELA_BASE + 'workspace.js'),
@@ -707,6 +709,8 @@ function lateLists(provider){
   if (Zs) try { Zs.installZscript(Core, () => ws); } catch (e) { console.warn('TradeZoro: Zscript install', e); }
   const Ts = await tsP;
   if (Ts) try { Ts.installThinkscript(Core, () => ws); } catch (e) { console.warn('TradeZoro: thinkScript install', e); }
+  const Mq = await mqP;
+  if (Mq) try { Mq.installMql5(Core, () => ws); } catch (e) { console.warn('TradeZoro: MQL5 install', e); }
   // Indicator Settings → Style / Visibility tabs (assets/chart-ind-style.js): its persistence handler too.
   const IndStyle = mods[24];
   try { IndStyle.installIndStyle(Core); } catch (e) { console.warn('TradeZoro: indicator style install', e); }
@@ -1151,6 +1155,7 @@ function legendFold(R) {
   try { Pine.mountPine(ws, barL, { toast, tfLabel }); } catch (e) { console.warn('TradeZoro: Pine editor', e); }
   if (Zs) try { Zs.mountZscript(ws, { toast, tfLabel }); } catch (e) { console.warn('TradeZoro: Zscript editor', e); }
   if (Ts) try { Ts.mountThinkscript(ws, { toast, tfLabel }); } catch (e) { console.warn('TradeZoro: thinkScript editor', e); }
+  if (Mq) try { Mq.mountMql5(ws, { toast, tfLabel }); } catch (e) { console.warn('TradeZoro: MQL5 editor', e); }
   // the tab strip is its own slim row between the toolbar and the chart (never in the crowded phone toolbar)
   { const panel = document.querySelector('.stkchart-panel'); if (panel && panel.parentNode) panel.parentNode.insertBefore(cellSw, panel); else barL.appendChild(cellSw); }
   // Real Rithmic module: after the first candles are on screen (see the look() loop above), at idle.

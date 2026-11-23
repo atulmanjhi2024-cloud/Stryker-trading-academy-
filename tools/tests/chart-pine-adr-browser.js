@@ -1,17 +1,23 @@
 // Browser check: a Pine "ADR dashboard" (14 daily bars via request.security on other futures symbols + table.cell)
-// must fill its table on the real charts page. Bars come from the live bars API through a local proxy (read only).
+// must fill its table on the real charts page. Bars are recorded fixtures (fixtures/pine/adr-bars.json), no network.
 //   python3 -m http.server 8195 (repo root) &
 //   NODE_PATH=<repo>/node_modules tools/chrome-slot.sh node tools/tests/chart-pine-adr-browser.js [shotsDir]
 // Env: BASE (default http://127.0.0.1:8195), SRC_FILE (Pine source; default tools/tests/fixtures/pine/adr-dashboard.pine), TF (default 5)
-const fs = require('fs'), path = require('path'), https = require('https');
+const fs = require('fs'), path = require('path');
 const { launch } = require('./lib.js');
 const stub = require('./richstub.js');
-const BASE = process.env.BASE || 'http://127.0.0.1:8195';
+const BASE = process.env.CHART_BASE || process.env.BASE || 'http://127.0.0.1:8195';
 const OUT = process.argv[2] || '/tmp';
 const SRC = fs.readFileSync(process.env.SRC_FILE || path.join(__dirname, 'fixtures', 'pine', 'adr-dashboard.pine'), 'utf8');
 let fails = 0; const check = (ok, m) => { console.log((ok ? 'PASS ' : 'FAIL ') + m); if (!ok) fails++; };
-const memo = new Map();
-const upstream = (u) => memo.get(u) || memo.set(u, new Promise((res) => https.get('https://tradezoro.com' + u, { headers: { 'user-agent': 'curl/8' } }, (r) => { let s = ''; r.on('data', (d) => s += d); r.on('end', () => res(s)); }).on('error', () => res('{"bars":[]}')))).get(u);
+// Recorded "Sample data" bars (no network): pages are served newest-first by their offset from the first page the chart asks for.
+const FIX = JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures', 'pine', 'adr-bars.json'), 'utf8')).bars;
+const TOP = { D: 28, 5: 10390 };   // page numbers the fixture was recorded at (newest first); older pages are index TOP - page
+const fixtureBars = (pathname, search) => {
+  const root = decodeURIComponent(pathname.split('/').pop()), q = new URLSearchParams(search), tf = q.get('tf'), pg = +q.get('page');
+  const pages = FIX[root + '|' + tf];
+  return JSON.stringify({ s: root, tf, page: pg, bars: (pages && pages[TOP[tf] - pg]) || [] });
+};
 (async () => {
   const b = await launch();
   try {
@@ -22,7 +28,7 @@ const upstream = (u) => memo.get(u) || memo.set(u, new Promise((res) => https.ge
       // the table is painted on a canvas: read it from the models the Pine worker posts
       await ctx.addInitScript(() => { const W = window.Worker; window.__adrModels = []; window.Worker = function (...a) { const w = new W(...a); w.addEventListener('message', (e) => { const m = e.data; if (m && m.kind === 'model' && m.model && m.model.tables && m.model.tables.length) window.__adrModels.push(m.model.tables[0].cells.map((r) => r.map((c) => (c ? c.text : '')).join(' | '))); }); return w; }; window.Worker.prototype = W.prototype; });
       await ctx.route(/^https?:\/\/(?!127\.0\.0\.1|localhost|cdn\.jsdelivr\.net)/, (r) => r.abort());
-      await ctx.route(/\/api\/chart\/bars\//, async (r) => { const u = new URL(r.request().url()); r.fulfill({ status: 200, contentType: 'application/json', body: await upstream(u.pathname + u.search) }); });
+      await ctx.route(/\/api\/chart\/bars\//, async (r) => { const u = new URL(r.request().url()); r.fulfill({ status: 200, contentType: 'application/json', body: fixtureBars(u.pathname, u.search) }); });
       const p = await ctx.newPage(); const errs = []; const reqs = []; p.on('request', (q) => { if (/api\/chart\/bars/.test(q.url())) reqs.push(q.url().replace(/^.*bars\//, '')); }); p.on('pageerror', (e) => errs.push(String(e)));
       await p.goto(BASE + '/charts.html', { waitUntil: 'domcontentloaded' });
       await p.waitForFunction(() => window.__stkHeavyReady && window.STRYKER_VELA && window.STRYKER_PINE, null, { timeout: 60000 });

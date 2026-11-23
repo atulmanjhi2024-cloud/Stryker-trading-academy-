@@ -74,7 +74,8 @@ const audit = async (e, id) => { if (id && audits.has(id)) { const er = new Erro
 let globalOn = true;
 const store = memStore({ consent: [UA, UB] });
 store.docs.set('brokerUsers/' + UA, { finUserId: UA }); store.docs.set('brokerUsers/' + UB, { finUserId: UB });
-const deps = { store, verifyFetch, finFetch, audit, brackets: new Map(), liveSwitch: async () => globalOn, sleep: async () => {} };
+const deps = { brokersPaused: false,   // pause off here: this file tests broker behaviour (pause: broker-pause.test.mjs)
+  store, verifyFetch, finFetch, audit, brackets: new Map(), liveSwitch: async () => globalOn, sleep: async () => {} };
 const live = { FINATIC_API_KEY: 'fntc_live_FAKE', FINATIC_LIVE_ORDERS: '1', DEV: '0' };
 let ip = 1;
 const req = (body, uid) => new Request('https://tradezoro.com/connect/finatic/copy', { method: 'POST', headers: { 'cf-connecting-ip': '10.9.' + (ip++ % 250) + '.' + (Math.floor(ip / 250) % 250), origin: 'https://tradezoro.com', 'content-type': 'application/json', authorization: 'Bearer ' + token(uid) }, body: JSON.stringify(body) });

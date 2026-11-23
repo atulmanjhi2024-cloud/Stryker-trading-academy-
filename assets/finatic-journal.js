@@ -22,7 +22,10 @@
     auth.onAuthStateChanged(function (user) {
       if (!user || seen) return; seen = true;
       if (user.isAnonymous) return;
-      db.collection('admins').doc(user.uid).get().then(function (a) { return a.exists; }).catch(function () { return false; }).then(function (admin) { addButton(user.uid, admin); });
+      db.collection('admins').doc(user.uid).get().then(function (a) { return a.exists; }).catch(function () { return false; }).then(function (admin) {
+        // Owner 23 Nov: broker connecting paused for normal members (assets/broker-pause.js); admins + beta testers keep the button
+        import('./broker-pause.js?v=' + build()).then(function (bp) { return bp.pausedFor(user.uid, admin); }).then(function (paused) { if (!paused) addButton(user.uid, admin); }).catch(function () {});
+      });
     });
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init); else init();

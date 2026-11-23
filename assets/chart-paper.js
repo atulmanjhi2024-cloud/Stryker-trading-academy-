@@ -1,5 +1,6 @@
 // TradeZoro — Charts PAPER TRADING (ES module, charts.html only)
 import * as TM from './chart-trade-menu.js?v=1225';
+import * as BP from './broker-pause.js?v=1225';   // one flag: broker connecting paused for members (Owner 23 Nov)
 import * as TV from './chart-tradeview.js?v=1225';   // Trade display: what the chart shows of the account (Owner 17 Nov)
 import { normFutures } from './chart-sym.js?v=1225';   // one futures test for every symbol form (CME_MINI:MNQ1!, MNQZ6 ...)
 // Owner order 2026-10-12: "Add complete full demo/paper trading feature inside the charts, like
@@ -1976,7 +1977,7 @@ function placeTrade(){
 }
 // Live accounts exist only when the admin-only module is loaded (window.__stkLive.state.accounts); everyone else sees Paper only.
 const liveState = () => (window.__stkLive && window.__stkLive.state && window.__stkLive.connect ? window.__stkLive.state : null);
-function drawTradeMenu(pop){ const sm = acct ? acct.summary(dayStart()) : null; TM.draw(pop, liveState(), Object.assign(sm ? { bal: money(sm.balance), upl: sm.unrealized ? money(sm.unrealized, true) : '' } : {}, { enabled: paperOn(), off: liveOf() ? paperOff : null })); }
+function drawTradeMenu(pop){ const sm = acct ? acct.summary(dayStart()) : null; TM.draw(pop, liveState(), Object.assign(sm ? { bal: money(sm.balance), upl: sm.unrealized ? money(sm.unrealized, true) : '' } : {}, { enabled: paperOn(), off: liveOf() ? paperOff : null, paused: brokersPaused ? BP.PAUSED_MSG : '' })); }
 let openTradeMenu = null;
 // Trade menu > Paper trading > disconnect (after its confirm): paper trading off on the chart. The order panel closes (unless a live
 // account is in use), paper position / order lines leave the chart, the Trade button goes back to "Trade". Account + history are kept;
@@ -2344,6 +2345,7 @@ html:not(.stkpt-on) .stkpt-1c,html:not(.stkpt-on):not(.stklv-on) .stkpt-chip,htm
 // only). The server scopes every call to the member's own connection and refuses live writes until "Enable live trading" is accepted.
 // admin = only the global kill switch buttons (settings/liveTrading is admin-writable).
 let liveLoaded = false;
+let brokersPaused = false;
 function maybeLive(u){
   if (liveLoaded || !u || u.isAnonymous) return;
   liveLoaded = true;
@@ -2351,7 +2353,12 @@ function maybeLive(u){
   const check = (local && window.__stkLiveTest && window.__stkLiveTest.isAdmin) ? Promise.resolve(window.__stkLiveTest.isAdmin(u)) : firebase.firestore().collection('admins').doc(u.uid).get().then((d) => d.exists).catch(() => false);
   check.then((admin) => {
     const b = (document.querySelector('meta[name="stryker-build"]') || {}).content || '0';
-    import('./chart-live.js?v=' + b).then((m) => m.mountLive(window.__stkPaper, { uid: u.uid, toast: toastFn, admin: !!admin })).catch((e) => console.warn('TradeZoro: live module', e));
+    // Owner 23 Nov: broker connecting paused for normal members (assets/broker-pause.js; admins + beta testers keep it): no live module,
+    // the Trade menu shows the pause line
+    return BP.pausedFor(u.uid, admin).then((paused) => {
+      if (paused) { brokersPaused = true; return; }
+      import('./chart-live.js?v=' + b).then((m) => m.mountLive(window.__stkPaper, { uid: u.uid, toast: toastFn, admin: !!admin })).catch((e) => console.warn('TradeZoro: live module', e));
+    });
   });
 }
 export function installPaper(Core){

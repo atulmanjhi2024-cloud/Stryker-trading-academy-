@@ -170,8 +170,14 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     auth.onAuthStateChanged((user) => {
       if (!user) return;
-      jbLoadCatalog();
-      jbWatchConnections(user.uid);
+      jbWatchConnections(user.uid);   // existing connections stay readable
+      // Owner 23 Nov: broker connecting paused for members (assets/broker-pause.js): the pause line instead of the connect form
+      const b = (document.querySelector('meta[name="stryker-build"]') || {}).content || '0';
+      import('./broker-pause.js?v=' + b).then((bp) => bp.pausedFor(user.uid).then((p) => (p ? bp.PAUSED_MSG : ''))).catch(() => '').then((paused) => {
+        if (!paused) { jbLoadCatalog(); return; }
+        const note = document.getElementById('jb-unavailable');
+        if (note) { note.textContent = paused; note.style.display = ''; }
+      });
     });
   }
   wireAuth();

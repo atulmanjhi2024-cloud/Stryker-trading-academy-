@@ -3,6 +3,7 @@
 import { isAdminToken, verifyIdToken, bearerOf } from '../../api/chart/_rt.js';
 import { okOrigin, rateLimited, json } from '../_token.js';
 import { VER } from './_ver.js';
+import { pausedReply } from './_pause.js';
 
 export { VER };
 
@@ -135,6 +136,9 @@ export async function gate(request, env, deps, name) {
   // MEMBER LIVE (Owner 21 Nov): every signed-in member passes; admin is only a flag now (legacy id claim, sandbox order test).
   // What a member may touch is decided per call by _owner.js (their own broker-link user and accounts only).
   const admin = await t.step('admin', isAdminToken(token, { fetchImpl: deps.verifyFetch }));   // admins/{uid}: 60 s memo (a "no" 5 s)
+  // BROKER PAUSE (Owner 23 Nov): normal members refused on every broker route; admins + beta testers pass (_pause.js)
+  const paused = await t.step('pause', pausedReply(request, env, deps, { uid, admin }));
+  if (paused) return paused;
   return { uid, admin };
 }
 

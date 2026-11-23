@@ -203,7 +203,8 @@ const audits = new Map();
 const audit = async (e, id) => { if (id && audits.has(id)) { const er = new Error('dup'); er.duplicate = true; throw er; } const row = { ...e }; audits.set(id || 'r' + audits.size, row); return { finish: async (r) => Object.assign(row, r) }; };
 let killOn = true;
 const brackets = new Map();
-const deps = { store: memStore({ consent: ['admin1'] }), verifyFetch, finFetch, audit, brackets, liveSwitch: async () => { if (killOn === 'err') throw new Error('x'); return killOn; }, now: () => N, sleep: async () => {} };
+const deps = { brokersPaused: false,   // pause off here: this file tests broker behaviour (pause: broker-pause.test.mjs)
+  store: memStore({ consent: ['admin1'] }), verifyFetch, finFetch, audit, brackets, liveSwitch: async () => { if (killOn === 'err') throw new Error('x'); return killOn; }, now: () => N, sleep: async () => {} };
 const US = '0aaa1111-2222-3333-4444-555566667777', ACC = '123e4567-e89b-12d3-a456-426614174000';
 const live = { FINATIC_API_KEY: 'fntc_live_FAKE', FINATIC_LIVE_ORDERS: '1', DEV: '0' };
 let ip = 1;

@@ -43,7 +43,8 @@ const finFetch = async (url, init) => {
 };
 const audits = [];
 const audit = async (e) => { const row = { ...e }; audits.push(row); return { id: 'a' + audits.length, finish: async (r) => Object.assign(row, r) }; };
-const deps = { store: memStore({ consent: ['admin1'] }), verifyFetch, finFetch, audit };
+const deps = { brokersPaused: false,   // pause off here: this file tests broker behaviour (pause: broker-pause.test.mjs)
+  store: memStore({ consent: ['admin1'] }), verifyFetch, finFetch, audit };
 const env = { FINATIC_API_KEY: 'fk_test_SECRET', DEV: '0' };
 let ipn = 1;
 const ACC = '123e4567-e89b-12d3-a456-426614174000';

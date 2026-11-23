@@ -95,6 +95,7 @@ export function draw(pop, live, paper) {
   closeGear();
   const act = live && live.acct;
   let h = '<div role="group" aria-label="Paper trading">' + paperRow(paper, !act && !(paper && paper.enabled === false), !!live || !!(paper && paper.off)) + '</div>';
+  if (!live && paper && paper.paused) h += '<p class="stktm-paused" role="note">' + esc(paper.paused) + '</p>';   // broker connecting paused (broker-pause.js)
   if (live) {
     h += '<div role="group" aria-labelledby="stktm-h2"><div class="stktm-h" id="stktm-h2">Live accounts<span class="stktm-cnt">' + live.accounts.length + '</span></div>';
     if (!live.accounts.length) h += '<div class="stktm-empty">' + (live.loaded ? 'No broker connected yet.' : 'Loading accounts…') + '</div>';

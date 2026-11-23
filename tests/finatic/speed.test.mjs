@@ -35,7 +35,8 @@ const audits = new Map(); const deferred = [];
 const audit = async (e, id) => { await sleep(B.delay); if (id && audits.has(id)) { const er = new Error('dup'); er.duplicate = true; throw er; } const row = { ...e }; audits.set(id, row); return { id, finish: async (r) => { await sleep(5); Object.assign(row, r); } }; };
 const defer = (p) => { deferred.push(p); return p; };
 let T = Date.parse('2026-11-16T15:00:00Z');
-const deps = { store: memStore({ consent: ['admin1'] }), verifyFetch, finFetch, audit, liveSwitch: async () => { await sleep(B.delay); return true; }, sleep: async () => {}, defer, now: () => T };
+const deps = { brokersPaused: false,   // pause off here: this file tests broker behaviour (pause: broker-pause.test.mjs)
+  store: memStore({ consent: ['admin1'] }), verifyFetch, finFetch, audit, liveSwitch: async () => { await sleep(B.delay); return true; }, sleep: async () => {}, defer, now: () => T };
 const live = { FINATIC_API_KEY: 'fntc_live_FAKE', FINATIC_LIVE_ORDERS: '1', DEV: '0' };
 let ip = 1, kn = 0;
 const req = (body, path = 'order') => new Request('https://tradezoro.com/connect/finatic/' + path, { method: 'POST', headers: { 'cf-connecting-ip': '10.7.' + (ip++ % 250) + '.1', origin: 'https://tradezoro.com', 'content-type': 'application/json', authorization: 'Bearer ' + token('admin1') }, body: JSON.stringify(body) });

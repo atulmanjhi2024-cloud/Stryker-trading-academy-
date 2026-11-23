@@ -22,7 +22,8 @@ const finFetch = async (url, init) => { const u = new URL(url); calls.push(init.
   if (u.pathname === '/api/v1/session/start') return ok({ session_id: 's1', company_id: 'c', status: 'pending', user_id: '' });
   if (u.pathname === '/api/v1/session/portal') return ok({ portal_url: 'https://portal.finatic.dev/?t=x' });
   return ok([]); };
-const deps = { store: memStore(), verifyFetch, finFetch, audit: async () => ({ finish: async () => {} }), liveSwitch: async () => true, sleep: async () => {} };
+const deps = { brokersPaused: false,   // pause off here: this file tests broker behaviour (pause: broker-pause.test.mjs)
+  store: memStore(), verifyFetch, finFetch, audit: async () => ({ finish: async () => {} }), liveSwitch: async () => true, sleep: async () => {} };
 const env = { FINATIC_API_KEY: 'fntc_live_FAKE', FINATIC_LIVE_ORDERS: '1', DEV: '0' };
 let ip = 1;
 const mk = (path, body) => new Request('https://tradezoro.com/connect/finatic/' + path, { method: 'POST', headers: { 'cf-connecting-ip': '10.9.0.' + (ip++), origin: 'https://tradezoro.com', 'content-type': 'application/json', authorization: 'Bearer ' + token('memberMT') }, body: JSON.stringify(body) });

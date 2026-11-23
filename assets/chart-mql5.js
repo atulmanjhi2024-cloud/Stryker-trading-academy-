@@ -21,9 +21,9 @@
 //
 // PERSISTENCE: cell-scope handler 'stryker.mql5' stores [{ name, source, inputs, hidden }] in the workspace state.
 
-import { MQ5_EXAMPLES, MQ5_NEW } from './mq5/examples.js?v=1225';
-import { makeStore } from './zs-editor/store.js?v=1225';
-import { createShell, el, ib, ICONS, libRow, emptyState, renderDocs, descOf, ago, download, pickFile, fileName } from './chart-script-editor.js?v=1225';
+import { MQ5_EXAMPLES, MQ5_NEW } from './mq5/examples.js?v=1226';
+import { makeStore } from './zs-editor/store.js?v=1226';
+import { createShell, el, ib, ICONS, libRow, emptyState, renderDocs, descOf, ago, download, pickFile, fileName } from './chart-script-editor.js?v=1226';
 
 const LANG = 'mql5';
 const EXT_KEY = 'stryker.mql5';
@@ -46,7 +46,7 @@ export function titleOf(src){
 
 // ---------- the engine (assets/mq5/runner.js), loaded on first use ----------
 let engineP = null;
-const RUNNER_URL = './mq5/runner.js?v=1225';
+const RUNNER_URL = './mq5/runner.js?v=1226';
 function engine(){
   if (!engineP) engineP = import(RUNNER_URL).catch(() => import(RUNNER_URL + '&retry=' + Date.now())).catch((e) => { engineP = null; throw e; });
   return engineP;
@@ -59,7 +59,7 @@ async function compileIn(source){
 }
 let builtinsP = null;
 export function loadBuiltins(){
-  if (!builtinsP) builtinsP = import('./mq5/builtins.js?v=1225').then((m) => m.builtinList().map((b) => ({ name: b.name, kind: 'function', sig: b.sig, doc: (b.cat ? b.cat + '. ' : '') + (b.doc || '') }))).catch(() => []);
+  if (!builtinsP) builtinsP = import('./mq5/builtins.js?v=1226').then((m) => m.builtinList().map((b) => ({ name: b.name, kind: 'function', sig: b.sig, doc: (b.cat ? b.cat + '. ' : '') + (b.doc || '') }))).catch(() => []);
   return builtinsP;
 }
 
@@ -725,7 +725,7 @@ export function mountMql5(ws, opts){
   function stopLint(){ if (compiler) { compiler.dispose(); compiler = null; } }
   function ensureEditor(){
     if (!edP) {
-      edP = Promise.all([import('./zs-editor/editor.js?v=1225'), loadBuiltins()]).then(([m, builtins]) => {
+      edP = Promise.all([import('./zs-editor/editor.js?v=1226'), loadBuiltins()]).then(([m, builtins]) => {
         builtinsAll = builtins;
         edHost.innerHTML = '';
         const first = MQ5_EXAMPLES[0];

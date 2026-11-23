@@ -28,7 +28,8 @@ let ip = 1;
 const mk = (path, body) => new Request('https://tradezoro.com/connect/finatic/' + path, { method: 'POST', headers: { 'cf-connecting-ip': '10.9.0.' + (ip++), origin: 'https://tradezoro.com', 'content-type': 'application/json', authorization: 'Bearer ' + token('memberMT') }, body: JSON.stringify(body) });
 const staleAdmin = { fetch: async () => F.json({ error: 'Admin only', code: 'forbidden' }, 403) };   // what the 19 Nov Worker said
 const staleNoRoute = { fetch: async () => F.json({ error: 'Not found', code: 'not_found' }, 404) };
-const fresh = { fetch: async () => F.json({ error: 'Not connected yet', code: 'needs_connect' }, 409) };
+const fresh = { fetch: async (rq) => (new URL(rq.url).pathname.endsWith('/ver') ? F.json({ ver: 'v-test' }) : F.json({ error: 'Not connected yet', code: 'needs_connect' }, 409)) };
+F._setVer('v-test');   // a deployed build
 const entry = (h, opts) => F.pagesEntry((rq, e, d) => h(rq, e, { ...deps, ...d }), opts);   // pagesEntry hands the handler only {defer}: add the stubs
 
 // the member taps MetaTrader 5: session start, edge Worker is stale -> runs here and succeeds
@@ -48,6 +49,7 @@ const before = calls.filter((c) => c.startsWith('POST') && c.endsWith('/orders')
 r = await entry(O.handle, { retryHere: false })({ request: mk('order', { op: 'place', accountId: '11111111-e89b-12d3-a456-426614174000', symbol: 'MNQZ6', side: 'buy', qty: 1, type: 'market' }), env: { ...env, FINATIC_EDGE: staleAdmin } });
 assert.equal(r.status, 403); assert.equal(calls.filter((c) => c.startsWith('POST') && c.endsWith('/orders')).length, before, 'no order reached the broker');
 // a fresh Worker's own answers pass through untouched (no double run)
+F._resetEdge();   // the memo above remembered the stale Workers
 let ran = 0; r = await entry(async () => { ran++; return F.json({ ok: 1 }); })({ request: mk('data', {}), env: { ...env, FINATIC_EDGE: fresh } });
 assert.equal(r.status, 409); assert.equal(ran, 0, 'fresh Worker answer is final');
 console.log('stale-edge: ok');

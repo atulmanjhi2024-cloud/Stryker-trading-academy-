@@ -104,7 +104,7 @@ assert.equal(audits.get(key(1)).result, 'accepted');
 B.post = '504'; B.calls = []; B.appear = 1;   // the first GET /orders is the pre-send read; the order shows from the next read on
 B.late = [{ orderId: 'o-504', status: 'FILLED', orderCreatedAt: new Date().toISOString(), legs: [{ securityId: 'MNQZ6', side: 'BUY', quantity: 1 }] }];
 x = await send({ op: 'place', symbol: 'MNQZ6', side: 'buy', qty: 1, type: 'market', idemKey: key(2) });
-assert.equal(x.status, 200, JSON.stringify(x.j)); assert.equal(x.j.settled, true); assert.equal(x.j.orderId, 'o-504'); assert.equal(x.j.status, 'FILLED');
+assert.equal(x.status, 200, JSON.stringify(x.j)); assert.equal(x.j.settled, 'order'); assert.equal(x.j.orderId, 'o-504'); assert.equal(x.j.status, 'FILLED');
 assert.equal(posts().length, 1, 'ONE send, never a retry');
 let a = audits.get(key(2)); assert.equal(a.result, 'accepted'); assert.equal(a.httpStatus, 504); assert.equal(a.brokerOrderId, 'o-504');
 assert.match(a.message, /HTTP 504 GATEWAY_TIMEOUT: upstream timed out/); assert.match(a.message, /found by read/);
@@ -113,7 +113,7 @@ assert.match(a.message, /HTTP 504 GATEWAY_TIMEOUT: upstream timed out/); assert.
 B.calls = []; B.appear = 0; B.late = null;
 x = await send({ op: 'place', symbol: 'MNQZ6', side: 'buy', qty: 1, type: 'market', idemKey: key(3) });
 assert.equal(x.status, 503, 'edge-safe 503'); assert.equal(x.j.code, 'unknown');
-assert.match(x.j.error, /code 504/); assert.match(x.j.error, /blocked/);
+assert.match(x.j.error, /code 504/); assert.match(x.j.error, /paused/);
 assert.equal(posts().length, 1, 'never re-sent');
 assert.equal(B.calls.filter((c) => c.m === 'GET' && c.p.endsWith('/orders')).length, 1 + O.SETTLE_MS.length, 'pre-send read + settle reads');
 a = audits.get(key(3)); assert.equal(a.result, 'unknown'); assert.match(a.message, /HTTP 504 GATEWAY_TIMEOUT/); assert.match(a.message, /not found in 3 read/);

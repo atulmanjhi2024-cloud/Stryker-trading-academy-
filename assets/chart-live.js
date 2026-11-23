@@ -571,10 +571,10 @@ export function enableLive() {
 async function write(body, what, pending) {
   S.busy = true; S.lastWriteAt = now(); S.pending = pending || null; render();
   const tm = { op: body.op, t0: performance.now() };
-  try { const r = await order(body, tm); tm.ok = true; toast(what + ' sent. ' + (r.settled ? 'The broker was slow to answer, so we checked: the order is there. ' : '') + (r.status ? 'Broker status: ' + r.status + '.' : ''), 'success'); return r; }
+  try { const r = await order(body, tm); tm.ok = true; toast(r.settled ? L.settledText(what, r) : what + ' sent. ' + (r.status ? 'Broker status: ' + r.status + '.' : ''), 'success'); return r; }
   catch (e) {
     // the server's message says what the broker answered and whether a read already looked for the order (21 Nov)
-    if (e.code === 'unknown' || e.network) { S.unknown = true; toast(e.code === 'unknown' && e.message ? e.message : 'No clear answer from the broker. The order may or may not be live. Check the working orders before sending again.', 'error'); }
+    if (e.code === 'unknown' || e.network) { S.unknown = true; toast(e.code === 'unknown' && e.message ? e.message : 'No answer from TradeZoro (your connection dropped). The order may or may not have gone through. Check your positions and working orders before you send it again.', 'error'); }
     else toast(what + ' refused: ' + e.message, 'error');
     return null;
   } finally {

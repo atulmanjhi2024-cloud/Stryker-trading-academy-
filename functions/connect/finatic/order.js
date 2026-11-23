@@ -253,13 +253,16 @@ export async function exec(request, env, deps, g, b) {
   let settled = null;
   if (!accepted && unknown && chart && op === 'place' && st0) {
     settled = await t.step('settle', settle(read, st0, order, sentAt, deps));
-    if (settled.found) { accepted = true; brokerOrderId = settled.found.id; }
+    if (settled.found) { accepted = true; brokerOrderId = settled.found.id || ''; }
   }
   audit.finish({ result: accepted ? 'accepted' : unknown ? 'unknown' : 'rejected', httpStatus: r.status, brokerOrderId,
-    message: (settled ? (settled.found ? 'unclear answer (' + said + '), order found by read: ' + settled.found.status : 'unclear answer (' + said + '), not found in ' + settled.reads + ' read(s)') : (res.message ? String(res.message) : unknown || !accepted ? said : '')).slice(0, 300) });
-  if (!accepted && unknown && chart) return fail(502, op === 'place' && settled && settled.reads
-    ? 'No clear answer from the broker (' + (r.status ? 'code ' + r.status : 'no answer') + '), and the order did not show up at the broker in the next ' + settled.secs + ' s. It may still appear. New orders stay blocked until the next read settles it.'
-    : 'No clear answer from the broker (' + (r.status ? 'code ' + r.status : 'no answer') + '). The order may or may not have gone through. Checking positions and orders.', 'unknown');
+    message: (settled ? (settled.found ? 'unclear answer (' + said + '), ' + (settled.found.by === 'position' ? 'settled by position: net ' + settled.found.from + ' -> ' + settled.found.to + ' on 2 reads' : 'order found by read: ' + settled.found.status) : 'unclear answer (' + said + '), not found in ' + settled.reads + ' read(s)') : (res.message ? String(res.message) : unknown || !accepted ? said : '')).slice(0, 300) });
+  if (!accepted && unknown && chart) {
+    const what = r.status ? 'The broker connection answered with an error (code ' + r.status + ')' : 'The broker connection did not answer in time';
+    return fail(502, op === 'place' && settled && settled.reads
+      ? what + ', and the order has not shown up at the broker in the ' + settled.secs + ' s since. It may still appear: check your positions and working orders before you send it again. New orders stay paused until the next read.'
+      : what + '. The order may or may not have gone through. Checking positions and orders.', 'unknown');
+  }
   if (!accepted) return fail(r.status === 403 ? 403 : r.status === 429 ? 429 : 502, r.status === 403 ? 'Trading is not enabled for this account yet' : (res.message ? String(res.message).slice(0, 200) : 'The broker did not accept the order'));
   let br;
   if (bracket && op === 'place') {   // the children go in after the fill (op 'bracket'); the group is the server's record of them
@@ -272,7 +275,7 @@ export async function exec(request, env, deps, g, b) {
     const gid = groupId(b.accountId, String(b.symbol).toUpperCase());
     try { const grp = modGroup; if (grp) { if (grp.slId === b.orderId) grp.sl = order.stopPrice; else grp.tp = order.price; await putBracket(env, deps, gid, grp); br = viewGroup(grp); } } catch (e) {}
   }
-  return json({ ok: true, op, env: envMode(env), orderId: brokerOrderId, status: settled && settled.found ? settled.found.status : (res.order && res.order.status || ''), accepted: true, strategy: res.executionStrategy || '', superseded: res.supersededOrderId || '', ...(settled && settled.found ? { settled: true } : {}), ...(br ? { bracket: br } : {}) });
+  return json({ ok: true, op, env: envMode(env), orderId: brokerOrderId, status: settled && settled.found ? settled.found.status : (res.order && res.order.status || ''), accepted: true, strategy: res.executionStrategy || '', superseded: res.supersededOrderId || '', ...(settled && settled.found ? { settled: settled.found.by || 'order' } : {}), ...(br ? { bracket: br } : {}) });
   } finally { release(); }
 }
 // Settle an unclear place: up to SETTLE_MS.length fresh reads; an order that was NOT in the pre-send read, for the same contract, side and
@@ -292,15 +295,29 @@ export function findNew(before, after, order, sentAt) {
   }
   return null;
 }
+// POSITION SETTLE (bug 23 Nov): the broker link's order list can be empty or late for an account (a Tradovate account read on 23 Nov
+// listed 0 orders next to its positions), so a market order that filled was never "found". A MARKET order also counts as placed when,
+// with NO working order for the contract before the send or now, the net position moved by exactly the order's size in its direction,
+// on TWO reads in a row (advisor review 23 Nov). Shortcut: a manual trade of the same size and side at the broker in the same few
+// seconds looks the same; the audit row says "settled by position" so it can be told apart later.
+export function positionMoved(before, after, order) {
+  if (order.orderType !== 'market' || !before || !after) return null;
+  if (workingOrders(before.orders, order.symbol).length || workingOrders(after.orders, order.symbol).length) return null;
+  const a = netPosition(before.positions, order.symbol).qty, b = netPosition(after.positions, order.symbol).qty;
+  return b - a === (order.action === 'buy' ? 1 : -1) * order.orderQty ? { from: a, to: b } : null;
+}
 async function settle(read, st0, order, sentAt, deps) {
   const sleep = deps.sleep || ((ms) => new Promise((r) => setTimeout(r, ms)));
-  let reads = 0, ms = 0;
+  let reads = 0, ms = 0, moved = 0;
   for (const w of SETTLE_MS) {
     await sleep(w); ms += w;
-    const st = await read(); if (!st) continue;
+    const st = await read(); if (!st) { moved = 0; continue; }
     reads++;
     const f = findNew(st0.orders, st.orders, order, sentAt);
     if (f) return { found: f, reads, secs: Math.round(ms / 1000) };
+    const p = positionMoved(st0, st, order);
+    moved = p ? moved + 1 : 0;
+    if (moved >= 2) return { found: { id: '', status: 'FILLED', by: 'position', from: p.from, to: p.to }, reads, secs: Math.round(ms / 1000) };
   }
   return { found: null, reads, secs: Math.round(ms / 1000) };
 }

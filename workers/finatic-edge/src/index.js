@@ -6,11 +6,18 @@ import { handle as order } from '../../../functions/connect/finatic/order.js';
 import { handle as data } from '../../../functions/connect/finatic/data.js';
 import { handle as session } from '../../../functions/connect/finatic/session.js';
 import { handle as copy } from '../../../functions/connect/finatic/copy.js';
+import { VER } from '../../../functions/connect/finatic/_ver.js';
 
 export const ROUTES = { '/connect/finatic/order': order, '/connect/finatic/data': data, '/connect/finatic/session': session, '/connect/finatic/copy': copy };
 
 export function route(request, env, ctx) {
   const url = new URL(request.url);
+  const J = (o, s) => new Response(JSON.stringify(o), { status: s, headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' } });
+  // which order code this Worker runs (Pages forwards only when it is the same as its own build, _fin.js pagesEntry)
+  if (url.pathname === '/connect/finatic/ver') return J({ ver: VER }, 200);
+  // a request from a Pages build with other order code: refused before any handler (nothing sent), Pages runs it itself
+  const want = request.headers.get('x-tz-ver');
+  if (want && want !== VER) return J({ error: 'Edge code is not this build', code: 'edge_stale' }, 409);
   const h = ROUTES[url.pathname];
   if (!h) return new Response(JSON.stringify({ error: 'Not found', code: 'not_found' }), { status: 404, headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' } });
   const hd = new Headers(request.headers);

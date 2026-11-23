@@ -150,6 +150,11 @@ jobs:
       - name: Refresh the sitemap (lastmod = this deploy)
         run: node tools/gen-sitemap.js
 
+      # Broker order code version (bug 23 Nov): Pages forwards broker calls to the tz-finatic-edge Worker only when the Worker
+      # runs the same order code (functions/connect/finatic/_ver.js, written here and by deploy-finatic-edge.yml).
+      - name: Stamp the broker order code version
+        run: node tools/gen-edge-ver.mjs
+
       - name: Assemble the site (repo internals excluded)
         run: |
           mkdir -p /tmp/site

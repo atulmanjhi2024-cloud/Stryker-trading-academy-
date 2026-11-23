@@ -262,6 +262,14 @@ export function rttText(t) {
 }
 // after a write: read again quickly so the fill / working order shows (then the normal 10 s poll)
 export const FAST_READS_MS = [250, 900, 2000, 4000];
+// the toast when the server had no clear answer from the broker but then found the order (r.settled 'order') or saw the position move
+// by exactly this order (r.settled 'position'): it was placed, say so plainly (bug 23 Nov: the Owner saw only the warning)
+export function settledText(what, r) {
+  const w = String(what || 'Order');
+  return r && r.settled === 'position'
+    ? w + ' placed. The broker was slow to answer, so we checked: your position changed by exactly this order.'
+    : w + ' placed. The broker was slow to answer, so we checked: the order is there' + (r && r.status ? ' (' + String(r.status).toLowerCase() + ')' : '') + '.';
+}
 // a "sending" line drawn the moment the order is confirmed (limit price, or the last price for a market order); removed on the answer
 export function pendingLine(body, last) {
   const price = body.type === 'limit' ? Number(body.limitPrice) : /stop/.test(body.type) ? Number(body.stopPrice) : Number(last);

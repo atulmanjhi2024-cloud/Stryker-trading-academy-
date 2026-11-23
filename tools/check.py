@@ -688,6 +688,10 @@ def check_finatic():
         r = subprocess.run(['node', f], capture_output=True, text=True, cwd=ROOT, timeout=120)
         if r.returncode != 0:
             fail('finatic ' + os.path.basename(f) + ': ' + (r.stdout + r.stderr).strip()[-400:])
+    # the edge Worker version stamp stays 'dev' in git (the deploy workflows write the real hash; bug 23 Nov)
+    r = subprocess.run(['node', 'tools/gen-edge-ver.mjs', '--check'], capture_output=True, text=True, cwd=ROOT, timeout=60)
+    if r.returncode != 0:
+        fail('finatic edge version: ' + (r.stdout + r.stderr).strip()[-300:])
 
 
 def check_workspaces():

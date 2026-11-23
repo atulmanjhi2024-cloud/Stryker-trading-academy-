@@ -2,6 +2,9 @@
 // Env (Pages secrets, optional): FINATIC_API_KEY, FINATIC_COMPANY_ID. The key stays on the server: never returned, never logged.
 import { isAdminToken, verifyIdToken, bearerOf } from '../../api/chart/_rt.js';
 import { okOrigin, rateLimited, json } from '../_token.js';
+import { VER } from './_ver.js';
+
+export { VER };
 
 export { json };
 
@@ -19,30 +22,51 @@ export function timer(now = () => Date.now()) {
 }
 // Pages entry for the three routes. When the Pages project has the service binding FINATIC_EDGE (the tz-finatic-edge Worker,
 // workers/finatic-edge, placed in aws:us-east-1 next to the broker API), the request is handed to it unchanged and runs THERE: one
-// long hop from the visitor's edge instead of one per broker call (from India ~200 ms each). No binding (today, local, tests) = runs
-// here as before. If the binding call itself throws, the request runs here too (nothing was sent: the Worker never answered).
+// long hop from the visitor's edge instead of one per broker call (from India ~200 ms each). No binding (local, tests) = runs here.
+// SAME CODE ONLY (bug 23 Nov, Owner's orders "No clear answer from the broker"): the Worker is deployed by hand and was still running
+// the 19 Nov order code four days and many order fixes later (no settle read, the old message). Now a request goes to the Worker only
+// when the Worker says it runs exactly this build's order code (VER, a hash of every file it bundles, tools/gen-edge-ver.mjs):
+// GET /connect/finatic/ver on the binding, remembered EDGE_OK_MS (a "no" EDGE_NO_MS). Anything else, including an older Worker (no
+// /ver route: 404), a throw or a different hash, = the request runs HERE with the current code. Nothing was forwarded, so it can't
+// run twice. The Worker also refuses (409 edge_stale, before any handler) a request whose x-tz-ver is not its own, and that runs here.
 // order.js passes { retryHere: false }: a write whose Worker call failed mid-way gets the 'unknown' answer (the chart then blocks new
 // orders until a read settles it) instead of a second run here.
+export const EDGE_OK_MS = 300000, EDGE_NO_MS = 60000;
+let edgeMemo = { at: 0, ok: false }, ver = VER;
+export const _resetEdge = () => { edgeMemo = { at: 0, ok: false }; };
+export const _setVer = (v) => { ver = v; edgeMemo = { at: 0, ok: false }; };   // tests only (VER is 'dev' outside a deploy)
+async function edgeCurrent(edge, url, now = Date.now()) {
+  if (ver === 'dev') return false;   // a build without a generated hash never forwards (local runs; CI always writes one)
+  if (edgeMemo.at && now - edgeMemo.at < (edgeMemo.ok ? EDGE_OK_MS : EDGE_NO_MS)) return edgeMemo.ok;
+  let ok = false;
+  try { const r = await edge.fetch(new Request(new URL('/connect/finatic/ver', url).toString(), { method: 'GET' })); const j = r.ok ? await r.json() : null; ok = !!j && j.ver === ver; } catch (e) {}
+  if (!ok) { try { console.warn('finatic: edge Worker runs other code than this build, running here'); } catch (e) {} }
+  edgeMemo = { at: now, ok };
+  return ok;
+}
 export function pagesEntry(handle, { retryHere = true } = {}) {
   return async (ctx) => {
     const { request, env } = ctx;
-    if (env && env.FINATIC_EDGE && typeof env.FINATIC_EDGE.fetch === 'function') {
+    // per request (bug found 23 Nov: setting the closure's retryHere after one stale answer made EVERY later order in the isolate
+    // re-runnable here after a mid-way binding failure, i.e. a possible second send)
+    let again = retryHere;
+    if (env && env.FINATIC_EDGE && typeof env.FINATIC_EDGE.fetch === 'function' && await edgeCurrent(env.FINATIC_EDGE, request.url)) {
       const h = new Headers(request.headers);
       for (const k of [...h.keys()]) if (k.toLowerCase().startsWith('x-tz-')) h.delete(k);
       h.set('x-tz-ip', request.headers.get('cf-connecting-ip') || 'unknown');
+      h.set('x-tz-ver', ver);
       const body = request.method === 'GET' || request.method === 'HEAD' ? undefined : await request.arrayBuffer();
       const a = Date.now();
       let r = null;
       try { r = await env.FINATIC_EDGE.fetch(new Request(request.url, { method: request.method, headers: h, body, redirect: 'manual' })); } catch (e) { r = null; }
-      // STALE EDGE WORKER (bug 22 Nov, "Admin only" when a member taps MetaTrader 5): the Worker is deployed by hand, so it can run
-      // older handlers than this Pages build (the 19 Nov one still had the admin-only gate; it also lacks newer routes). Its refusals
-      // "Admin only" (403) and "not_found" (404) come BEFORE any broker call or write, so running the same handler here is safe and
-      // gives the current rules. Any other answer, including every real order result, is returned untouched.
+      // Refusals that come BEFORE any broker call or write on the Worker, so running the same handler here is safe: 409 edge_stale
+      // (its code is not this build's), and from an older Worker 403 "Admin only" (bug 22 Nov) or 404 not_found (route missing).
+      // Any other answer, including every real order result, is returned untouched.
       let stale = false;
-      if (r && (r.status === 403 || r.status === 404) && /^application\/json\b/i.test(r.headers.get('content-type') || '')) {
-        try { const j = await r.clone().json(); stale = (retryHere && r.status === 404 && j.code === 'not_found') || (r.status === 403 && j.error === 'Admin only'); } catch (e) {}
+      if (r && (r.status === 403 || r.status === 404 || r.status === 409) && /^application\/json\b/i.test(r.headers.get('content-type') || '')) {
+        try { const j = await r.clone().json(); stale = (again && r.status === 404 && j.code === 'not_found') || (r.status === 403 && j.error === 'Admin only') || (r.status === 409 && j.code === 'edge_stale'); } catch (e) {}
       }
-      if (stale) { try { console.warn('finatic: edge Worker is older than this build (' + r.status + '), running here'); } catch (e) {} r = null; retryHere = true; }
+      if (stale) { try { console.warn('finatic: edge Worker is older than this build (' + r.status + '), running here'); } catch (e) {} edgeMemo = { at: Date.now(), ok: false }; r = null; again = true; }
       if (r && /^application\/json\b/i.test(r.headers.get('content-type') || '')) {
         const out = new Response(r.body, r);
         const st = r.headers.get('server-timing') || '', pl = r.headers.get('cf-placement') || '';
@@ -50,7 +74,7 @@ export function pagesEntry(handle, { retryHere = true } = {}) {
         return out;
       }
       if (r) return fail(500, 'Broker sync hit an error on our side. Try again; if it keeps happening, tell support.', 'server_error');   // answered, but not our JSON: never run twice
-      if (!retryHere) return fail(502, 'No clear answer from the broker. The order may or may not have gone through. Checking positions and orders.', 'unknown');
+      if (!again) return fail(502, 'No clear answer from our order server. The order may or may not have gone through. Checking positions and orders.', 'unknown');
       try { console.warn('finatic: edge binding failed, running locally'); } catch (e) {}
       ctx = { ...ctx, request: new Request(request.url, { method: request.method, headers: request.headers, body, redirect: 'manual' }) };
     }
@@ -90,7 +114,8 @@ export function safe(name, fn) {
   };
 }
 export const API = 'https://api.finatic.dev';
-const TIMEOUT_MS = 10000;
+// reads 10 s; a write (place / modify / cancel) 20 s: cutting a slow place short only turns a real answer into 'unknown'
+export const TIMEOUT_MS = 10000, WRITE_TIMEOUT_MS = 20000;
 export const UUID = /^[0-9a-fA-F-]{8,64}$/;
 export const ID = /^[A-Za-z0-9._:\-]{1,128}$/;
 
@@ -118,7 +143,13 @@ export async function readBody(request) {
 }
 
 // One Finatic call. Returns {ok, data, status}. Handles both envelope shapes ({data,errors} and {success:{data}}).
-export async function fin(env, deps, method, path, { headers = {}, query, body } = {}) {
+export async function fin(env, deps, method, path, opts = {}) {
+  const r = await fin1(env, deps, method, path, opts);
+  // a READ that got no answer or a 5xx is asked once more (bug 23 Nov: one bad read left the settle step blind). Never a write.
+  if (method === 'GET' && (r.status === 0 || r.status >= 500) && !r.timedOut) return fin1(env, deps, method, path, opts);
+  return r;
+}
+async function fin1(env, deps, method, path, { headers = {}, query, body } = {}) {
   const url = new URL(API + path);
   if (query) for (const [k, v] of Object.entries(query)) if (v !== undefined && v !== null) url.searchParams.set(k, String(v));
   const h = { 'x-api-key': env.FINATIC_API_KEY, accept: 'application/json', ...headers };
@@ -130,15 +161,16 @@ export async function fin(env, deps, method, path, { headers = {}, query, body }
   try {
     // redirect 'manual', NOT 'error': the Workers runtime throws on redirect:'error' ("won't be implemented ... at the edge"),
     // which made every live call fail with status 0 while Node (tests, local runs) accepted it. A 3xx is refused below.
-    r = await (deps.finFetch || fetch)(url.toString(), { method, headers: h, body: body === undefined ? undefined : JSON.stringify(body), redirect: 'manual', signal: AbortSignal.timeout(TIMEOUT_MS) });
-  } catch (e) { if (deps.t) deps.t.add('fin', Date.now() - a0); try { console.warn('finatic: fetch failed (' + ((e && e.name) || 'Error') + ')'); } catch (e2) {} return { ok: false, status: 0, data: null, bad: true }; }   // network error / timeout
+    r = await (deps.finFetch || fetch)(url.toString(), { method, headers: h, body: body === undefined ? undefined : JSON.stringify(body), redirect: 'manual', signal: AbortSignal.timeout(method === 'GET' ? TIMEOUT_MS : WRITE_TIMEOUT_MS) });
+  } catch (e) { if (deps.t) deps.t.add('fin', Date.now() - a0); try { console.warn('finatic: fetch failed (' + ((e && e.name) || 'Error') + ')'); } catch (e2) {} return { ok: false, status: 0, data: null, bad: true, timedOut: !!(e && e.name === 'TimeoutError'), errCode: e && e.name === 'TimeoutError' ? 'our_timeout_' + (method === 'GET' ? TIMEOUT_MS : WRITE_TIMEOUT_MS) / 1000 + 's' : 'network' }; }   // network error / timeout
   if (deps.t) deps.t.add(/\/session\//.test(path) ? 'sess' : 'fin', Date.now() - a0);
   if (r.type === 'opaqueredirect' || (r.status >= 300 && r.status < 400)) { console.warn('finatic: redirect refused, status ' + r.status); return { ok: false, status: r.status, data: null, bad: true }; }
-  let j = null;
-  try { j = await r.json(); } catch (e) { j = null; }
+  let j = null, txt = '';
+  try { txt = await r.text(); j = JSON.parse(txt); } catch (e) { j = null; }
   if (!j || typeof j !== 'object') {   // HTML error page or garbage: never treat as success
     if (r.ok) console.warn('finatic: non-JSON answer, status ' + r.status);
-    return { ok: false, status: r.status, data: null, bad: r.ok, errCode: 'non_json' };   // e.g. a gateway's HTML 504 page
+    // for the audit row and a support ticket to the broker link: what kind of page it was and its request id (never the body itself)
+    return { ok: false, status: r.status, data: null, bad: r.ok, errCode: 'non_json', errMsg: pageInfo(r, txt) };   // e.g. a gateway's HTML 504 page
   }
   const errs = j.errors || j.error;
   const data = j.data !== undefined ? j.data : (j.success && j.success.data !== undefined ? j.success.data : null);
@@ -152,6 +184,14 @@ export function errInfo(errs) {
   if (!e || typeof e !== 'object') return typeof e === 'string' ? { errCode: '', errMsg: clean(e) } : {};
   return { errCode: String(e.code || e.type || '').replace(/[^A-Za-z0-9_.-]/g, '').slice(0, 40), errMsg: clean(e.message || e.detail || '') };
 }
+const pageInfo = (r, txt) => {
+  const ct = String(r.headers.get('content-type') || 'no type').split(';')[0].slice(0, 40);
+  const ti = (/<title>([^<]{1,80})<\/title>/i.exec(txt || '') || [])[1] || '';
+  const id = r.headers.get('x-amzn-requestid') || r.headers.get('x-amz-apigw-id') || r.headers.get('x-request-id') || r.headers.get('cf-ray') || '';
+  const by = r.headers.get('server') || r.headers.get('via') || '';
+  // the request id is the broker link's own trace id (not ours, not a secret), so it is kept whole for their support
+  return clean(ct + (ti ? ' "' + ti.trim() + '"' : '') + (by ? ' from ' + String(by).slice(0, 30) : '') + (txt ? ', ' + txt.length + ' bytes' : ', empty')) + (id ? ', request id ' + String(id).replace(/[^A-Za-z0-9=._:-]/g, '').slice(0, 64) : '');
+};
 const clean = (m) => String(m || '').replace(/fntc_[A-Za-z0-9_]+|eyJ[A-Za-z0-9._-]+|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi, '[x]').replace(/\s+/g, ' ').slice(0, 160);
 // Every page of a list (Owner bug 21 Nov, balance "updated 4 days ago"): the broker link's list routes take limit/offset (max 1000)
 // and document no sort order, so reading only the first page (the chart asked for 50 balance snapshots) can miss the newest one.

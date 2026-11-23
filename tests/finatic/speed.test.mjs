@@ -168,22 +168,25 @@ const s1 = sessStarts(); r = await D.handle(req({ op: 'live', accountId: ACC, us
 
 // ---- Pages -> placed Worker hand-off (pagesEntry) ------------------------------------------------------------------------------
 { const seen = [];
-  const EDGE = { fetch: async (rq) => { seen.push({ ip: rq.headers.get('x-tz-ip'), spoof: rq.headers.get('x-tz-evil'), body: await rq.text() }); return new Response('{"ok":true}', { headers: { 'content-type': 'application/json', 'server-timing': 'fin;dur=3, total;dur=9', 'cf-placement': 'remote-IAD' } }); } };
+  F._setVer('v-test');   // a deployed build (CI writes the hash); the Worker below runs the same code
+  const verAns = (rq) => (new URL(rq.url).pathname === '/connect/finatic/ver' ? F.json({ ver: 'v-test' }) : null);
+  const EDGE = { fetch: async (rq) => { const v = verAns(rq); if (v) return v; seen.push({ ip: rq.headers.get('x-tz-ip'), spoof: rq.headers.get('x-tz-evil'), body: await rq.text() }); return new Response('{"ok":true}', { headers: { 'content-type': 'application/json', 'server-timing': 'fin;dur=3, total;dur=9', 'cf-placement': 'remote-IAD' } }); } };
   const entry = F.pagesEntry(async () => { throw new Error('must not run here'); }, { retryHere: false });
   const rq = new Request('https://tradezoro.com/connect/finatic/order', { method: 'POST', headers: { 'cf-connecting-ip': '1.2.3.4', 'x-tz-evil': '9', 'content-type': 'application/json' }, body: '{"op":"env"}' });
   r = await entry({ request: rq, env: { FINATIC_EDGE: EDGE } });
   assert.equal(r.status, 200); assert.deepEqual(seen[0], { ip: '1.2.3.4', spoof: null, body: '{"op":"env"}' });
   assert.match(r.headers.get('server-timing'), /^fin;dur=3, total;dur=9, edge;dur=\d+, placement;desc="remote-IAD"$/);
   // binding throws: order route answers 'unknown' (never runs twice); data/session run locally
-  const boom = { FINATIC_EDGE: { fetch: async () => { throw new Error('x'); } } };
+  const boom = { FINATIC_EDGE: { fetch: async (rq) => { const v = verAns(rq); if (v) return v; throw new Error('x'); } } };
   r = await entry({ request: new Request(rq.url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' }), env: boom });
   assert.equal(r.status, 503); assert.equal((await r.json()).code, 'unknown');
   let ran = 0; const e2 = F.pagesEntry(async (q) => { ran++; assert.equal(await q.text(), '{"a":1}'); return F.json({ ok: 1 }); });
   r = await e2({ request: new Request(rq.url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{"a":1}' }), env: boom }); assert.equal(ran, 1); assert.equal(r.status, 200);
   // the Worker answered something that is not our JSON: refused, not re-run
-  ran = 0; r = await e2({ request: new Request(rq.url, { method: 'POST', body: '{}' }), env: { FINATIC_EDGE: { fetch: async () => new Response('<html>', { status: 502 }) } } }); assert.equal(ran, 0); assert.equal(r.status, 500);
+  ran = 0; r = await e2({ request: new Request(rq.url, { method: 'POST', body: '{}' }), env: { FINATIC_EDGE: { fetch: async (rq) => verAns(rq) || new Response('<html>', { status: 502 }) } } }); assert.equal(ran, 0); assert.equal(r.status, 500);
   // no binding: runs here
-  ran = 0; r = await e2({ request: new Request(rq.url, { method: 'POST', body: '{"a":1}' }), env: {} }); assert.equal(ran, 1); }
+  ran = 0; r = await e2({ request: new Request(rq.url, { method: 'POST', body: '{"a":1}' }), env: {} }); assert.equal(ran, 1);
+  F._setVer('dev'); }
 
 // ---- the Worker routes to the same handlers, with the visitor IP from x-tz-ip ------------------------------------------------
 { r = await route(new Request('https://tradezoro.com/connect/finatic/nope', { method: 'POST' }), live, null); assert.equal(r.status, 404);

@@ -30,6 +30,8 @@ jobs:
       - name: Tests (mocked broker, no network)
         run: |
           for f in tests/finatic/*.test.mjs; do node --no-warnings "$f"; done   # speed.test.mjs covers the Worker routing
+      - name: Stamp the broker order code version (Pages forwards only to a Worker with the same one)
+        run: node tools/gen-edge-ver.mjs
       - name: Deploy Worker
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}

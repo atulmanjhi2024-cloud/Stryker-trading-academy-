@@ -487,6 +487,36 @@ export function patchContext(ctx){
   return true;
 }
 
+// DRAWING SYNC (member UnoMas, 23 Nov: a short label/array script "did not finish within 20 seconds"):
+// pinets 0.11.0 calls syncToPlot() on every drawing helper (labels, lines, boxes, ...) after EVERY bar, and each call
+// filters and copies every drawing the script has made so far. A script that keeps its labels/lines (up to 500 of each)
+// therefore does bars x drawings work: ~10 s at 20k bars, minutes at 100k. The plot data is only read after the run
+// (or the page of bars) ends, so the sync runs once at the end of each _executeIterations call instead of per bar.
+// Same final plots, same order; pinets' code is not modified.
+export function patchDrawingSync(PineTS){
+  const proto = PineTS && PineTS.prototype;
+  if (!proto || proto.__stkDrawSync || typeof proto._executeIterations !== 'function') return false;
+  const exec = proto._executeIterations;
+  proto._executeIterations = async function (context, fn, startIdx, endIdx) {
+    const hs = context && Array.isArray(context._drawingHelpers) ? context._drawingHelpers : [];
+    for (const h of hs) {
+      if (h.__stkSync || typeof h.syncToPlot !== 'function') continue;
+      const orig = h.syncToPlot;
+      h.__stkSync = orig;
+      h.syncToPlot = function () {
+        if (!context._stkDefer) return orig.apply(this, arguments);
+        // the sync also dropped deleted drawings; without it the list grows and each .new() re-scans it, so prune here (amortised)
+        for (const k of ['_labels', '_lines', '_boxes', '_linefills', '_polylines']) { const a = this[k]; if (Array.isArray(a) && a.length > 1000) this[k] = a.filter((d) => !d._deleted); }
+      };
+    }
+    context._stkDefer = true;
+    try { return await exec.call(this, context, fn, startIdx, endIdx); }
+    finally { context._stkDefer = false; for (const h of hs) if (h.__stkSync) try { h.__stkSync.call(h); } catch (e) {} }
+  };
+  proto.__stkDrawSync = true;
+  return true;
+}
+
 // LIVE request.security FIX (member ticket 16 Nov, "my custom indicator appears and disappears";
 // ATR Levels reading daily close/ATR/time via request.security with lookahead_on).
 // pinets 0.11.0 builds every request.security secondary context (e.g. the daily series on a 5m
@@ -608,6 +638,7 @@ export function install(Context, pinets, scope, onProgress){
   try { if (pinets && pinets.Indicator) patchIndicator(pinets.Indicator); } catch (e) {}
   try { if (pinets && pinets.PineTS && onProgress) patchProgress(pinets.PineTS, onProgress); } catch (e) {}
   try { if (pinets && pinets.PineTS) patchPretranspiled(pinets.PineTS); } catch (e) {}
+  try { if (pinets && pinets.PineTS) patchDrawingSync(pinets.PineTS); } catch (e) {}
   try { if (pinets && pinets.PineTS) patchEmptyLive(pinets.PineTS); } catch (e) {}
   try { if (scope) cacheDateTimeFormat(scope); } catch (e) {}
   const proto = Context && Context.prototype;

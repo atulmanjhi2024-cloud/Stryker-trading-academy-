@@ -1,5 +1,5 @@
 // Unit test for assets/chart-sym.js (Owner bug 17 Nov: exchange-form futures symbols).  node tools/tests/chart-sym.test.mjs
-import { isFutures, normFutures, futRoot, splitSym, FUT_EXCH } from '../../assets/chart-sym.js';
+import { isFutures, normFutures, futRoot, splitSym, pineFetchSym, FUT_EXCH } from '../../assets/chart-sym.js';
 
 let fail = 0, n = 0;
 const eq = (got, want, msg) => { n++; const ok = JSON.stringify(got) === JSON.stringify(want); if (!ok) { fail++; console.log('FAIL ' + msg + ' got ' + JSON.stringify(got) + ' want ' + JSON.stringify(want)); } };
@@ -62,6 +62,17 @@ eq(splitSym('binance:BTCUSDT'), ['binance', 'BTCUSDT'], 'split crypto');
 eq(splitSym('BINANCE:BTCUSDT'), ['binance', 'BTCUSDT'], 'split crypto upper prefix -> lower');
 eq(splitSym('AAPL'), ['', 'AAPL'], 'split bare stock');
 eq(splitSym('stocks:NASDAQ:AAPL'), ['stocks', 'NASDAQ:AAPL'], 'split stocks');
+
+// request.security symbol (member UnoMas 23 Nov, ADR table empty on MNQ1!): exchange forms fold to the provider form
+eq(pineFetchSym('CME_MINI:MES1!'), 'futures:MES1!', 'pine CME_MINI:MES1!');
+eq(pineFetchSym('CBOT_MINI:MYM1!'), 'futures:MYM1!', 'pine CBOT_MINI:MYM1!');
+eq(pineFetchSym('COMEX_MINI:MGC1!'), 'futures:MGC1!', 'pine COMEX_MINI:MGC1!');
+eq(pineFetchSym('MNQ1!'), 'futures:MNQ1!', 'pine bare MNQ1!');
+eq(pineFetchSym('CME_MINI:MNQ1!;heikinashi'), 'futures:MNQ1!;heikinashi', 'pine keeps the chart-type suffix');
+eq(pineFetchSym('futures:ES1!'), 'futures:ES1!', 'pine provider form unchanged');
+eq(pineFetchSym('binance:BTCUSDT'), 'binance:BTCUSDT', 'pine crypto unchanged');
+eq(pineFetchSym('AAPL'), 'AAPL', 'pine stock unchanged');
+eq(pineFetchSym(undefined), '', 'pine undefined');
 
 console.log(fail ? 'FAILED ' + fail + ' of ' + n : 'ALL PASSED (' + n + ')');
 process.exit(fail ? 1 : 0);

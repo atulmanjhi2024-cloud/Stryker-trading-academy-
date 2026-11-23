@@ -1,0 +1,322 @@
+//@version=6
+indicator("ADR Dashboard", shorttitle="ADR", overlay=true, max_lines_count=500, max_labels_count=500)
+
+// Average Daily Range dashboard for your futures symbols, plus ADR fib levels on the chart.
+// ADR    = average (high - low) of the last N COMPLETED daily bars (today excluded).
+// Range  = today's high - low so far (CME day, 6 PM - 5 PM ET) and the % of ADR used.
+// Move   = close vs the reference price (points and % of ADR), with direction.
+// Left   = ADR minus today's range.
+// Reference price: Globex open (6 PM ET), previous day's close, or the 9:30 RTH open.
+// RTH open shows "pre-RTH" before 9:30 and needs a chart timeframe of 30m or lower.
+// Chart lines (open line + ADR fibs) are drawn for the chart's own symbol, current day only.
+
+// ---------- Inputs ----------
+G_S = "Symbols"
+use1 = input.bool(true, "", inline="s1", group=G_S)
+sym1 = input.symbol("CME_MINI:MNQ1!", "Symbol 1", inline="s1", group=G_S)
+use2 = input.bool(true, "", inline="s2", group=G_S)
+sym2 = input.symbol("CME_MINI:MES1!", "Symbol 2", inline="s2", group=G_S)
+use3 = input.bool(true, "", inline="s3", group=G_S)
+sym3 = input.symbol("CBOT_MINI:MYM1!", "Symbol 3", inline="s3", group=G_S)
+use4 = input.bool(false, "", inline="s4", group=G_S)
+sym4 = input.symbol("COMEX_MINI:MGC1!", "Symbol 4", inline="s4", group=G_S)
+
+G_C = "Calculation"
+adrLen = input.int(14, "ADR length (days)", minval=1, maxval=200, group=G_C)
+warnPct = input.float(70, "Warning at % of ADR used", minval=1, group=G_C)
+
+G_D = "Display"
+posIn   = input.string("Top Right", "Position", options=["Top Left", "Top Center", "Top Right", "Middle Left", "Middle Right", "Bottom Left", "Bottom Center", "Bottom Right"], group=G_D)
+sizeIn  = input.string("Small", "Text size", options=["Tiny", "Small", "Normal", "Large"], group=G_D)
+showLeft = input.bool(true, "Show 'Left' column", group=G_D)
+headBg  = input.color(color.new(#1e222d, 0), "Header background", group=G_D)
+cellBg  = input.color(color.new(#131722, 10), "Cell background", group=G_D)
+txtCol  = input.color(color.white, "Text", group=G_D)
+upCol   = input.color(color.new(#26a69a, 0), "Up color", group=G_D)
+dnCol   = input.color(color.new(#ef5350, 0), "Down color", group=G_D)
+okCol   = input.color(color.new(#26a69a, 0), "Range used: under warning", group=G_D)
+warnCol = input.color(color.new(#ff9800, 0), "Range used: warning", group=G_D)
+fullCol = input.color(color.new(#ef5350, 0), "Range used: 100%+", group=G_D)
+
+// ---------- New inputs (appended) ----------
+refMode = input.string("Globex open (6 PM)", "Reference price", options=["Globex open (6 PM)", "Previous close", "RTH open (9:30)"], tooltip="Used for 'Move' in the dashboard and as the anchor for the open line and ADR fibs.", group=G_C)
+rthSess = input.session("0930-1600", "RTH session (NY time)", group=G_C)
+
+G_O = "Open line (chart symbol)"
+showOpen  = input.bool(true, "Show reference/open line", group=G_O)
+openCol   = input.color(color.new(color.yellow, 0), "Color", inline="o1", group=G_O)
+openStyle = input.string("Solid", "Style", options=["Solid", "Dashed", "Dotted"], inline="o1", group=G_O)
+openWidth = input.int(2, "Width", minval=1, maxval=5, inline="o1", group=G_O)
+
+G_F = "ADR fib levels (chart symbol)"
+showFib   = input.bool(true, "Show ADR fib levels", group=G_F)
+fibAbove  = input.bool(true, "Levels above reference", inline="fd", group=G_F)
+fibBelow  = input.bool(true, "Levels below reference", inline="fd", group=G_F)
+fibWidth  = input.int(1, "Line width", minval=1, maxval=5, group=G_F)
+fibLabels = input.bool(true, "Show labels at line end", group=G_F)
+extRight  = input.bool(false, "Extend lines right (overrides bars past price)", group=G_F)
+fOn1 = input.bool(false, "", inline="f1", group=G_F)
+fV1  = input.float(0.236, "", step=0.001, inline="f1", group=G_F)
+fC1  = input.color(color.new(color.gray, 0), "", inline="f1", group=G_F)
+fS1  = input.string("Dotted", "", options=["Solid", "Dashed", "Dotted"], inline="f1", group=G_F)
+fOn2 = input.bool(true, "", inline="f2", group=G_F)
+fV2  = input.float(0.382, "", step=0.001, inline="f2", group=G_F)
+fC2  = input.color(color.new(color.aqua, 0), "", inline="f2", group=G_F)
+fS2  = input.string("Dotted", "", options=["Solid", "Dashed", "Dotted"], inline="f2", group=G_F)
+fOn3 = input.bool(true, "", inline="f3", group=G_F)
+fV3  = input.float(0.5, "", step=0.001, inline="f3", group=G_F)
+fC3  = input.color(color.new(color.silver, 0), "", inline="f3", group=G_F)
+fS3  = input.string("Dashed", "", options=["Solid", "Dashed", "Dotted"], inline="f3", group=G_F)
+fOn4 = input.bool(true, "", inline="f4", group=G_F)
+fV4  = input.float(0.618, "", step=0.001, inline="f4", group=G_F)
+fC4  = input.color(color.new(color.orange, 0), "", inline="f4", group=G_F)
+fS4  = input.string("Dashed", "", options=["Solid", "Dashed", "Dotted"], inline="f4", group=G_F)
+fOn5 = input.bool(false, "", inline="f5", group=G_F)
+fV5  = input.float(0.786, "", step=0.001, inline="f5", group=G_F)
+fC5  = input.color(color.new(color.purple, 0), "", inline="f5", group=G_F)
+fS5  = input.string("Dotted", "", options=["Solid", "Dashed", "Dotted"], inline="f5", group=G_F)
+fOn6 = input.bool(true, "", inline="f6", group=G_F)
+fV6  = input.float(1.0, "", step=0.001, inline="f6", group=G_F)
+fC6  = input.color(color.new(color.red, 0), "", inline="f6", group=G_F)
+fS6  = input.string("Solid", "", options=["Solid", "Dashed", "Dotted"], inline="f6", group=G_F)
+fOn7 = input.bool(false, "", inline="f7", group=G_F)
+fV7  = input.float(1.272, "", step=0.001, inline="f7", group=G_F)
+fC7  = input.color(color.new(color.fuchsia, 0), "", inline="f7", group=G_F)
+fS7  = input.string("Dashed", "", options=["Solid", "Dashed", "Dotted"], inline="f7", group=G_F)
+
+G_L = "Line end & labels"
+barsPast  = input.int(10, "Lines stop this many bars past price", minval=0, maxval=500, group=G_L)
+lblMode   = input.string("Name + price", "Label shows", options=["Name + price", "Name only", "Price only", "Name + price + distance", "Price + distance", "Distance only"], tooltip="Distance = points from the current price to the level.", group=G_L)
+lblSizeIn = input.string("Small", "Label size", options=["Tiny", "Small", "Normal", "Large"], group=G_L)
+lblBg     = input.bool(false, "Label background", group=G_L)
+
+G_T = "Dashboard"
+showTable = input.bool(true, "Show dashboard table", tooltip="Turn off to keep only the chart lines.", group=G_T)
+
+G_H = "Past days (backtesting)"
+showPast  = input.bool(true, "Keep past days' levels", group=G_H)
+pastDays  = input.int(10, "Number of past days", minval=1, maxval=30, tooltip="Up to 30 days. Each day uses about 15 lines with every level on.", group=G_H)
+pastLbls  = input.bool(false, "Show labels on past days", group=G_H)
+
+// ---------- Data ----------
+f_data() =>
+    float adr = ta.sma(high - low, adrLen)[1]
+    [adr, open, high, low, close, close[1]]
+
+f_rthOpen() =>
+    var float ro = na
+    bool inR = not na(time(timeframe.period, rthSess, "America/New_York"))
+    if timeframe.change("D")
+        ro := na
+    if inR and not inR[1]
+        ro := open
+    ro
+
+[a1, o1, h1, l1, c1, p1] = request.security(sym1, "D", f_data())
+[a2, o2, h2, l2, c2, p2] = request.security(sym2, "D", f_data())
+[a3, o3, h3, l3, c3, p3] = request.security(sym3, "D", f_data())
+[a4, o4, h4, l4, c4, p4] = request.security(sym4, "D", f_data())
+r1 = request.security(sym1, timeframe.period, f_rthOpen())
+r2 = request.security(sym2, timeframe.period, f_rthOpen())
+r3 = request.security(sym3, timeframe.period, f_rthOpen())
+r4 = request.security(sym4, timeframe.period, f_rthOpen())
+
+f_ref(float gOpen, float pClose, float rOpen) =>
+    refMode == "Previous close" ? pClose : refMode == "RTH open (9:30)" ? rOpen : gOpen
+
+refShort = refMode == "Previous close" ? "prev close" : refMode == "RTH open (9:30)" ? "RTH open" : "Globex open"
+
+// ---------- Table ----------
+pos = switch posIn
+    "Top Left"      => position.top_left
+    "Top Center"    => position.top_center
+    "Middle Left"   => position.middle_left
+    "Middle Right"  => position.middle_right
+    "Bottom Left"   => position.bottom_left
+    "Bottom Center" => position.bottom_center
+    "Bottom Right"  => position.bottom_right
+    => position.top_right
+ts = sizeIn == "Tiny" ? size.tiny : sizeIn == "Normal" ? size.normal : sizeIn == "Large" ? size.large : size.small
+
+var table t = table.new(pos, 5, 5, border_width=1, border_color=color.new(color.gray, 70))
+
+f_name(string s) =>
+    array<string> parts = str.split(s, ":")
+    array.size(parts) > 1 ? array.get(parts, 1) : s
+
+f_fmt(float v) =>
+    na(v) ? "-" : str.tostring(v, "#,##0.##")
+
+f_row(int r, string s, float adr, float ref, float h, float l, float c) =>
+    float rng  = h - l
+    float used = adr > 0 ? rng / adr * 100 : na
+    float mv   = c - ref
+    float mvP  = adr > 0 ? mv / adr * 100 : na
+    float left = adr - rng
+    color uC = na(used) ? txtCol : used >= 100 ? fullCol : used >= warnPct ? warnCol : okCol
+    color mC = na(mv) ? txtCol : mv > 0 ? upCol : mv < 0 ? dnCol : txtCol
+    string arrow = mv > 0 ? "▲ +" : mv < 0 ? "▼ " : "• "
+    string mvTxt = na(ref) ? "pre-RTH" : arrow + f_fmt(mv) + "  (" + (na(mvP) ? "-" : str.tostring(mvP, "+#;-#") + "%") + ")"
+    table.cell(t, 0, r, f_name(s), text_color=txtCol, bgcolor=cellBg, text_size=ts, text_halign=text.align_left)
+    table.cell(t, 1, r, f_fmt(adr), text_color=txtCol, bgcolor=cellBg, text_size=ts)
+    table.cell(t, 2, r, f_fmt(rng) + "  (" + (na(used) ? "-" : str.tostring(used, "#") + "%") + ")", text_color=uC, bgcolor=cellBg, text_size=ts)
+    table.cell(t, 3, r, mvTxt, text_color=mC, bgcolor=cellBg, text_size=ts)
+    if showLeft
+        table.cell(t, 4, r, left > 0 ? f_fmt(left) : "Done", text_color=left > 0 ? txtCol : fullCol, bgcolor=cellBg, text_size=ts)
+
+if barstate.islast
+    table.clear(t, 0, 0, 4, 4)
+    table.set_position(t, pos)
+if barstate.islast and showTable
+    table.cell(t, 0, 0, "ADR " + str.tostring(adrLen) + "d", text_color=txtCol, bgcolor=headBg, text_size=ts, text_halign=text.align_left)
+    table.cell(t, 1, 0, "ADR", text_color=txtCol, bgcolor=headBg, text_size=ts)
+    table.cell(t, 2, 0, "Range (used)", text_color=txtCol, bgcolor=headBg, text_size=ts)
+    table.cell(t, 3, 0, "Move vs " + refShort, text_color=txtCol, bgcolor=headBg, text_size=ts)
+    if showLeft
+        table.cell(t, 4, 0, "Left", text_color=txtCol, bgcolor=headBg, text_size=ts)
+    int r = 1
+    if use1
+        f_row(r, sym1, a1, f_ref(o1, p1, r1), h1, l1, c1)
+        r += 1
+    if use2
+        f_row(r, sym2, a2, f_ref(o2, p2, r2), h2, l2, c2)
+        r += 1
+    if use3
+        f_row(r, sym3, a3, f_ref(o3, p3, r3), h3, l3, c3)
+        r += 1
+    if use4
+        f_row(r, sym4, a4, f_ref(o4, p4, r4), h4, l4, c4)
+        r += 1
+
+// ---------- Chart lines (chart symbol) ----------
+// Calculated from the chart's own bars so past days show the ADR and reference exactly as they were.
+// Needs at least "ADR length" days of history loaded before levels appear.
+bool chartInRth = not na(time(timeframe.period, rthSess, "America/New_York"))
+bool newDay   = timeframe.change("D")
+bool rthStart = chartInRth and not chartInRth[1]
+
+var array<float> dRanges = array.new_float()
+var float dHi = na
+var float dLo = na
+var float gOpenC = na
+var float pCloseC = na
+var float rthOpenC = na
+if newDay
+    if not na(dHi)
+        array.push(dRanges, dHi - dLo)
+        while array.size(dRanges) > adrLen
+            array.shift(dRanges)
+    dHi := high
+    dLo := low
+    gOpenC := open
+    pCloseC := close[1]
+    rthOpenC := na
+else
+    dHi := math.max(nz(dHi, high), high)
+    dLo := math.min(nz(dLo, low), low)
+if rthStart
+    rthOpenC := open
+
+float adrC = array.size(dRanges) >= adrLen ? array.avg(dRanges) : na
+bool anchorEvt = refMode == "RTH open (9:30)" ? rthStart : newDay
+float refC = f_ref(gOpenC, pCloseC, rthOpenC)
+
+f_style(string s) =>
+    s == "Dashed" ? line.style_dashed : s == "Dotted" ? line.style_dotted : line.style_solid
+
+lblSize = lblSizeIn == "Tiny" ? size.tiny : lblSizeIn == "Normal" ? size.normal : lblSizeIn == "Large" ? size.large : size.small
+
+f_lblText(string name, float price) =>
+    string p = str.tostring(price, format.mintick)
+    float d = price - close
+    string dist = (d >= 0 ? "+" : "") + str.tostring(d, format.mintick) + " pts"
+    switch lblMode
+        "Name only"               => name
+        "Price only"              => p
+        "Name + price + distance" => name + "  " + p + "  (" + dist + ")"
+        "Price + distance"        => p + "  (" + dist + ")"
+        "Distance only"           => dist
+        => name + "  " + p
+
+// current day
+var array<line>   curL = array.new_line()
+var array<label>  curB = array.new_label()
+var array<float>  curP = array.new_float()
+var array<string> curN = array.new_string()
+// past days
+var array<line>  histL = array.new_line()
+var array<label> histB = array.new_label()
+var array<int>   histN = array.new_int()
+var bool active = false
+
+f_mk(float price, color col, string sty, int w, string name) =>
+    array.push(curL, line.new(bar_index, price, bar_index, price, color=col, style=f_style(sty), width=w))
+    label lb = na
+    if fibLabels
+        lb := label.new(bar_index, price, f_lblText(name, price), style=label.style_label_left, color=lblBg ? color.new(color.black, 30) : color.new(color.black, 100), textcolor=col, size=lblSize)
+    array.push(curB, lb)
+    array.push(curP, price)
+    array.push(curN, name)
+
+f_fib(bool on, float v, color col, string sty) =>
+    if on and not na(adrC)
+        if fibAbove
+            f_mk(refC + adrC * v, col, sty, fibWidth, "+" + str.tostring(v) + " ADR")
+        if fibBelow
+            f_mk(refC - adrC * v, col, sty, fibWidth, "-" + str.tostring(v) + " ADR")
+
+f_finalize() =>
+    int n = array.size(curL)
+    for l in curL
+        line.set_extend(l, extend.none)
+        array.push(histL, l)
+    for lb in curB
+        label keep = lb
+        if not pastLbls and not na(lb)
+            label.delete(lb)
+            keep := na
+        array.push(histB, keep)
+    array.push(histN, n)
+    array.clear(curL)
+    array.clear(curB)
+    array.clear(curP)
+    array.clear(curN)
+    int keepDays = showPast ? pastDays : 0
+    while array.size(histN) > keepDays
+        int k = array.shift(histN)
+        if k > 0
+            for j = 1 to k
+                line.delete(array.shift(histL))
+                label old = array.shift(histB)
+                if not na(old)
+                    label.delete(old)
+
+// day ends (or new anchor) -> freeze the day's levels
+if active and (newDay or anchorEvt)
+    f_finalize()
+    active := false
+
+// new anchor -> start the day's levels
+if anchorEvt and not na(refC)
+    if showOpen
+        f_mk(refC, openCol, openStyle, openWidth, refShort)
+    if showFib
+        f_fib(fOn1, fV1, fC1, fS1)
+        f_fib(fOn2, fV2, fC2, fS2)
+        f_fib(fOn3, fV3, fC3, fS3)
+        f_fib(fOn4, fV4, fC4, fS4)
+        f_fib(fOn5, fV5, fC5, fS5)
+        f_fib(fOn6, fV6, fC6, fS6)
+        f_fib(fOn7, fV7, fC7, fS7)
+    active := array.size(curL) > 0
+
+// stretch the active day's levels to the current bar (+ bars past price on the last bar)
+if active
+    int x2 = bar_index + (barstate.islast ? barsPast : 0)
+    for [i, l] in curL
+        line.set_x2(l, x2)
+        line.set_extend(l, barstate.islast and extRight ? extend.right : extend.none)
+        label lb = array.get(curB, i)
+        if not na(lb)
+            label.set_xy(lb, x2, array.get(curP, i))
+            label.set_text(lb, f_lblText(array.get(curN, i), array.get(curP, i)))

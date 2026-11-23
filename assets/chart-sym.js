@@ -62,3 +62,13 @@ export function splitSym(sym) {
   const m = /^([a-z0-9_]+):(.+)$/i.exec(String(sym == null ? '' : sym));
   return m ? [m[1].toLowerCase(), m[2]] : ['', String(sym == null ? '' : sym)];
 }
+
+// request.security / fetchSeries symbol -> the form the feed registry knows. Futures in any exchange form become
+// 'futures:MNQ1!'; everything else is returned unchanged. A chart-type suffix (';heikinashi') is kept.
+// (Member 23 Nov: Pine ADR table empty on MNQ1! because 'CME_MINI:MES1!' found no provider.)
+export function pineFetchSym(sym) {
+  const s = String(sym == null ? '' : sym), i = s.indexOf(';');
+  const base = i < 0 ? s : s.slice(0, i);
+  const n = normFutures(base);
+  return n === base ? s : n + (i < 0 ? '' : s.slice(i));
+}

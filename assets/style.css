@@ -13517,3 +13517,7 @@ html .dash-shell > .sidebar{ height:calc(100vh - var(--dash-head-h, var(--topbar
   .mobile-topnav .topnav-right .icon-btn{ width:34px; height:34px; }
   .mobile-topnav .topnav-right .account-trigger{ width:34px; height:34px; }
 }
+
+/* light theme paints pills white: keep the red danger button red (beta bug 23 Nov) */
+:root[data-theme="light"] .stktm-pill.stktm-danger{ background:#d92d20; border-color:#d92d20; color:#fff; }
+:root[data-theme="light"] .stktm-pill.stktm-danger:hover{ background:#b42318; border-color:#b42318; color:#fff; }

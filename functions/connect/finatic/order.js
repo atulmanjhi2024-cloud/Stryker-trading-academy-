@@ -191,7 +191,7 @@ export async function exec(request, env, deps, g, b) {
 
   if (op === 'schema') {
     const r = await call('GET', A + '/order-schemas', { query: { action: b.action } });
-    return r.ok ? json({ data: r.data, env: envMode(env) }) : fail(r.status === 403 ? 403 : 502, r.status === 403 ? 'Trading is not enabled for this account yet' : 'Broker data is unavailable right now');
+    return r.ok ? json({ data: r.data, env: envMode(env) }) : r.status === 403 ? refused(r) : fail(502, 'Broker data is unavailable right now');
   }
   const read = async () => {
     // every page (21 Nov): the list has no documented sort order, so a working order past the first 200 must still count
@@ -263,7 +263,7 @@ export async function exec(request, env, deps, g, b) {
       ? what + ', and the order has not shown up at the broker in the ' + settled.secs + ' s since. It may still appear: check your positions and working orders before you send it again. New orders stay paused until the next read.'
       : what + '. The order may or may not have gone through. Checking positions and orders.', 'unknown');
   }
-  if (!accepted) return fail(r.status === 403 ? 403 : r.status === 429 ? 429 : 502, r.status === 403 ? 'Trading is not enabled for this account yet' : (res.message ? String(res.message).slice(0, 200) : 'The broker did not accept the order'));
+  if (!accepted) return r.status === 403 ? refused(r) : fail(r.status === 429 ? 429 : 502, res.message ? String(res.message).slice(0, 200) : 'The broker did not accept the order');
   let br;
   if (bracket && op === 'place') {   // the children go in after the fill (op 'bracket'); the group is the server's record of them
     const gid = groupId(b.accountId, order.symbol);
@@ -331,6 +331,14 @@ function acquire(key) {
   return Promise.race([prev, cap]).then(() => { clearTimeout(tm); return () => { rel(); if (locks.get(key) === chain) locks.delete(key); }; });
 }
 
+// A 403 from the broker link, in plain words (bug 23 Nov, beta tester): the usual cause is the account's grant in the broker
+// connection, which was made read-only (canTrade false: "Account grant does not allow trading"); the member fixes it by connecting
+// again and allowing trading. Any other 403 shows the broker link's own short reason.
+export function refused(r) {
+  const why = String((r && r.errMsg) || '');
+  if (/grant does not allow trading/i.test(why)) return fail(403, 'Trading is not allowed for this account in your broker connection (it was connected as read-only). Charts and tracking still work. To trade from here, open Connect a broker in the Trade menu and allow trading for this account', 'trade_not_granted');
+  return fail(403, 'The broker refused orders for this account' + (why ? ' (' + why.slice(0, 160) + ')' : ''), 'broker_refused');
+}
 async function flatten(env, deps, b, A, send, read, audit, sandbox, first) {
   const code = String(b.symbol).toUpperCase(), sleep = deps.sleep || ((ms) => new Promise((r) => setTimeout(r, ms)));
   const done = async (result, extra, resp) => { audit.finish({ result, ...extra }); return resp; };

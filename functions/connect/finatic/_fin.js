@@ -186,7 +186,7 @@ async function fin1(env, deps, method, path, { headers = {}, query, body } = {})
 export function errInfo(errs) {
   const e = Array.isArray(errs) ? errs[0] : errs;
   if (!e || typeof e !== 'object') return typeof e === 'string' ? { errCode: '', errMsg: clean(e) } : {};
-  return { errCode: String(e.code || e.type || '').replace(/[^A-Za-z0-9_.-]/g, '').slice(0, 40), errMsg: clean(e.message || e.detail || '') };
+  return { errCode: String(e.code || e.type || '').replace(/[^A-Za-z0-9_.-]/g, '').slice(0, 40), errMsg: clean([e.message || e.detail || '', e.details && e.details.original_exception].filter(Boolean).join(': ')) };   // the real cause ("Account grant does not allow trading") sits in details
 }
 const pageInfo = (r, txt) => {
   const ct = String(r.headers.get('content-type') || 'no type').split(';')[0].slice(0, 40);

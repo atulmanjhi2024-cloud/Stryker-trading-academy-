@@ -124,11 +124,14 @@ const showSym = (s) => String(s || '').replace(/^[^:]+:/, '');
 const isPhone = () => window.innerWidth <= PHONE_MAX;
 // Owner 18 Nov: no trading UI on the chart until Trade is clicked. <html class="stktr-on"> while the order panel is open
 // (chart-order-panel.js calls tradeUi on open / close); without it the one-click box and the paper strip stay hidden.
+// Owner/member bug (Yuvan): the one-click Buy/Sell stays after the order panel closes. Latched once Trade was opened this session;
+// the 'One-click Buy/Sell on the chart' setting is the way to hide it.
+let qtLatch = false;
 const tradeUiOn = () => document.documentElement.classList.contains('stktr-on');
 function tradeUi(on){
   const r = document.documentElement; on = !!on;
   if (r.classList.contains('stktr-on') === on) return;
-  r.classList.toggle('stktr-on', on);
+  r.classList.toggle('stktr-on', on); if (on) qtLatch = true;
   if (!on && ui.open && isPhone()) ui.open = false;   // phone: the positions sheet goes with it
   renderPanel(); oneClickAll();
   setTimeout(() => window.dispatchEvent(new Event('resize')), 0);   // the phone strip row came or went: chart re-measures
@@ -1102,7 +1105,7 @@ function oneClickAll(){
   for (const cell of cells()) {
     const inst = layerInst(inner(cell)); if (!inst || !inst.overlay) continue;
     let oc = inst.overlay.querySelector('.stkpt-1c');
-    const show = !!acct && paperOn() && !liveOn() && acct.settings.oneClick && specOf(cell.symbol).ok && tradeUiOn();
+    const show = !!acct && paperOn() && !liveOn() && acct.settings.oneClick && specOf(cell.symbol).ok && (tradeUiOn() || qtLatch);
     if (!show) { if (oc) oc.remove(); pushLegend(cell, null); continue; }
     if (!oc) {
       oc = h('div', { class: 'stkpt-1c', role: 'group', 'aria-label': 'One-click paper trading' }, [
@@ -1375,8 +1378,10 @@ function registerContextActions(){
 }
 
 // ------------------------------------------------------------------ bottom panel
-export function openPanel(tab){ if (!paperOn() && !LIVE) return; ui.open = true; if (tab) ui.tab = tab; saveUi(); renderPanel(); }
-function togglePanel(){ if (!paperOn() && !LIVE) return; ui.open = !ui.open; saveUi(); renderPanel(); }
+// in the chart's bottom bar the one panel is Positions & Orders (assets/chart-posorders.js); the old paper panel stays for phones only
+function viaPosOrders(open){ if (!panel || !panel.classList.contains('in-bar')) return false; const d = document.getElementById('stkpo-dock'), po = document.getElementById('stkpo-btn'); if (d && po && !po.hidden && (open === undefined || d.hidden === !!open)) po.click(); return !!po; }
+export function openPanel(tab){ if (!paperOn() && !LIVE) return; if (viaPosOrders(true)) return; ui.open = true; if (tab) ui.tab = tab; saveUi(); renderPanel(); }
+function togglePanel(){ if (!paperOn() && !LIVE) return; if (viaPosOrders()) return; ui.open = !ui.open; saveUi(); renderPanel(); }
 function buildPanel(){
   const main = document.querySelector('main.dash-main') || document.body;
   panel = h('section', { id: 'stkpt', class: 'stkpt', 'aria-label': 'Paper trading' });
@@ -1412,7 +1417,7 @@ function buildPanel(){
   bindResize(panel.querySelector('.stkpt-grip'));
   applyPanelH();
   pq('.stkpt-toggle').onclick = togglePanel;
-  pq('.stkpt-hsum').onclick = () => { if (!ui.open) togglePanel(); };
+  pq('.stkpt-hsum').onclick = () => { if (panel.classList.contains('in-bar')) { const po = document.getElementById('stkpo-btn'); if (po) po.click(); return; } if (!ui.open) togglePanel(); };
   pq('.stkpt-trade').onclick = () => openTicket();
   panel.querySelector('.stkpt-flat').onclick = () => {
     if (liveOn()) { LIVE.flattenActive(); return; }
@@ -2068,6 +2073,7 @@ const CSS = `
 .vela-widget-bottombar .stkpt-tw{ flex:none; height:24px; margin-left:10px; }
 .vela-widget-bottombar .stkpt-bb .stkpt-sep{ display:block; margin-right:4px; }
 .vela-widget-bottombar .stkpt-tw .stkpt-sep{ display:block; }
+.vela-widget-bottombar .stkpt-toggle{ display:none; }   /* one bottom panel only: Positions & Orders (a second 'Paper trading' tab showed stale data) */
 .vela-widget-bottombar .stkpt-toggle{ height:24px; padding:0 8px; gap:6px; border-radius:4px; font:inherit; color:var(--vela-fg, var(--ink-1)); }
 .vela-widget-bottombar .stkpt-toggle:hover{ background:var(--vela-hover, var(--bg-2)); color:var(--vela-fg-bright, var(--ink-0)); }
 .vela-widget-bottombar .stkpt-toggle:focus-visible,.vela-widget-bottombar .stkpt-trade:focus-visible{ outline:2px solid var(--gold); outline-offset:1px; }
@@ -2275,7 +2281,7 @@ html.stklv-on .stkpt-badge{ display:none; }
 html.stkbp-sheet #stkpt-toasts{ position:fixed; left:8px; right:8px; top:auto; bottom:calc(var(--stkc-dock, 0px) + min(78dvh, 600px) + 8px); max-width:none; z-index:8001; }
 /* one Trade button only (the toolbar / header one); the paper strip shows only while trading is open (Owner 18 Nov) */
 .stkpt-tw{ display:none !important; }
-html:not(.stktr-on) .stkpt,html:not(.stktr-on) #stkpt-bb,html:not(.stktr-on) .stkpt-1c{ display:none !important; }
+html:not(.stktr-on) .stkpt,html:not(.stktr-on) #stkpt-bb{ display:none !important; }
 html.stktr-on .stkop.is-sheet{ bottom:max(var(--stkc-dock, 0px), var(--stkpt-lift, 0px)); }
 html:not(.stkpt-on) .stkpt-1c,html:not(.stkpt-on):not(.stklv-on) .stkpt-chip,html:not(.stkpt-on) #stkpt-offers,html:not(.stkpt-on) #stkpt-toasts,html:not(.stkpt-on) #stkpt-tk,html:not(.stkpt-on) #stkpt-cq{ display:none !important; }
 /* settings tab: same card look as the Sounds tab */

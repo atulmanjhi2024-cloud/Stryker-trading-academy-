@@ -108,8 +108,12 @@
     on = localStorage.getItem('stryker_vela06') === '1' ? false : (VELA090_DEFAULT || localStorage.getItem('stryker_vela090') === '1');
     sessionStorage.removeItem('stryker_vela090_no');
   } catch (e) {}
+  // s17 (text alignment, drawing copy/paste) is opt-in per browser (?vela=s17, ?vela=0.9 undoes it) until it is made the default; members stay on s16.
+  try { var q2 = new URLSearchParams(location.search).get('vela'); if (q2 === 's17') localStorage.setItem('stryker_vela_s17', '1'); else if (q2 === '0.9' || q2 === '090' || q2 === '0.6' || q2 === 'off') localStorage.removeItem('stryker_vela_s17'); } catch (e) {}
+  var s17 = on; try { s17 = on && localStorage.getItem('stryker_vela_s17') === '1'; } catch (e) {}
   window.__stkVela090 = on;
-  var V = on ? '/assets/vendor/vela-0.9.0-s16/' : '/assets/vendor/vela-0.6.17-s4/';
+  window.__stkVelaDir = on ? (s17 ? 'vela-0.9.0-s17' : 'vela-0.9.0-s16') : 'vela-0.6.17-s4';
+  var V = '/assets/vendor/' + window.__stkVelaDir + '/';
   var map = {imports:{
     '@zag-js/vanilla':'/assets/vendor/zag-1.42.0/vanilla.js',
     '@zag-js/menu':'/assets/vendor/zag-1.42.0/menu.js',
@@ -156,7 +160,7 @@
 <link rel="modulepreload" href="/assets/chart-news.js?v=1233">
 <script>
 (function(){
-  var V = window.__stkVela090 ? ['/assets/vendor/vela-0.9.0-s16/', ['workspace.js', 'chunk-4WAHYL7Y.js', 'chunk-XIRSR3D6.js', 'chunk-YRCL3WMD.js', 'chunk-O6L27KRB.js', 'chunk-PZN4RS4T.js', 'chunk-WHPQQYH7.js', 'chunk-W4EJWLEO.js', 'index.js', 'chunk-3EYCX2L4.js', 'providers/binance.js', 'providers/coinbase.js', 'providers/hyperliquid.js']]
+  var V = window.__stkVela090 ? ['/assets/vendor/' + window.__stkVelaDir + '/', ['workspace.js', 'chunk-4WAHYL7Y.js', 'chunk-XIRSR3D6.js', 'chunk-YRCL3WMD.js', 'chunk-O6L27KRB.js', 'chunk-PZN4RS4T.js', 'chunk-WHPQQYH7.js', 'chunk-W4EJWLEO.js', 'index.js', 'chunk-3EYCX2L4.js', 'providers/binance.js', 'providers/coinbase.js', 'providers/hyperliquid.js']]
     : ['/assets/vendor/vela-0.6.17-s4/', ['workspace.js', 'chunk-OSZDSH7F.js', 'chunk-YCD72KGK.js', 'chunk-IFJJPXSV.js', 'chunk-CAFCLMPF.js', 'chunk-T5Z5YUCF.js', 'chunk-XCBJU674.js', 'chunk-W4EJWLEO.js', 'index.js', 'chunk-FE6V2YAQ.js', 'providers/binance.js', 'providers/coinbase.js', 'providers/hyperliquid.js']];
   var Z = ['vanilla.js', 'menu.js', 'dialog.js', 'tooltip.js', 'zag-HYDRZ225.js', 'zag-OT4NHXNG.js', 'zag-QHTIFZZA.js', 'zag-TP66ESZT.js', 'zag-TQKRQI4C.js'];
   var urls = V[1].map(function (f) { return V[0] + f; }).concat(Z.map(function (f) { return '/assets/vendor/zag-1.42.0/' + f; }));

@@ -5332,6 +5332,24 @@ var Watermark = class {
 var PRICE_AXIS_W = 60;
 var TIME_AXIS_H = 26;
 var OFF_PLOT = { price: null, time: null, paneKind: null, paneId: null };
+// TradeZoro patch (clipboard): price at the symbol's tick decimals (0.25 -> 2, 0.00001 -> 5; unknown -> 2).
+function stkPriceText(price, tick) {
+  let d = 2;
+  if (tick > 0 && Number.isFinite(tick)) for (d = 0; d < 8 && Math.abs(Number(tick.toFixed(d)) - tick) > tick * 1e-6; d += 1) ;
+  return Number(price).toFixed(d);
+}
+function stkCopyText(s, host) {
+  const done = () => { try { window.showToast?.("success", "Copied " + (s.length > 40 ? s.slice(0, 40) + "\u2026" : s)); } catch (e) {} };
+  const old = () => {
+    const ta = document.createElement("textarea");
+    ta.value = s; ta.setAttribute("readonly", ""); ta.style.cssText = "position:fixed;left:-9999px;top:0;opacity:0";
+    (host?.ownerDocument?.body || document.body).appendChild(ta); ta.select();
+    try { document.execCommand("copy"); done(); } catch (e) {}
+    ta.remove();
+  };
+  try { navigator.clipboard?.writeText ? navigator.clipboard.writeText(s).then(done, old) : old(); } catch (e) { old(); }
+}
+globalThis.__stkPriceText = stkPriceText;
 var ChartContextMenu = class {
   constructor(host, cbs) {
     this.cbs = cbs;
@@ -5359,9 +5377,22 @@ var ChartContextMenu = class {
         const el = ud && this.chart.renderer.renderer.input.el;
         const r = el && el.getBoundingClientRect();
         const hit = r && ud.interaction.hitAt(e.clientX - r.left, e.clientY - r.top);
+        const canPaste = this.chart.drawings.supported && this.chart.drawings.canPaste?.();
         if (hit) {
           this.stkDrawingId = hit.id;
-          items = [{ id: "stk-drawing-lock", label: hit.locked ? "Unlock drawing" : "Lock drawing", icon: hit.locked ? "unlock" : "lock" }, ...items.map((it, i) => i === 0 ? { ...it, separatorBefore: true } : it)];
+          // TradeZoro patch (clipboard): Copy / Paste / Copy price / Copy text on a drawing
+          this.stkPriceAt = e.clientY - r.top;
+          const words = hit.text && hit.text.value && hit.schema?.().fields.some((f) => f.path === "text.value");
+          const clip = [
+            { id: "stk-drawing-copy", label: "Copy", icon: "clone", hint: navigator.platform?.startsWith("Mac") ? "\u2318C" : "Ctrl+C", separatorBefore: true },
+            { id: "stk-drawing-paste", label: "Paste", hint: navigator.platform?.startsWith("Mac") ? "\u2318V" : "Ctrl+V", disabled: !canPaste },
+            ...hit.anchors?.length ? [{ id: "stk-drawing-copy-price", label: "Copy price" }] : [],
+            ...words ? [{ id: "stk-drawing-copy-text", label: "Copy text" }] : []
+          ];
+          items = [{ id: "stk-drawing-lock", label: hit.locked ? "Unlock drawing" : "Lock drawing", icon: hit.locked ? "unlock" : "lock" }, ...clip, ...items.map((it, i) => i === 0 ? { ...it, separatorBefore: true } : it)];
+        } else if (this.lastZone === "body" && this.chart.drawings.supported) {
+          // TradeZoro patch (clipboard): Paste on the chart, at the clicked spot
+          items = [{ id: "stk-drawing-paste-here", label: "Paste", icon: "clone", hint: navigator.platform?.startsWith("Mac") ? "\u2318V" : "Ctrl+V", disabled: !canPaste }, ...items.map((it, i) => i === 0 ? { ...it, separatorBefore: true } : it)];
         }
       } catch (err) {}
       this.menu.setItems(items);
@@ -5458,6 +5489,27 @@ var ChartContextMenu = class {
   run(id) {
     const chart = this.chart;
     if (!chart) return;
+    if (id.startsWith("stk-drawing-") && id !== "stk-drawing-lock") {
+      // TradeZoro patch (clipboard)
+      const did = this.stkDrawingId, d = did && chart.drawings.all().find((x) => x.id === did);
+      const put = (s) => stkCopyText(s, this.host);
+      if (id === "stk-drawing-copy" && d) chart.drawings.copyToClipboard([did]);
+      else if (id === "stk-drawing-paste") chart.drawings.paste();
+      else if (id === "stk-drawing-paste-here") {
+        const pt = this.pointer;
+        chart.drawings.paste(pt && Number.isFinite(pt.time) && Number.isFinite(pt.price) ? { time: pt.time, price: pt.price, paneId: pt.paneId || void 0 } : void 0);
+      } else if (id === "stk-drawing-copy-text" && d && d.text?.value) put(d.text.value);
+      else if (id === "stk-drawing-copy-price" && d && d.anchors?.length) {
+        const rr = chart.renderer.renderer, proj = rr.userDrawings?.deps.projector();
+        let a = d.anchors[0];
+        if (proj && this.stkPriceAt != null) {
+          let best = Infinity;
+          for (const p of d.anchors) { const y = proj.yOf(p.price, d.paneId); const dy = y == null ? Infinity : Math.abs(y - this.stkPriceAt); if (dy < best) { best = dy; a = p; } }
+        }
+        put(stkPriceText(a.price, rr.scene?.priceMintick));
+      }
+      return;
+    }
     if (id === "stk-drawing-lock") {
       const did = this.stkDrawingId, d = did && chart.drawings.all().find((x) => x.id === did);
       if (d) { chart.drawings.lock(did, !d.locked); chart.drawings.select([did]); }

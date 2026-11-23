@@ -1654,9 +1654,13 @@ var DrawingsControl = class {
     return this;
   }
   /** Paste the clipboard as new drawings (fresh ids), selecting them. */
-  paste() {
-    if (this.ok("paste")) this.ctrl.paste();
+  paste(at) {
+    if (this.ok("paste")) this.ctrl.paste(at);
     return this;
+  }
+  /** TradeZoro patch (clipboard): whether a Paste has something to paste. */
+  canPaste() {
+    return (globalThis.__stkDrawClip || this.ctrl.clipboard || []).length > 0;
   }
   /** Every drawing as plain JSON, in paint order. */
   all() {
@@ -2397,11 +2401,22 @@ var DrawingController = class {
   /** Copy drawings into the in-memory clipboard (no model change, no event). */
   copy(ids) {
     const docs = this.resolve(ids).map((d) => clonePlain(d.serialize()));
-    if (docs.length) this.clipboard = docs;
+    if (docs.length) this.clipboard = globalThis.__stkDrawClip = docs;   // TradeZoro patch (clipboard): shared by every chart on the page
   }
-  paste() {
-    if (!this.enabled || this.clipboard.length === 0) return [];
-    return this.insertClones(this.clipboard);
+  /** TradeZoro patch (clipboard): `at` = { time, price, paneId? } moves the copy so its first point lands there. */
+  paste(at) {
+    const clip = globalThis.__stkDrawClip || this.clipboard;
+    if (!this.enabled || clip.length === 0) return [];
+    const a0 = at && Number.isFinite(at.time) && Number.isFinite(at.price) ? clip[0].anchors?.[0] : null;
+    const dt = a0 ? at.time - a0.time : 0, dp = a0 ? at.price - a0.price : 0;
+    return this.insertClones(clip.map((doc) => {
+      const c = clonePlain(doc);
+      if (a0) {
+        c.anchors = (c.anchors || []).map((p) => ({ time: p.time + dt, price: p.price + dp }));
+        if (at.paneId) c.paneId = at.paneId;
+      }
+      return c;
+    }));
   }
   all() {
     return this.store.serialize().drawings;

@@ -384,7 +384,7 @@ function lateLayers(R){
 // panels (watchlist, news, GEX ladder, paper account, Charts bar replay, alerts). Charts page: BT is null, nothing changes.
 const BT = window.__stkBt || null;
 const VELA090 = window.__stkVela090 === true;
-const VELA_BASE = VELA090 ? './vendor/vela-0.9.0-s16/' : './vendor/vela-0.6.17-s4/';
+const VELA_BASE = VELA090 ? './vendor/' + (window.__stkVelaDir || 'vela-0.9.0-s16') + '/' : './vendor/vela-0.6.17-s4/';
 // One-time migration for members whose saved workspace still carries the old
 // Vela theme defaults (see migrateTvLook below).
 const TV_LOOK_KEY = 'stryker_chart_tv_look';

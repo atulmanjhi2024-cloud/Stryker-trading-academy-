@@ -28,3 +28,5 @@ Then tools/vela-090-freepan-patch.py (s15: "Free pan" switch under Scales and li
 Then tools/vela-090-drawlink-patch.py (s16: synced drawings stay linked after a reload, relinked from content, port of upstream 0.10.6 https://github.com/LuxAlgo/Vela/commit/3deb7fc1492dd12fbda0ffaf30127fda70b79895 (PR #374); chart.drawings.fromJSON emits drawing:replaced, which saves the workspace and refreshes the object tree, from upstream 0.10.9 https://github.com/LuxAlgo/Vela/commit/9c81806 and https://github.com/LuxAlgo/Vela/commit/60010a1).
 
 Then tools/vela-090-textalign-patch.py (s17: Text alignment on Horizontal Ray and Vertical Line; old drawings keep their label spot).
+
+Then tools/vela-090-clipboard-patch.py (s17: drawing Copy / Paste shared across charts, Paste at the clicked spot, Copy price, Copy text in the right-click menus).

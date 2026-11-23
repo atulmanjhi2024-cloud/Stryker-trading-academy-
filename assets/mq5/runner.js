@@ -4,7 +4,7 @@
 //   await r.start({ source, inputs, env, customs })  -> { ok, meta } | { ok:false, error }
 //   await r.calc(bars, mode)  r.timer()  r.event([id, lparam, dparam, sparam], state)  r.chart({...})  r.dispose()
 // The worker's engine stops itself at 20 s (calc) / 2 s (events); this kill is the outer guard for anything it misses.
-const WORKER_URL = new URL('./worker.js?v=1231', import.meta.url);
+const WORKER_URL = new URL('./worker.js?v=1232', import.meta.url);
 export const KILL_MS = { calc: 25000, event: 6000, compile: 10000 };
 export const START_MS = 30000;   // a fresh worker still has to download the engine
 

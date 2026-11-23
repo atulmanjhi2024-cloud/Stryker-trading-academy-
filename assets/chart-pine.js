@@ -50,10 +50,12 @@ import { current as verCurrent, baseOf as verBase, verOf as verPinned } from './
 import { createShell, el, ib, ICONS, libRow, emptyState, renderDocs, descOf, ago, download, pickFile, fileName } from './chart-script-editor.js?v=1216';
 
 const PINE_PKG = 'https://cdn.jsdelivr.net/npm/@luxalgo/vela-pinets@0.2.11/dist/index.js';
-const RUN_LIMIT_MS = 90000;   // Owner 22 Nov: 20 s cut off normal scripts on slower machines (engine download + first run). Hotfix; the progress-based limit replaces this.
+const RUN_LIMIT_MS = 20000;
 // Time limit = the script's OWN compute time (not its wait in the worker queue, not the ms other scripts' runs
 // overlapped it). A phone is slower, so a first run gets 40 s there. Hard wall-clock backstop: 3x the limit.
-const RUN_LIMIT_PHONE_MS = 120000;
+const RUN_LIMIT_PHONE_MS = 40000;
+// Next engine: LIMIT = longest silence allowed; the whole first run may take up to RUN_BACKSTOP x LIMIT while it keeps moving.
+const RUN_BACKSTOP = 9;
 const runLimitMs = () => (typeof window !== 'undefined' && (window.innerWidth <= 700 || (window.matchMedia && window.matchMedia('(pointer:coarse)').matches))) ? RUN_LIMIT_PHONE_MS : RUN_LIMIT_MS;
 const MAX_PER_CELL = 8;
 const SRC_MAX = 65536;
@@ -132,6 +134,42 @@ function wrapAlerts(eng){
   return eng;
 }
 
+// SAFARI (UnoMas bug 22 Nov: every Pine script, even a 10-line SMA, failed with "heavy for this device").
+// vela-pinets' PineWorkerEngine starts its worker with new Worker(blobUrl) and revokes the blob URL on the
+// very next line. Chromium/Firefox have read the URL by then; WebKit (Safari, every iOS browser) loads the
+// worker script later, finds the URL gone, fires a bare 'error' Event the engine never listens to, and the
+// run waits for an answer that never comes. Fix: keep the blob URL alive until the worker has answered
+// (or 60 s), and turn a worker that fails to start into a real error (pineStartFailed) instead of a timeout.
+let classicFail = null;   // why the classic worker could not start (last failure), or null
+function pineStartFailed(why){
+  const msg = "Pine couldn't start in this browser: " + (why || 'the script engine did not load') + '.';
+  try { console.error('TradeZoro: ' + msg); } catch (e) {}
+  // beta-report.js (bug-report button) collects window 'error' events: send it to the error log too
+  try { window.dispatchEvent(new ErrorEvent('error', { message: msg, filename: 'chart-pine.js' })); } catch (e) {}
+  return msg;
+}
+function classicEngine(m){
+  const eng = new m.PineWorkerEngine({ props: 'strategy' });
+  const spawn = eng.spawn;
+  eng.spawn = () => {
+    const rv = URL.revokeObjectURL, held = [];
+    URL.revokeObjectURL = (u) => { held.push(u); };
+    let w;
+    try { w = spawn(); } finally { URL.revokeObjectURL = rv; }
+    let answered = false;
+    const free = () => { held.splice(0).forEach((u) => { try { rv.call(URL, u); } catch (e) {} }); };
+    const t = setTimeout(free, 60000);
+    w.addEventListener('message', () => { if (!answered) { answered = true; classicFail = null; clearTimeout(t); free(); } });
+    w.addEventListener('error', (e) => {
+      if (answered) return;   // a script error inside a running worker is reported by the engine itself
+      classicFail = (e && e.message) || 'the script engine file did not load';
+      pineStartFailed(classicFail);
+    });
+    return w;
+  };
+  return eng;
+}
+
 function loadPine(){
   if (!enginePromise) {
     // The in-process engine (LANG_MAIN) runs the page's pinets (import map): give it the same empty-live-stream guard as the worker (Owner bug 22 Nov, 'openTime' toasts).
@@ -139,7 +177,7 @@ function loadPine(){
     enginePromise = import(PINE_PKG).then((m) => {
       if (!m || !m.PineWorkerEngine) throw new Error('Pine engine did not load');
       // Cells created from now on (layout widened) get an engine automatically.
-      try { Core.registerDefaultEngine(LANG, () => wrapAlerts(new m.PineWorkerEngine({ props: 'strategy' }))); } catch (e) {}
+      try { Core.registerDefaultEngine(LANG, () => wrapAlerts(classicEngine(m))); } catch (e) {}
       try { Core.registerDefaultEngine(LANG_MAIN, () => wrapAlerts(new m.PineEngine({ props: 'strategy' }))); } catch (e) {}
       return m;
     }).catch((e) => { enginePromise = null; throw e; });
@@ -151,7 +189,7 @@ async function ensureEngine(chart){
   tvStyle(chart);
   const m = await loadPine();
   if (!engines.has(chart)) {
-    const eng = wrapAlerts(new m.PineWorkerEngine({ props: 'strategy' }));
+    const eng = wrapAlerts(classicEngine(m));
     chart.registerEngine(LANG, eng);
     engines.set(chart, eng);
   }
@@ -416,6 +454,18 @@ function explain(err, source){
         : '"' + name + '" is not a known variable or function.';
     }
   }
+  // Clear reasons instead of a parser message for the two things pinets can't run at all (member report 22 Nov).
+  const imp = /\bimport\b/.test(msg) && /^\s*import\s+[\w-]+\/[\w-]+\/\d+/m.test(String(source || ''));
+  if (imp) {
+    const i = String(source).split('\n').findIndex((l) => /^\s*import\s+[\w-]+\/[\w-]+\/\d+/.test(l));
+    const lib = (/^\s*import\s+([\w-]+\/[\w-]+\/\d+)/.exec(String(source).split('\n')[i]) || [])[1] || '';
+    return { msg: 'Pine libraries (import ' + lib + ') aren\'t supported on our charts yet. Copy the library functions the script uses into the script itself, then add it again.', line: i + 1 };
+  }
+  const ver = /^Unsupported Pine Script version (\d+)/.exec(msg);
+  if (ver) {
+    const i = String(source || '').split('\n').findIndex((l) => /^\s*\/\/\s*@version\s*=/.test(l));
+    return { msg: 'Pine Script v' + ver[1] + ' isn\'t supported yet: our charts run v5 and v6. In TradingView\'s Pine Editor, open the script\'s menu, choose "Convert code to v5", then paste the new version here.', line: i >= 0 ? i + 1 : 1 };
+  }
   msg = msg.replace(/^Failed to transpile Pine Script version \d+:\s*/, 'Syntax error: ');
   if (/request\.security|getMarketData|fetchSeries/i.test(msg)) msg += ' (request.security works only for symbols this chart can load, e.g. futures:ES1! or a crypto pair.)';
   if (/Loop exceeded maximum iterations/i.test(msg)) msg = 'Script stopped: a loop ran too many times.';
@@ -427,7 +477,7 @@ function explain(err, source){
 // itself is already removed by runIndicator.
 function hideVelaErrorToast(){
   const kill = () => document.querySelectorAll('.vela-toast[data-type="error"][data-open]').forEach((t) => { delete t.dataset.open; });
-  kill(); setTimeout(kill, 60); setTimeout(kill, 400);
+  kill(); setTimeout(kill, 60); setTimeout(kill, 400); setTimeout(kill, 1200);   // 1200: the next engine's toast can land late (22 Nov sweep)
 }
 
 // opts.engine === 'next': run straight on the next engine (built-in TradeZoro indicators).
@@ -489,29 +539,63 @@ async function runOnChart(chart, source, inputs, shared, opts){
 async function runOnChartInner(chart, source, inputs, shared, opts){
   // LAYOUT-PERF (2026-11-08): the next engine (and its worker) loads alongside the classic one, not after it.
   // A next-engine add no longer waits for the classic engine (parsed on the main thread); that loads only for the fallback.
-  const nextFirst = !!(opts && (opts.sealed || (opts.engine === 'next' && !shared)));
+  // TIMEOUTS (member report 22 Nov 2026: custom scripts "time out and won't load"): a member's own script (editor,
+  // My scripts, examples) now runs on the next engine first, like the built-ins: newer pinets, O(n) pivots, a first
+  // window of the last 5,000 bars, and progress reports, so a script that is still computing is never cut off.
+  // The classic worker is the fallback when the next engine rejects it. Community (shared) scripts are unchanged.
+  const nextFirst = !!(opts && opts.sealed) || !shared;
   if (nextFirst) ensureNext(chart).catch(() => {}); else await ensureEngine(chart);
   if (pineHandles(chart).length >= MAX_PER_CELL) return { ok: false, msg: 'This chart already has ' + MAX_PER_CELL + ' Pine scripts. Remove one first.' };
+  // NO BARS YET (found in the 22 Nov sweep): on a chart that is still loading, or whose data feed is down, the script
+  // ran on 0 bars, the next engine threw, the classic one hung, and after 20 s the member read "heavy for this
+  // device". Now: wait up to 15 s for bars, then say what is really wrong.
+  const barCount = () => { try { return chart.orchestrator.rawBars.length; } catch (e) { return -1; } };   // -1 = can't tell: run as before
+  for (let i = 0; i < 60 && barCount() === 0; i++) await new Promise((r) => setTimeout(r, 250));
+  if (barCount() === 0) return { ok: false, msg: 'This chart has no price data yet, so the script has nothing to run on. Wait for the candles to load (or pick another symbol), then add it again.' };
   const keep = pineHandles(chart).map(snapshot);
   let timer;
   const LIMIT = runLimitMs();
-  // clock.sid stays null on the old worker engine (no 'started' message): then it is plain wall time like before.
-  const clock = { t0: Date.now(), next: false, sid: null, start: 0, other: 0 };
+  // The time limit is a STALL limit on the next engine: the run is stopped only after LIMIT ms with no sign of life
+  // from its worker (started / bar-loop progress / a request.security download still pending). A script that keeps
+  // moving is never cut off before the hard backstop (RUN_BACKSTOP x LIMIT). The classic worker sends nothing, so
+  // there it stays plain wall time like before.
+  const clock = { t0: Date.now(), next: false, moved: Date.now(), sid: null };
   const hook = (m) => {
-    if (m.kind === 'started' && clock.sid == null) { clock.sid = m.sessionId; clock.start = Date.now(); }
-    else if (m.kind === 'own' && m.sessionId === clock.sid) clock.other = m.otherMs || 0;
+    clock.moved = Date.now();
+    if (m.kind === 'started' && clock.sid == null) clock.sid = m.sessionId;
+    if (m.kind === 'progress' && !m.secondary && m.total > 0 && clock.sid != null && (m.ids || []).includes(clock.sid) && opts && typeof opts.onProgress === 'function') {
+      try { opts.onProgress(Math.min(99, Math.round(m.done / m.total * 100))); } catch (e) {}
+    }
   };
-  const ownMs = () => { const n = Date.now(); return clock.next ? (clock.sid == null ? 0 : n - clock.start - clock.other) : n - clock.t0; };
-  const timeout = new Promise((r) => { timer = setInterval(() => { if (ownMs() > LIMIT || Date.now() - clock.t0 > LIMIT * 3) r({ timedOut: true }); }, 500); });
+  const over = () => { const n = Date.now(); return clock.next ? (n - clock.moved > LIMIT || n - clock.t0 > LIMIT * RUN_BACKSTOP) : n - clock.t0 > LIMIT; };
+  const timeout = new Promise((r) => { timer = setInterval(() => {
+    if (!clock.next && classicFail) r({ timedOut: true, startFailed: classicFail });   // classic worker never started (see classicEngine)
+    else if (over()) r({ timedOut: true, stalled: clock.next && Date.now() - clock.moved > LIMIT, startFailed: clock.next && clock.sid == null && Date.now() - clock.moved > LIMIT ? 'the script engine did not answer within ' + (LIMIT / 1000) + ' seconds' : null });
+  }, 500); });
   const runNext = async () => {
     try { await ensureNext(chart); } catch (e) { console.warn('TradeZoro: Pine next engine', e); return null; }
-    clock.next = true; clock.sid = null; (window.__stkPineClockHooks = window.__stkPineClockHooks || new Set()).add(hook);
+    clock.next = true; clock.sid = null; clock.moved = Date.now(); (window.__stkPineClockHooks = window.__stkPineClockHooks || new Set()).add(hook);
     return Promise.race([chart.runIndicator(source, { language: LANG_NEXT, inputs: inputs || {} }), timeout]);
   };
   let res = null, engine = 'worker';
   // Sealed community indicators run ONLY on the next worker (the stub means nothing anywhere else).
   if (opts && opts.sealed) { res = (await runNext()) || { ok: false, error: new Error("The Pine engine didn't start.") }; engine = 'next'; }
-  else if (opts && opts.engine === 'next' && !shared) { res = await runNext(); engine = 'next'; }
+  else if (!shared) {
+    res = await runNext(); engine = 'next';
+    // Rejected by the next engine (not a syntax error, not a timeout, not a built-in): give the classic worker one try.
+    if (res && !res.ok && !res.timedOut && !(opts && opts.engine === 'next') && !/^Failed to transpile|^Unsupported Pine Script version/.test(String(res.error && res.error.message))) {
+      hideVelaErrorToast();
+      clock.next = false; clock.t0 = Date.now();
+      const first = res;
+      res = null;
+      if (window.__stkPineClockHooks) window.__stkPineClockHooks.delete(hook);
+      await ensureEngine(chart);
+      const held0 = [], rel0 = holdVelaErrors(held0);
+      try { res = await Promise.race([chart.runIndicator(source, { language: LANG, inputs: inputs || {} }), timeout]); engine = 'worker'; }
+      finally { rel0(); }
+      if (!res || (!res.ok && !res.timedOut)) { res = first; engine = 'next'; }   // the next engine's message is the one to show
+    }
+  }
   // vela logs `[vela] indicator "ind-N" failed: ...` (console.error) when the worker's older
   // PineTS rejects a script (seen: HTF PO3 Lens "stacks is not defined", ICT Pro+ "ta.max is
   // not a function"). The retry below then runs it fine on the next engine, so that line is
@@ -544,7 +628,15 @@ async function runOnChartInner(chart, source, inputs, shared, opts){
   if (window.__stkPineClockHooks) window.__stkPineClockHooks.delete(hook);
   if (res && res.timedOut) {
     await resetCell(chart, keep);
-    const heavyMsg = 'This indicator is heavy for this device. It did not finish within ' + (LIMIT / 1000) + ' seconds, so it was not added. Your other indicators are unchanged.';
+    // A worker that never started is NOT a heavy script: say so (and it is in the error log via pineStartFailed).
+    if (res.startFailed) {
+      const why = res.startFailed === classicFail ? "Pine couldn't start in this browser: " + res.startFailed + '.' : pineStartFailed(res.startFailed);
+      if (!(opts && opts.inline)) { try { window.showToast && window.showToast('error', why + ' Reload the page and try again.', { title: 'Pine script', duration: 15000 }); } catch (e) {} }
+      return { ok: false, startFailed: true, msg: why + ' Reload the page and try again.' };
+    }
+    const heavyMsg = res.stalled
+      ? 'This indicator stopped making progress for ' + (LIMIT / 1000) + ' seconds (usually a loop that never ends on some bar), so it was stopped. Your other indicators are unchanged.'
+      : 'This indicator is heavy for this device. It did not finish within ' + Math.round(LIMIT * (clock.next ? RUN_BACKSTOP : 1) / 1000) + ' seconds, so it was not added. Your other indicators are unchanged.';
     // Plain editor Add keeps its inline red box (r.msg); every other caller gets the toast with Retry.
     const again = (opts && opts.sealed) ? null : () => runOnChart(chart, source, inputs, shared, opts).then((r2) => { if (r2 && r2.ok) toast2('Added ' + titleOf(r2.handle) + ' to the chart', 'success'); return r2; });
     if (!(opts && opts.inline)) { try { window.showToast && window.showToast('error', heavyMsg, { title: 'Indicator is heavy', duration: 15000, action: again ? { label: 'Retry', onClick: again } : null }); } catch (e) {} }
@@ -768,7 +860,7 @@ export function mountPine(ws, barL, opts){
     Sh.problems.head('busy', 'Running on the chart…'); Sh.problems.list([]);
     try {
       if (old) { try { old.remove(); } catch (er) {} }   // Update: the new version replaces the one this editor added
-      const r = await runOnChart(a.cell.chart, src, undefined, false, { inline: true });
+      const r = await runOnChart(a.cell.chart, src, undefined, false, { inline: true, onProgress: (pct) => { if (busy) Sh.problems.head('busy', 'Running on the chart… ' + pct + '% of bars'); } });
       busy = false;
       if (r.ok) {
         handle = r.handle; hasErr = false;

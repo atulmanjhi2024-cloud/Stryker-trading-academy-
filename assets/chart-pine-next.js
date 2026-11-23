@@ -37,6 +37,7 @@ export function clampRange(range, timeframe, bars){
   return range.from < minFrom ? Object.assign({}, range, { from: minFrom }) : range;
 }
 export const LOWER_TF_MAX_BARS = 3000;
+export const FIRST_WINDOW = 5000;
 function tfToMs(tf){
   const m = /^(\d*)([SDWM]?)$/i.exec(String(tf || '').trim());
   if (!m) return 0;
@@ -82,7 +83,7 @@ function hubWorker(){
     const w = hub.worker = new Worker(WORKER_URL, { type: 'module', name: 'stryker-pine-next' });
     w.addEventListener('message', (e) => hubMessage(e.data || {}));
     w.addEventListener('error', (e) => {
-      const msg = (e && e.message) || 'Pine engine failed to start';
+      const msg = "Pine couldn't start in this browser: " + ((e && e.message) || 'the script engine file did not load');
       hub.engines.forEach((eng) => eng.workerFailed(msg));
     });
   }
@@ -91,7 +92,9 @@ function hubWorker(){
 function hubMessage(m){
   switch (m.kind) {
     case 'busy': setBusy(hub, !!m.on); return;
-    case 'started': case 'own': { try { const f = typeof window !== 'undefined' && window.__stkPineClockHook; if (f) f(m); } catch (e) {} return; }
+    // run clock for chart-pine.js runOnChartInner (a Set of hooks, one per add in flight). It used to read a
+    // single `__stkPineClockHook` nobody set, so the own-compute clock never started on this engine.
+    case 'started': case 'own': case 'progress': { try { const hs = typeof window !== 'undefined' && window.__stkPineClockHooks; if (hs) hs.forEach((f) => { try { f(m); } catch (e) {} }); } catch (e) {} return; }
     case 'loadError': hub.engines.forEach((eng) => eng.onMessage(m)); return;
   }
   const eng = (m.sessionId != null && hub.owner.get('s' + m.sessionId)) || (m.reqId != null && hub.owner.get('r' + m.reqId));
@@ -163,9 +166,13 @@ export class PineNextEngine {
     const barsOf = () => (req.getBars ? req.getBars() : req.bars) || [];
     const s = { req, handlers, barsOf, live: req.mode === 'live', lastTime: 0 };
     this.sessions.set(sessionId, s);
-    const bars = barsOf();
+    const all = barsOf();
+    // FIRST WINDOW: on a deep chart (scrolled back / Days to load) the first run computes the last FIRST_WINDOW bars only,
+    // so the script draws in seconds; the whole history follows as one 'complete' re-run right after that first draw.
+    const bars = all.length > FIRST_WINDOW ? all.slice(-FIRST_WINDOW) : all;
+    s.windowed = bars !== all;
     s.lastTime = bars.length ? bars[bars.length - 1].time : 0;
-    s.sent = bars.length ? { n: bars.length, first: bars[0].time, last: bars[bars.length - 1].time } : null;
+    s.sent = bars.length && !s.windowed ? { n: bars.length, first: bars[0].time, last: bars[bars.length - 1].time } : null;
     const plain = {
       prepared: req.prepared, market: req.market, bars, inputs: Object.assign({}, req.inputs || {}),
       props: req.props ? Object.assign({}, req.props) : undefined, visibleRange: req.visibleRange,
@@ -222,11 +229,22 @@ export class PineNextEngine {
         return;
       }
       case 'loadError': {
-        const err = new Error(m.message || 'Pine engine did not load');
+        const err = new Error("Pine couldn't start in this browser: " + (m.message || 'the script engine did not load'));
+        try { console.error('TradeZoro: ' + err.message); window.dispatchEvent(new ErrorEvent('error', { message: err.message, filename: 'chart-pine-next.js' })); } catch (e) {}
         this.prepares.forEach((p) => p.reject(err)); this.prepares.clear();
         return;
       }
-      case 'model': { const s = this.sessions.get(m.sessionId); if (s) s.handlers.onModel(m.model); return; }
+      case 'model': {
+        const s = this.sessions.get(m.sessionId); if (!s) return;
+        s.handlers.onModel(m.model);
+        if (s.windowed) {   // first draw on the window is up: now run the whole history
+          s.windowed = false;
+          const b = s.barsOf();
+          this.post({ kind: 'notifyBars', sessionId: m.sessionId, reason: 'complete', bars: b });
+          s.sent = b.length ? { n: b.length, first: b[0].time, last: b[b.length - 1].time } : null;
+        }
+        return;
+      }
       case 'alert': { const s = this.sessions.get(m.sessionId); if (s && s.handlers.onAlert) s.handlers.onAlert(m.alert); try { if (this.opts.onAlert) this.opts.onAlert(m.alert, s); } catch (e) {} return; }
       case 'warning': { const s = this.sessions.get(m.sessionId); if (s && s.handlers.onWarning) s.handlers.onWarning(m.warning); return; }
       case 'error': { const s = this.sessions.get(m.sessionId); if (s && s.handlers.onError) s.handlers.onError(new Error(m.message)); return; }

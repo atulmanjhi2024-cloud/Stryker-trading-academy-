@@ -1,0 +1,7 @@
+//@version=5
+indicator("SMT ES vs NQ + DXY (sample)", overlay=false)
+es = request.security("CME_MINI:ES1!", timeframe.period, close)
+nq = request.security("CME_MINI:NQ1!", timeframe.period, close)
+dxy = request.security("TVC:DXY", "60", close)
+plot(es / nz(es[20], es) - nq / nz(nq[20], nq), "ES-NQ 20-bar spread", color=color.teal)
+plot(dxy, "DXY 1h", color=color.orange, display=display.data_window)

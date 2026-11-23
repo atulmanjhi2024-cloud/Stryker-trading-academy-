@@ -1,0 +1,30 @@
+//@version=5
+indicator("Loop S/R zones (sample)", overlay=true, max_lines_count=500)
+lookback = input.int(600, "Lookback bars", minval=50, maxval=2000)
+bins = input.int(40, "Price bins", minval=5)
+var line[] lns = array.new_line()
+if barstate.islast
+    float hi = ta.highest(high, 300)
+    float lo = ta.lowest(low, 300)
+    float step = (hi - lo) / bins
+    counts = array.new_int(bins, 0)
+    n = math.min(lookback, bar_index)
+    for i = 0 to n - 1
+        for b = 0 to bins - 1
+            float top = lo + step * (b + 1)
+            float bot = lo + step * b
+            if high[i] >= bot and low[i] <= top
+                array.set(counts, b, array.get(counts, b) + 1)
+    for l in lns
+        line.delete(l)
+    array.clear(lns)
+    int mx = array.max(counts)
+    for b = 0 to bins - 1
+        if array.get(counts, b) > mx * 0.7
+            float y = lo + step * (b + 0.5)
+            array.push(lns, line.new(bar_index - 300, y, bar_index, y, color=color.orange, width=2))
+// per-bar loop: rolling slope over 100 bars
+float s = 0.0
+for i = 0 to 99
+    s += nz(close[i]) - nz(close[i + 1])
+plot(ta.sma(close, 50) + s * 0, "SMA 50", color=color.teal)

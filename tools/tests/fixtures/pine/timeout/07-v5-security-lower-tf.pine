@@ -1,0 +1,10 @@
+//@version=5
+indicator("LTF volume delta (sample)")
+ltf = input.timeframe("1", "Lower timeframe")
+upDn(o, c, v) => c > o ? v : c < o ? -v : 0.0
+arr = request.security_lower_tf(syminfo.tickerid, ltf, upDn(open, close, volume))
+float d = 0.0
+if array.size(arr) > 0
+    d := array.sum(arr)
+plot(d, "Delta", color=d >= 0 ? color.teal : color.red, style=plot.style_columns)
+plot(ta.cum(d), "Cumulative", color=color.yellow, display=display.none)

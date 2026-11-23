@@ -50,6 +50,15 @@ let fetchId = 0;
 
 let rewrite = (src) => src;
 
+// PROGRESS (member report 22 Nov, custom scripts "time out and won't load"): while scripts compute, the page gets
+// {kind:'progress', ids, done, total, secondary} from pinets' bar loop (chart-pine-next-patches.js patchProgress),
+// and a beat every second while a request.security download is pending. The page's time limit now means "no
+// progress for N seconds", not "N seconds in total", and the editor shows the percentage.
+// shortcut: ids = every session computing right now (the bar loop doesn't know its session); a page clock only
+// needs "this worker is still moving". Upgrade if per-session % is ever shown for several scripts at once.
+function progress(p){ if (computing.size) post(Object.assign({ kind: 'progress', ids: [...computing] }, p)); }
+setInterval(() => { if (fetchWaits.size) progress({ fetch: true }); }, 1000);
+
 // SEALED COMMUNITY INDICATORS (Creator Hub phase B). The page never holds a protected script's text: it asks this
 // worker for a one-time public key (sealKey), sends it to /api/creator/ind, and hands the ciphertext back here
 // (unseal). Only this worker has the private key (non-extractable), so only here is the script decrypted. The page
@@ -76,7 +85,7 @@ const ready = (async () => {
   // LAYOUT-PERF (2026-11-08): the three downloads run side by side (the vela-pinets fetch used to wait for pinets).
   const resP = fetch(VELA_PINETS);
   const [pinets, patches] = await Promise.all([import(PINETS), import('./chart-pine-next-patches.js?v=1216')]);
-  try { patches.install(pinets.Context, pinets, self); rewrite = patches.rewriteSource; } catch (e) { console.warn('TradeZoro: pine-next patches', e); }
+  try { patches.install(pinets.Context, pinets, self, progress); rewrite = patches.rewriteSource; } catch (e) { console.warn('TradeZoro: pine-next patches', e); }
   const res = await resP;
   if (!res.ok) throw new Error('Pine engine download failed (' + res.status + ')');
   const text = (await res.text())

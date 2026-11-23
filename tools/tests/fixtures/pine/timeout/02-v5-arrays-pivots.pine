@@ -1,0 +1,28 @@
+//@version=5
+indicator("Pivot arrays (sample)", overlay=true, max_labels_count=500)
+len = input.int(5, "Pivot length")
+keep = input.int(50, "Pivots kept")
+var float[] ph = array.new_float()
+var float[] pl = array.new_float()
+var int[] phi = array.new_int()
+p1 = ta.pivothigh(high, len, len)
+p2 = ta.pivotlow(low, len, len)
+if not na(p1)
+    array.unshift(ph, p1)
+    array.unshift(phi, bar_index - len)
+    if array.size(ph) > keep
+        array.pop(ph)
+        array.pop(phi)
+    label.new(bar_index - len, p1, "H", style=label.style_label_down, color=color.red, textcolor=color.white, size=size.tiny)
+if not na(p2)
+    array.unshift(pl, p2)
+    if array.size(pl) > keep
+        array.pop(pl)
+    label.new(bar_index - len, p2, "L", style=label.style_label_up, color=color.green, textcolor=color.white, size=size.tiny)
+avgH = array.size(ph) > 0 ? array.avg(ph) : na
+avgL = array.size(pl) > 0 ? array.avg(pl) : na
+sorted = array.copy(ph)
+array.sort(sorted, order.descending)
+plot(avgH, "Avg pivot high", color=color.red)
+plot(avgL, "Avg pivot low", color=color.green)
+plot(array.size(sorted) > 2 ? array.get(sorted, 2) : na, "3rd highest pivot", color=color.gray)

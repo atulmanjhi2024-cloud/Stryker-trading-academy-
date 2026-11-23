@@ -546,6 +546,42 @@ export function patchPretranspiled(PineTS){
   return true;
 }
 
+// PROGRESS (member report 22 Nov, "custom pine scripts time out and won't load"). pinets runs a script's
+// bars in one long loop and says nothing until the end, so the page could only guess with a fixed clock
+// and gave up on scripts that were still computing. This splits that loop into chunks of PROGRESS_CHUNK
+// bars and calls report({ done, total, secondary }) at most every PROGRESS_MS, so the page can show
+// "Computing… n%" and only give up on a run that has really stopped moving. Same bars, same order: the
+// per-bar body is pinets' own; strategy contexts are never split (pinets finalises their stats once,
+// at the end of the call). Must be installed BEFORE patchPretranspiled, which wraps this one.
+const PROGRESS_CHUNK = 256, PROGRESS_MS = 250;
+const stratSeen = new WeakMap();
+function isStrategy(fn){
+  if (typeof fn !== 'function') return false;
+  let v = stratSeen.get(fn);
+  if (v === undefined) { v = /\bstrategy\b/.test(String(fn)); stratSeen.set(fn, v); }
+  return v;
+}
+export function patchProgress(PineTS, report){
+  const proto = PineTS && PineTS.prototype;
+  if (!proto || proto.__stkProgress || typeof report !== 'function') return false;
+  const exec = proto._executeIterations;
+  if (typeof exec !== 'function') return false;
+  let last = 0;
+  proto._executeIterations = async function (context, fn, startIdx, endIdx) {
+    // context.strategy only exists after the first bar ran, so also look at the transpiled code
+    if ((context && context.strategy) || !(endIdx - startIdx > PROGRESS_CHUNK) || isStrategy(fn)) return exec.call(this, context, fn, startIdx, endIdx);
+    const total = (this.data && this.data.length) || endIdx;
+    for (let a = startIdx; a < endIdx; a += PROGRESS_CHUNK) {
+      const b = context.strategy ? endIdx : Math.min(endIdx, a + PROGRESS_CHUNK);
+      await exec.call(this, context, fn, a, b);
+      const now = Date.now();
+      if (now - last >= PROGRESS_MS) { last = now; try { report({ done: b, total, secondary: !!this._isSecondaryContext }); } catch (e) {} }
+    }
+  };
+  proto.__stkProgress = true;
+  return true;
+}
+
 // EMPTY LIVE STREAM (Owner bug 22 Nov: red toasts "[A] Cannot read properties of undefined (reading
 // 'openTime')" stacking on the apps). pinets 0.11.0 PineTS._updateMarketData reads
 // this.data[this.data.length - 1].openTime BEFORE its try block, so a live stream polled while the
@@ -567,9 +603,10 @@ export function patchEmptyLive(PineTS){
 }
 
 // pinets = the pinets module (optional): adds the Indicator fix. scope = the worker global
-// (optional): adds the formatter cache.
-export function install(Context, pinets, scope){
+// (optional): adds the formatter cache. onProgress (optional): see patchProgress.
+export function install(Context, pinets, scope, onProgress){
   try { if (pinets && pinets.Indicator) patchIndicator(pinets.Indicator); } catch (e) {}
+  try { if (pinets && pinets.PineTS && onProgress) patchProgress(pinets.PineTS, onProgress); } catch (e) {}
   try { if (pinets && pinets.PineTS) patchPretranspiled(pinets.PineTS); } catch (e) {}
   try { if (pinets && pinets.PineTS) patchEmptyLive(pinets.PineTS); } catch (e) {}
   try { if (scope) cacheDateTimeFormat(scope); } catch (e) {}

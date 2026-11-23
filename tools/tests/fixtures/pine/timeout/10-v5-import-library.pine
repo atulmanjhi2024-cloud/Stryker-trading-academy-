@@ -1,0 +1,6 @@
+//@version=5
+indicator("Uses a library (sample)", overlay=true)
+import TradingView/ZigZag/7 as ZZ
+var zz = ZZ.newInstance(ZZ.Settings.new(5.0, 10))
+zz.update()
+plot(close, "Close")

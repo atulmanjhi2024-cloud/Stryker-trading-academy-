@@ -1,0 +1,11 @@
+//@version=5
+indicator("Varip tick counter (sample)")
+varip int ticks = 0
+varip float lastPrice = na
+if barstate.isnew
+    ticks := 0
+if barstate.isrealtime and close != lastPrice
+    ticks += 1
+lastPrice := close
+plot(ticks, "Ticks this bar", style=plot.style_columns, color=color.blue)
+plot(ta.sma(volume, 20), "Vol SMA", color=color.gray)

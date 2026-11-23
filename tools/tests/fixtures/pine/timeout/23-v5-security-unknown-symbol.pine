@@ -1,0 +1,4 @@
+//@version=5
+indicator("Ratio vs an unknown symbol (sample)")
+other = request.security("NOSUCHEXCH:NOTREAL123", timeframe.period, close)
+plot(close / other, "Ratio", color=color.purple)

@@ -1,0 +1,10 @@
+//@version=5
+indicator("Simple SMA", overlay=true)
+len = input.int(20, "Length")
+src = input.source(close, "Source")
+s = ta.sma(src, len)
+e = ta.ema(src, len)
+plot(s, "SMA", color=color.orange)
+plot(e, "EMA", color=color.blue)
+bgcolor(close > s ? color.new(color.green, 92) : na)
+plotshape(ta.crossover(close, s), "Cross", shape.triangleup, location.belowbar, color.green)

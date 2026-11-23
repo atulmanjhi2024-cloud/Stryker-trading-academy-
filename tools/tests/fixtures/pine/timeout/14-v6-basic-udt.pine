@@ -1,0 +1,23 @@
+//@version=6
+indicator("v6 swing tracker (sample)", overlay=true, max_lines_count=500, max_labels_count=500)
+int len = input.int(10, "Swing length")
+type Swing
+    float price
+    int idx
+    bool isHigh
+var array<Swing> swings = array.new<Swing>()
+float ph = ta.pivothigh(high, len, len)
+float pl = ta.pivotlow(low, len, len)
+if not na(ph)
+    swings.push(Swing.new(ph, bar_index - len, true))
+if not na(pl)
+    swings.push(Swing.new(pl, bar_index - len, false))
+if swings.size() > 200
+    swings.shift()
+if barstate.islast and swings.size() > 1
+    for i = 1 to swings.size() - 1
+        Swing a = swings.get(i - 1)
+        Swing b = swings.get(i)
+        line.new(a.idx, a.price, b.idx, b.price, color = b.isHigh ? color.green : color.red)
+bool bullBar = close > open
+plot(ta.ema(close, 34), "EMA 34", color = bullBar ? color.teal : color.maroon)

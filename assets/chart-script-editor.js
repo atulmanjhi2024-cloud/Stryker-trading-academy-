@@ -224,7 +224,10 @@ export function createShell(o){
   setStatus('idle');
   const problems = {
     // state: 'ok' | 'err' | 'info' | 'busy'
-    head(state, text){ probHd.dataset.s = state; probHd.innerHTML = state === 'busy' ? '<span class="sed-spin" aria-hidden="true"></span>' : svg(state === 'ok' ? ICONS.ok : state === 'err' ? ICONS.err : ICONS.info, 16); probHd.appendChild(el('span', { text })); },
+    head(state, text){
+      // busy -> busy (progress %): change the text only, so the spinner keeps turning
+      if (state === 'busy' && probHd.dataset.s === 'busy' && probHd.lastChild && probHd.lastChild.tagName === 'SPAN' && probHd.firstChild !== probHd.lastChild) { probHd.lastChild.textContent = text; return; }
+      probHd.dataset.s = state; probHd.innerHTML = state === 'busy' ? '<span class="sed-spin" aria-hidden="true"></span>' : svg(state === 'ok' ? ICONS.ok : state === 'err' ? ICONS.err : ICONS.info, 16); probHd.appendChild(el('span', { text })); },
     // list: [{ text, line, col }] ; onPick(line, col)
     list(items, onPick){
       errBox.innerHTML = '';

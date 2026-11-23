@@ -1,0 +1,33 @@
+//@version=5
+indicator("ZigZag labels (sample)", overlay=true, max_lines_count=500, max_labels_count=500)
+dev = input.float(0.3, "Deviation %")
+var float lastP = na
+var int lastI = na
+var int dir = 0
+var line lastL = na
+pct = (close - lastP) / lastP * 100
+if na(lastP)
+    lastP := close
+    lastI := bar_index
+else if dir >= 0 and high > lastP
+    lastP := high
+    lastI := bar_index
+    if not na(lastL)
+        line.set_xy2(lastL, bar_index, high)
+else if dir <= 0 and low < lastP
+    lastP := low
+    lastI := bar_index
+    if not na(lastL)
+        line.set_xy2(lastL, bar_index, low)
+else if dir >= 0 and (lastP - low) / lastP * 100 > dev
+    lastL := line.new(lastI, lastP, bar_index, low, color=color.red, width=2)
+    label.new(lastI, lastP, str.tostring(lastP, format.mintick), style=label.style_label_down, color=color.red, textcolor=color.white, size=size.tiny)
+    dir := -1
+    lastP := low
+    lastI := bar_index
+else if dir <= 0 and (high - lastP) / lastP * 100 > dev
+    lastL := line.new(lastI, lastP, bar_index, high, color=color.green, width=2)
+    label.new(lastI, lastP, str.tostring(lastP, format.mintick), style=label.style_label_up, color=color.green, textcolor=color.white, size=size.tiny)
+    dir := 1
+    lastP := high
+    lastI := bar_index

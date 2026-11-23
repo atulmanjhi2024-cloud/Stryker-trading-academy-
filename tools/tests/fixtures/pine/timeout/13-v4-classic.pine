@@ -1,0 +1,15 @@
+//@version=4
+study("Classic v4 bands (sample)", overlay=true)
+len = input(20, title="Length")
+mult = input(2.0, title="Mult")
+basis = sma(close, len)
+dev = mult * stdev(close, len)
+upper = basis + dev
+lower = basis - dev
+p1 = plot(upper, color=color.red, title="Upper")
+p2 = plot(lower, color=color.green, title="Lower")
+plot(basis, color=color.gray, title="Basis")
+fill(p1, p2, color=color.new(color.blue, 90))
+plotshape(crossover(close, upper), style=shape.triangleup, location=location.belowbar, color=color.green, title="Break up")
+r = rsi(close, 14)
+barcolor(r > 70 ? color.orange : r < 30 ? color.aqua : na)

@@ -1,0 +1,32 @@
+//@version=5
+indicator("Order blocks UDT (sample)", overlay=true, max_boxes_count=200)
+type OB
+    float top
+    float bottom
+    int left
+    bool bull
+    box bx
+method extendTo(OB this, int x) =>
+    this.bx.set_right(x)
+    this
+method broken(OB this) =>
+    this.bull ? close < this.bottom : close > this.top
+var array<OB> obs = array.new<OB>()
+if close[1] < open[1] and close > high[1]
+    ob = OB.new(high[1], low[1], bar_index - 1, true, na)
+    ob.bx := box.new(bar_index - 1, high[1], bar_index, low[1], bgcolor=color.new(color.teal, 80), border_color=color.teal)
+    obs.push(ob)
+if close[1] > open[1] and close < low[1]
+    ob = OB.new(high[1], low[1], bar_index - 1, false, na)
+    ob.bx := box.new(bar_index - 1, high[1], bar_index, low[1], bgcolor=color.new(color.red, 80), border_color=color.red)
+    obs.push(ob)
+if obs.size() > 0
+    for i = obs.size() - 1 to 0
+        o = obs.get(i)
+        if o.broken()
+            o.bx.delete()
+            obs.remove(i)
+        else
+            o.extendTo(bar_index)
+if obs.size() > 60
+    obs.shift().bx.delete()

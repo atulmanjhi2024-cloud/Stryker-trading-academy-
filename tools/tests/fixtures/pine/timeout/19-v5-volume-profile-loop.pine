@@ -1,0 +1,24 @@
+//@version=5
+indicator("Session volume profile (sample)", overlay=true, max_boxes_count=500)
+rowsN = input.int(30, "Rows")
+look = input.int(500, "Bars")
+var box[] bx = array.new_box()
+if barstate.islast
+    for b in bx
+        box.delete(b)
+    array.clear(bx)
+    n = math.min(look, bar_index)
+    hi = ta.highest(high, n)
+    lo = ta.lowest(low, n)
+    step = (hi - lo) / rowsN
+    vols = array.new_float(rowsN, 0.0)
+    for i = 0 to n - 1
+        for r = 0 to rowsN - 1
+            rt = lo + step * (r + 1)
+            rb = lo + step * r
+            if high[i] >= rb and low[i] <= rt
+                array.set(vols, r, array.get(vols, r) + volume[i] / math.max(1, math.round((high[i] - low[i]) / step)))
+    mx = array.max(vols)
+    for r = 0 to rowsN - 1
+        w = int(array.get(vols, r) / mx * 60)
+        array.push(bx, box.new(bar_index + 2, lo + step * (r + 1), bar_index + 2 + w, lo + step * r, bgcolor=color.new(color.blue, 70), border_color=na))

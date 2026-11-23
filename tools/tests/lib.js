@@ -46,7 +46,10 @@ function executablePath() {
   try { return chromium.executablePath(); } catch (e) { return undefined; }
 }
 
+// PW_BROWSER=webkit|firefox runs a suite on Playwright's own WebKit/Firefox (Safari bugs); default Chromium.
 function launch(opts) {
+  const name = process.env.PW_BROWSER;
+  if (name && name !== 'chromium') return require('playwright-core')[name].launch(opts || {});
   const exe = executablePath();
   return chromium.launch(Object.assign(exe ? { executablePath: exe } : {}, opts || {}));
 }

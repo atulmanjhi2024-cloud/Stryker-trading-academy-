@@ -1,0 +1,16 @@
+//@version=5
+indicator("Stats table (sample)", overlay=true)
+rows = input.int(10, "Rows", minval=2, maxval=20)
+var table t = table.new(position.bottom_right, 4, 21, border_width=1, border_color=color.gray)
+r = ta.rsi(close, 14)
+a = ta.atr(14)
+if barstate.islast
+    table.cell(t, 0, 0, "Bars ago", bgcolor=color.gray)
+    table.cell(t, 1, 0, "Close", bgcolor=color.gray)
+    table.cell(t, 2, 0, "RSI", bgcolor=color.gray)
+    table.cell(t, 3, 0, "ATR", bgcolor=color.gray)
+    for i = 1 to rows
+        table.cell(t, 0, i, str.tostring(i - 1), text_color=color.white)
+        table.cell(t, 1, i, str.tostring(close[i - 1], format.mintick), text_color=color.white)
+        table.cell(t, 2, i, str.tostring(r[i - 1], "#.0"), text_color=r[i - 1] > 70 ? color.red : r[i - 1] < 30 ? color.green : color.white)
+        table.cell(t, 3, i, str.tostring(a[i - 1], "#.00"), text_color=color.white)

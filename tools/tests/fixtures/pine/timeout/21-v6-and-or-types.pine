@@ -1,0 +1,8 @@
+//@version=6
+indicator("v6 dynamic requests (sample)", overlay=false, dynamic_requests=true)
+array<string> tfs = array.from("5", "15", "60")
+float s = 0.0
+for tf in tfs
+    s += request.security(syminfo.tickerid, tf, ta.rsi(close, 14))
+plot(s / tfs.size(), "Avg RSI 3 TFs", color=color.teal)
+hline(50)

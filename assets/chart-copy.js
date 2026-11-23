@@ -9,7 +9,7 @@
 // Safety: the global kill switch and the per-member admin block apply to every follower order (server); one-tap Pause copying and
 // Flatten all copied accounts; turning it on needs Enable live trading accepted plus a one-time copy confirm (stored server-side).
 // Test hooks: localhost only (window.__stkLiveTest). Tests: tools/tests/copy-trade-browser.js. Education only. Not financial advice.
-import * as C from './copy-trade-core.js?v=1221';
+import * as C from './copy-trade-core.js?v=1222';
 
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uuid = () => (crypto.randomUUID ? crypto.randomUUID() : 'k' + Date.now().toString(36) + Math.random().toString(36).slice(2, 14));

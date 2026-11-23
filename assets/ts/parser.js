@@ -3,7 +3,7 @@
 //
 // Statements: { s: 'declare'|'input'|'def'|'plot'|'assign'|'method'|'call'|'if'|'switch'|'script', line, col, ... }
 // Expressions: { n: 'num'|'str'|'id'|'mem'|'call'|'idx'|'bin'|'un'|'if'|'fold'|'cross'|'enum', line, col, ... }
-import { lex, TsError } from './lexer.js?v=1220';
+import { lex, TsError } from './lexer.js?v=1221';
 
 const MAX_DEPTH = 120;
 const HARD = new Set(['def', 'rec', 'plot', 'input', 'declare', 'script', 'if', 'then', 'else', 'switch', 'case', 'fold', 'do']);

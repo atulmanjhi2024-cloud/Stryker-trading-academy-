@@ -2,10 +2,10 @@
 // Series semantics (SPEC.md section 5): every slot is re-made each bar, `var` slots keep
 // their value, history reads ring buffers, live updates roll back to the end of the
 // previous bar (except varip). Hard limits (section 9) are enforced here.
-import { OP, OP_ARGC, PROGRAM_VERSION } from './ops.js?v=1230';
-import { BUILTINS, formatNum } from './builtins.js?v=1230';
-import { VARIABLES, FUNCTIONS } from './catalog.js?v=1230';
-import { ZsRuntimeError, diag, MESSAGES, fmt } from './errors.js?v=1230';
+import { OP, OP_ARGC, PROGRAM_VERSION } from './ops.js?v=1231';
+import { BUILTINS, formatNum } from './builtins.js?v=1231';
+import { VARIABLES, FUNCTIONS } from './catalog.js?v=1231';
+import { ZsRuntimeError, diag, MESSAGES, fmt } from './errors.js?v=1231';
 
 export const RUN_LIMITS = Object.freeze({
   bars: 50000, opsPerBar: 5000000, loopIters: 100000, firstRunMs: 20000, updateMs: 5000, maxBarsBack: 5000,

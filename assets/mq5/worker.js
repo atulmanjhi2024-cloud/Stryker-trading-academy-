@@ -13,7 +13,7 @@
 //                   {type:'timer', id}  {type:'event', id, ev:[id,l,d,s], state?:{name, props}}  {type:'chart', id, chart}
 //                   {type:'deinit', id, reason}  {type:'dispose', id}
 //   worker -> page  {type:'ready'} | {type:'result', id, out} | {type:'error', id, message}
-import { Indicator, diagOf } from './program.js?v=1230';
+import { Indicator, diagOf } from './program.js?v=1231';
 
 const post = self.postMessage.bind(self);
 const MAX_SOURCE = 256 * 1024;

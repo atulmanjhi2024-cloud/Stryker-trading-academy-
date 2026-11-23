@@ -19,10 +19,7 @@
   // assets/plan-limits.js keeps a pass-through strykerReplayLimitOk).
   const RP_MIN_RANK = 0;
   const SPEEDS = [1, 2, 4, 8, 15, 30];
-  const LWC_URL = 'https://cdn.jsdelivr.net/npm/lightweight-charts@5.2.1/dist/lightweight-charts.standalone.production.js';
-  // SRI (P3-4 audit): computed from the exact pinned file above via
-  // `curl -sL "$LWC_URL" | openssl dgst -sha384 -binary | base64`.
-  const LWC_INTEGRITY = 'sha384-KkYqTZlM13Zya6fVUF3IGCBOQ1ehFeJVVgxaVvD/0MebineF9EI8Jkd3NnWNChqN';
+  const LWC_URL = '/assets/vendor/lightweight-charts-5.2.1/lightweight-charts.standalone.production.js';
   // New chart (our Vela engine, assets/bt-vela-chart.js) when replay.html?chart=tz; else Lightweight Charts
   const TZ = window.__stkBtChart === 'tz' && !!window.BtVelaChart;
   const $ = (id) => document.getElementById(id);
@@ -65,7 +62,7 @@
   }
 
   // ---- start / resume -------------------------------------------------------------------
-  function loadLwc() { if (window.LightweightCharts) return Promise.resolve(); if (loadLwc.p) return loadLwc.p; loadLwc.p = new Promise((res, rej) => { const s = document.createElement('script'); s.src = LWC_URL; s.integrity = LWC_INTEGRITY; s.crossOrigin = 'anonymous'; s.onload = res; s.onerror = () => rej(new Error('The chart engine could not be loaded (cdn.jsdelivr.net). Check your connection or ad-blocker and try again.')); document.head.appendChild(s); }); return loadLwc.p; }
+  function loadLwc() { if (window.LightweightCharts) return Promise.resolve(); if (loadLwc.p) return loadLwc.p; loadLwc.p = new Promise((res, rej) => { const s = document.createElement('script'); s.src = LWC_URL; s.onload = res; s.onerror = () => rej(new Error('The chart engine could not be loaded Check your connection or ad-blocker and try again.')); document.head.appendChild(s); }); return loadLwc.p; }
   async function startNew() {
     const spec = D.findSymbol($('rp-symbol').value); if (!spec) return;
     if (typeof window.strykerReplayLimitOk === 'function' && !(await window.strykerReplayLimitOk(D))) return;

@@ -1,0 +1,1 @@
+Self-hosted, unmodified copies of npm packages previously loaded from cdn.jsdelivr.net (same versions). pinets 0.11.0 is AGPL-3.0; @luxalgo/vela-pinets 0.2.11 (see vela-0.9.0-s16/LICENSE); lightweight-charts is Apache-2.0 (TradingView, notice in file header). Folder names carry the version.

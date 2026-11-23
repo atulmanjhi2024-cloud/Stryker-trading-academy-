@@ -50,7 +50,7 @@ import { builtinSource, builtinIdOf, builtinOfText, builtinIdByName } from './ch
 import { current as verCurrent, baseOf as verBase, verOf as verPinned } from './indicator-versions.js?v=1219';
 import { createShell, el, ib, ICONS, libRow, emptyState, renderDocs, descOf, ago, download, pickFile, fileName } from './chart-script-editor.js?v=1219';
 
-const PINE_PKG = 'https://cdn.jsdelivr.net/npm/@luxalgo/vela-pinets@0.2.11/dist/index.js';
+const PINE_PKG = '/assets/vendor/vela-pinets-0.2.11/index.js';
 const RUN_LIMIT_MS = 90000;   // Owner 22 Nov: 20 s cut off normal scripts on slower machines (engine download + first run). Hotfix; the progress-based limit replaces this.
 // Time limit = the script's OWN compute time (not its wait in the worker queue, not the ms other scripts' runs
 // overlapped it). A phone is slower, so a first run gets 40 s there. Hard wall-clock backstop: 3x the limit.
@@ -578,7 +578,7 @@ async function runOnChartInner(chart, source, inputs, shared, opts){
 // downloads in a chain. Skipped with Data Saver on. Same URLs (and CORS mode) the worker/imports use.
 function prefetchEngine(){
   try { if (navigator.connection && navigator.connection.saveData) return; } catch (e) {}
-  const pinets = 'https://cdn.jsdelivr.net/npm/pinets@0.11.0/dist/pinets.min.browser.es.js';   // = PINETS in chart-pine-next-worker.js
+  const pinets = '/assets/vendor/pinets-0.11.0/pinets.min.browser.es.js';   // = PINETS in chart-pine-next-worker.js
   [PINE_PKG, pinets].forEach((href) => { const l = document.createElement('link'); l.rel = 'prefetch'; l.as = 'script'; l.crossOrigin = 'anonymous'; l.href = href; document.head.appendChild(l); });
   ['./chart-pine-next.js?v=1219', './chart-pine-series-cache.js?v=1219', './chart-pine-tv-style.js?v=1219'].forEach((u) => {
     const l = document.createElement('link'); l.rel = 'modulepreload'; l.href = new URL(u, import.meta.url).href; document.head.appendChild(l);
@@ -790,7 +790,7 @@ export function mountPine(ws, barL, opts){
     } catch (e) {
       busy = false;
       console.warn('TradeZoro: Pine run', e);
-      showErr("The Pine engine didn't load. Check your connection; an ad-blocker may be blocking cdn.jsdelivr.net.");
+      showErr("The Pine engine didn't load. Check your connection; an ad-blocker or network filter may be blocking it.");
     }
     busy = false; addBtn.disabled = false; renderStatus();
     renderLists();

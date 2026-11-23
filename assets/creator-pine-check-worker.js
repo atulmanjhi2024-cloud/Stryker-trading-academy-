@@ -2,7 +2,7 @@
 // Runs the script on the SAME engine members' charts use for community indicators (pinets 0.11.0 + our patches,
 // see assets/chart-pine-next-worker.js), on 400 synthetic 5-minute bars, off the page thread.
 // main -> worker: { id, source }    worker -> main: { id, ok, plots, error, line }
-const PINETS = 'https://cdn.jsdelivr.net/npm/pinets@0.11.0/dist/pinets.min.browser.es.js';
+const PINETS = new URL('/assets/vendor/pinets-0.11.0/pinets.min.browser.es.js', self.location.href).href;
 const ready = Promise.all([import(PINETS), import('./chart-pine-next-patches.js?v=1219')]).then(([pt, patches]) => {
   try { patches.install(pt.Context, pt, self); } catch (e) {}
   return { pt, rw: patches.rewriteSource || ((s) => s) };

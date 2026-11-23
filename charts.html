@@ -19,7 +19,6 @@
 <link rel="preconnect" href="https://firestore.googleapis.com" crossorigin>
 <link rel="dns-prefetch" href="https://www.googleapis.com">
 <link rel="dns-prefetch" href="https://strykertrades-e0cd8.firebaseapp.com">
-<link rel="dns-prefetch" href="https://cdn.jsdelivr.net">
 <link rel="stylesheet" href="assets/style-charts.css?v=1219">
 <script src="assets/skeleton.js?v=1219"></script>
 <script src="assets/sanitize.js?v=1219"></script>
@@ -118,7 +117,7 @@
     '@zag-js/tooltip':'/assets/vendor/zag-1.42.0/tooltip.js',
     '@luxalgo/vela': V + 'index.js',
     '@luxalgo/vela/plugin': V + 'plugin.js',
-    'pinets':'https://cdn.jsdelivr.net/npm/pinets@0.11.0/dist/pinets.min.browser.es.js'
+    'pinets':'/assets/vendor/pinets-0.11.0/pinets.min.browser.es.js'
   }};
   document.write('<script type="importmap">' + JSON.stringify(map) + '<\/script>');
 })();
@@ -261,7 +260,7 @@
       <script>(function(){var s=document.getElementById("stkchart-skel");if(!s)return;var d=function(){if(s.parentNode)s.remove();};if(window.__stkFirstCandles)return d();window.addEventListener("stk:first-candles",d,{once:true});})();</script>
       <div id="stkchart-fallback" class="stkchart-fallback" hidden>
         <p><b>The chart engine didn't load.</b></p>
-        <p>Check your connection and refresh the page. If it keeps failing, an ad-blocker may be blocking the cdn.jsdelivr.net script.</p>
+        <p>Check your connection and refresh the page. If it keeps failing, an ad-blocker may be blocking a script.</p>
       </div>
     </div>
 

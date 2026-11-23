@@ -29,8 +29,8 @@
 // notifications only mark the session dirty, and one re-run happens when it lands (a heavy
 // script never queues a backlog of full re-runs on every tick).
 
-const PINETS = 'https://cdn.jsdelivr.net/npm/pinets@0.11.0/dist/pinets.min.browser.es.js';
-const VELA_PINETS = 'https://cdn.jsdelivr.net/npm/@luxalgo/vela-pinets@0.2.11/dist/index.js';
+const PINETS = new URL('/assets/vendor/pinets-0.11.0/pinets.min.browser.es.js', self.location.href).href;
+const VELA_PINETS = new URL('/assets/vendor/vela-pinets-0.2.11/index.js', self.location.href).href;
 // The page passes &vela=090 while the admin 0.9.0 trial is on (same folder as its import map).
 const PLUGIN = new URL(/[?&]vela=090\b/.test(self.location.search) ? '/assets/vendor/vela-0.9.0-s16/plugin.js' : '/assets/vendor/vela-0.6.17-s4/plugin.js', self.location.href).href;
 

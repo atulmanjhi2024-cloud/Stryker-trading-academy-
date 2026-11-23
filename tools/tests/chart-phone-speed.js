@@ -4,6 +4,7 @@
 //   Live (max 3 cold loads per job, signed out):  CHART_BASE=https://tradezoro.com node tools/tests/chart-phone-speed.js
 // Run Chrome only as: systemd-run --user --scope -p MemoryMax=1000M flock /tmp/stryker-chrome.lock node ...
 // Phone = 390x844, Android UA, CPU 4x slowdown, Fast 4G (9 Mbps down / 1.5 Mbps up / 60 ms RTT).
+// SPEED_NET=3g = DevTools "Fast 3G" (1.6 Mbps, 150 ms) instead of Fast 4G.
 // --desktop = 1440x900, no throttling.
 // Numbers: FCP; CANDLES = first time a chart cell holds bars AND its candle canvas has painted pixels;
 // INTERACTIVE = toolbar, ⋯ menu, watchlist/heavy modules all mounted; long tasks > 50 ms up to then;
@@ -48,7 +49,7 @@ async function oneLoad(ctx, label, shot) {
   const cdp = await ctx.newCDPSession(p);
   await cdp.send('Network.enable');
   if (!DESK) {
-    await cdp.send('Network.emulateNetworkConditions', { offline: false, latency: 60, downloadThroughput: 9e6 / 8, uploadThroughput: 1.5e6 / 8 });
+    await cdp.send('Network.emulateNetworkConditions', (process.env.SPEED_NET === '3g' ? { offline: false, latency: 150, downloadThroughput: 1.6e6 / 8, uploadThroughput: 0.75e6 / 8 } : { offline: false, latency: 60, downloadThroughput: 9e6 / 8, uploadThroughput: 1.5e6 / 8 }));
     await cdp.send('Emulation.setCPUThrottlingRate', { rate: 4 });
   }
   const req = new Map();

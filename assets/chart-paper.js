@@ -1957,6 +1957,7 @@ function mountToolbar(bar){
     else if (a === 'connect' && L) L.connect();
     else if (a === 'reconnect' && L) (L.reconnect || L.connect)();
     else if (a === 'hl' && window.__stkHl) window.__stkHl.open();
+    else if (a === 'ctrader' && window.__stkCt) window.__stkCt.open();   // admins + beta testers: chart-live.js sets __stkCt after its check
   });
   document.addEventListener('click', (e) => { if (!pop.hidden && !wrap.contains(e.target)) setOpen(false); });
   pop.addEventListener('keydown', (e) => TM.keys(pop, e));

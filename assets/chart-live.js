@@ -27,7 +27,13 @@
 // - One live tab per account (Web Locks). Idle 15 min or hidden 2 min -> back to Paper. Kill switch: "Turn off live trading" writes
 //   settings/liveTrading {enabled:false}; the server refuses live writes while it is off.
 // - Order panel (assets/chart-order-panel.js, 2026-11-16) replaces the bottom strip while live; it calls placeTicket() -> place() only.
-// Tests: tests/finatic/chart-live.test.mjs (core + server, mocked broker), tools/tests/chart-live-browser.js (mocked endpoints only).
+// - cTrader (ADMINS AND BETA TESTERS only, Owner 23 Nov 2026): our own cTrader Open API link (assets/ctrader-trade.js -> /connect/ctrader/trade), no
+//   middle company. An admin or beta tester who taps "Allow trading with cTrader" in the Trade menu gets the cTrader account in the Live accounts list;
+//   it runs on the MetaTrader-style path below (lots, the broker's own symbol names) with these differences: stop loss / take profit
+//   ride on the order, Flatten works from the chart, and every call goes over the trade socket instead of the broker-link routes.
+//   The relay re-checks everything (admin, kill switch, member block, Enable live trading, size, the account lock, audit before send).
+// Tests: tests/finatic/chart-live.test.mjs (core + server, mocked broker), tools/tests/chart-live-browser.js (mocked endpoints only),
+// tools/tests/ctrader-trade.test.mjs + tools/tests/ctrader-trade-browser.js (mocked cTrader frames).
 // Education only. Not financial advice.
 import * as L from './chart-live-core.js?v=1227';
 
@@ -73,12 +79,16 @@ async function call(url, body, timing, fresh) {
   return j || {};
 }
 // MetaTrader accounts (AUTO-MTHELP 21 Nov) send venue 'mt': the server then checks the account record is MT4 / MT5 and uses lots
-const data = (op, extra) => call('/connect/finatic/data', Object.assign({ op, userId: S.userId }, extra || {}));
+// cTrader accounts (ids 'ct-…', admins and beta testers only) answer the same ops over their own trade socket (ctOps in assets/ctrader-trade.js)
+const CT = { mod: null, link: null, ops: null, creds: null, acct: null };
+const isCt = (id) => !!(CT.acct && id === CT.acct.id);
+const data = (op, extra) => (isCt(extra && extra.accountId) ? CT.ops.data(op, extra) : call('/connect/finatic/data', Object.assign({ op, userId: S.userId }, extra || {})));
 // COPY TRADING (assets/chart-copy.js sets window.__stkCopy): while this account is the member's copy leader, a write goes to the
 // copy route, which runs the leader order first and, only once it is accepted, one order per follower account (functions/connect/
 // finatic/copy.js). The reply is the leader's own reply plus copy.results.
 const COPY_OPS = ['place', 'modify', 'cancel', 'flatten'];
 const order = (b, timing) => {
+  if (S.acct && S.acct.ct) return CT.ops.order(b);   // never copy-traded: copy trading stays on the broker-link accounts
   const lead = Object.assign({ src: 'chart', userId: S.userId, accountId: S.acct.id }, S.acct.mt && b.op !== 'env' && b.op !== 'schema' ? { venue: 'mt' } : {}, b), cp = window.__stkCopy;
   if (cp && COPY_OPS.includes(b.op) && cp.active(S.acct.id)) return call('/connect/finatic/copy', { op: 'fan', lead }, timing).then((r) => { try { cp.after(lead, r); } catch (e) {} return r; });
   return call('/connect/finatic/order', lead, timing);
@@ -119,8 +129,9 @@ async function loadAccounts() {
     // L.acctInfo: the broker's account NAME as the broker shows it (Owner 19 Nov; never Finatic's UUID, never the internal broker id).
     // label / short are live getters (L.acctShow): the Owner's own label from Edit details wins as soon as it is saved.
     S.accounts = (Array.isArray(r.data) ? r.data : []).map((x) => { const a = L.acctInfo(x); a.name = a.number; return withShow(a); }).filter((a) => a.id);
-    if (S.acct) { const still = S.accounts.find((a) => a.id === S.acct.id); if (still) S.acct = still; else leave(true); }
   } catch (e) { S.accounts = []; if (!e.needsConnect) S.loadErr = e.message; }
+  if (CT.acct) S.accounts.push(CT.acct);
+  if (S.acct) { const still = S.accounts.find((a) => a.id === S.acct.id); if (still) S.acct = still; else leave(true); }
   S.loaded = true; render(); menuEvent('accounts');
 }
 function withShow(a) {
@@ -269,6 +280,13 @@ async function saveMeta(id, m) {
 // ---- Disconnect one account: revoke ITS grant (functions/connect/finatic/data.js op 'revoke'), back to Paper if it was active.
 async function disconnect(id) {
   const a = S.accounts.find((x) => x.id === id); if (!a) return { ok: false, error: 'Account not found.' };
+  if (a.ct) {   // cTrader: forget the trading sign-in on this device (the view-only data sign-in is not touched)
+    if (S.acct && S.acct.id === id) await leave(true);
+    try { if (CT.link) CT.link.shut(); await CT.mod.forgetTradeCreds(); } catch (e) { return { ok: false, error: 'Could not forget the cTrader sign-in.' }; }
+    CT.acct = CT.link = CT.ops = CT.creds = null; delete S.bal[id]; await loadAccounts();
+    toast('cTrader trading disconnected on this device. To remove TradeZoro’s access fully, revoke it in your cTrader ID settings.', 'success');
+    return { ok: true, wasActive: false };
+  }
   let gid = '';
   try { const g = await data('grants'); gid = L.grantFor(a, g.data); } catch (e) { return { ok: false, error: e.message || 'Could not read the connection.' }; }
   if (!gid) return { ok: false, error: 'Could not tell which connection this account belongs to. Use Manage to disconnect.' };
@@ -334,12 +352,12 @@ function envCheck() {
         if (!S.acct || S.acct.id !== id) return null;
         if (r && typeof r.enabled === 'boolean') { S.env = r; S.envAt = now(); S.envErr = ''; return r; }
         last = new Error('Unexpected answer');
-      } catch (e) { last = e; if (e.status === 403 && !e.code) break; }   // 403 'Admins only' / 'Live orders are off' is an answer, not a blip
+      } catch (e) { last = e; if ((e.status === 403 && !e.code) || e.reconnect) break; }   // 403 'Admins only' / 'Live orders are off' is an answer, not a blip
       if (i < ENV_BACKOFF.length) await new Promise((res) => setTimeout(res, TEST && TEST.fastRetry ? 20 : ENV_BACKOFF[i]));
     }
     if (S.acct && S.acct.id === id) {
       if (last && last.status === 403 && /live orders are off/i.test(last.message || '')) { S.env = { env: S.env ? S.env.env : '', enabled: false }; S.envAt = now(); S.envErr = ''; }
-      else S.envErr = last && last.status === 401 ? 'Your sign-in expired. Reload the page to sign in again.' : 'Couldn’t reach the broker link.';
+      else S.envErr = S.acct.ct && last && last.message ? last.message : last && last.status === 401 ? 'Your sign-in expired. Reload the page to sign in again.' : 'Couldn’t reach the broker link.';
     }
     return null;
   })().finally(() => { S.envBusy = null; render(); });
@@ -441,7 +459,8 @@ function infoMt(sym) {
   if (!Number.isFinite(last) && TEST && TEST.last) last = TEST.last(sym);
   // the chart's last price is only the broker's price when the chart IS the instrument (forex / spot pairs); a futures chart is not the CFD
   const lp = m.same && Number.isFinite(last) ? last : undefined;
-  return { mt: S.acct.mt, map: m, code, root: m.key, front: code, held: false, tick: L.mtTick(m.key), pv: null, pos, working, last: lp, chartLast: last, pnl: pos.qty ? pos.upl : null, lots: L.mtLots(S.placeSchema) };
+  const lots = S.acct.ct ? ctLots(code) : L.mtLots(S.placeSchema);
+  return { mt: S.acct.mt, ct: !!S.acct.ct, map: m, code, root: m.key, front: code, held: false, tick: S.acct.ct ? ctTick(code, m.key) : L.mtTick(m.key), pv: null, pos, working, last: lp, chartLast: last, pnl: pos.qty ? pos.upl : null, lots };
 }
 export function badgeFor(sym) {
   if (!S.acct) return '';
@@ -614,19 +633,23 @@ async function place(sym, o, src) {
 // every server guard of the futures path applies (kill switch, audit, read gate)
 async function placeMt(sym, o, src) {
   if (!S.envBusy && (!S.env || now() - S.envAt > ENV_MAX_AGE)) await envCheck();
+  if (S.acct && S.acct.ct && S.env && S.env.consent === false && S.env.blocked !== true) { enableLive(); return null; }   // one-time step; nothing sent
   const why = blockReason(); if (why) { toast(why, 'error'); return null; }
   const i = infoMt(sym); if (!i) { toast('This chart has no ' + S.acct.mt + ' symbol. Open an index, gold, oil or forex chart.', 'error'); return null; }
   if (!i.code) { toast('Pick the ' + S.acct.mt + ' symbol for ' + i.map.label + ' first.', 'error'); return null; }
-  if (o.sl != null || o.tp != null) { toast(MT_NO_SLTP, 'error'); return null; }
+  if ((o.sl != null || o.tp != null) && !(i.ct && i.map.same)) { toast(i.ct ? CT_NO_SLTP : MT_NO_SLTP, 'error'); return null; }
+  if (i.ct && !i.lots.fromSchema) { toast('The size rules for ' + i.code + ' are still loading. Try again in a moment.', 'error'); return null; }
   const qty = L.roundLots(o.qty, i.lots);
   if (!qty) { toast('Size is ' + i.lots.min + ' to ' + i.lots.max + ' lots.', 'error'); return null; }
   if (o.type !== 'market') { const band = L.priceBandError(Number(o.price), i.last); if (band) { toast(band, 'error'); return null; } }
   const b = L.buildPlaceMt({ sym: i.code, side: o.side, qty, type: o.type, price: o.price, lots: i.lots, same: i.map.same, asset: L.mtAsset(S.placeSchema) }); if (b.error) { toast(b.error, 'error'); return null; }
-  const body = Object.assign(b.body, { idemKey: uuid() });
+  const body = Object.assign(b.body, { idemKey: uuid() }, i.ct && o.sl != null ? { sl: o.sl } : {}, i.ct && o.tp != null ? { tp: o.tp } : {});
+  if (i.ct) { const sig = JSON.stringify(Object.assign({}, body, { idemKey: '' })), t = now(); if (S.lastSend && S.lastSend.sig === sig && t - S.lastSend.at < L.DUP_MS) return null; S.lastSend = { sig, at: t }; }   // double-click guard
   const desc = sideWord(o.side) + ' ' + lotTxt(qty) + ' ' + i.code + ' ' + (o.type === 'market' ? 'MARKET' : o.type.toUpperCase() + ' @ ' + px(Number(body.limitPrice || body.stopPrice)));
   return write(body, desc + (src ? ' (' + src + ')' : ''), i.map.same ? L.pendingLine(body, i.last) : null);
 }
 const MT_NO_SLTP = 'Stop loss and take profit for MetaTrader: set them in MetaTrader for now.';
+const CT_NO_SLTP = 'This chart’s prices are not your cTrader prices for this symbol, so stop loss and take profit can’t be set from here.';
 // ---- stop loss / take profit: after every positions read, ask the server to move the group on (place the children after the fill,
 // one-cancels-other when one fills). The server decides and acts from its own record and a fresh read; this only triggers it.
 const groupOpen = (code) => !!(S.group && S.group.state !== 'closed' && (!code || S.group.code === code));
@@ -656,6 +679,7 @@ export async function cancel(oid) {
 }
 export async function flatten(sym) {
   if (!S.acct || S.busy) return null;
+  if (S.acct.ct) return flattenCt(sym);
   if (S.acct.mt) { toast('Close ' + S.acct.mt + ' positions in MetaTrader for now. Working orders can be cancelled here.', 'info'); return null; }
   if (S.env && S.env.enabled === false) { toast('Live orders are off on the server.', 'error'); return null; }
   if (!S.lastOkStart) { toast('Positions are still loading.', 'error'); return null; }
@@ -666,6 +690,21 @@ export async function flatten(sym) {
   if (!ok) return null;
   if (groupOpen(i.code)) { S.group = null; S.groupCode = ''; }   // the server cancels the children and drops the record; re-read after
   return write({ op: 'flatten', symbol: i.code, idemKey: L.flattenKey(S.acct.id, i.code, i.pos.qty, String(S.lastOkStart)) }, 'Flatten ' + i.code);
+}
+
+// cTrader: flatten one broker symbol (the chart's mapped symbol, or a code straight from the positions list). One tap to confirm;
+// ctOps cancels the symbol's working orders, then closes each position, one write at a time, each with its own key.
+async function flattenCt(symOrCode) {
+  if (S.env && S.env.enabled === false) { toast('Live orders are off on the server.', 'error'); return null; }
+  if (!S.lastOkStart) { toast('Positions are still loading.', 'error'); return null; }
+  const i = symOrCode && P && P.activeSymbol && symOrCode === P.activeSymbol() ? infoMt(symOrCode) : null;
+  const code = i ? i.code : String(symOrCode || ''); if (!code) { toast('Pick the cTrader symbol for this chart first.', 'error'); return null; }
+  const pos = L.netPosition(S.data.positions, code), working = L.workingOrders(S.data.orders, code);
+  if (!pos.qty && !working.length) { toast('Nothing to flatten on ' + code + '.', 'info'); return null; }
+  const ok = await confirmSheet({ title: 'Flatten ' + code, code, side: pos.qty > 0 ? 'sell' : 'buy', go: 'Flatten ' + code,
+    lines: ['Symbol <b>' + esc(code) + '</b> (cTrader)', 'Cancels ' + working.length + ' working order' + (working.length === 1 ? '' : 's') + ', then closes ' + (pos.qty ? (pos.qty > 0 ? 'the long ' : 'the short ') + lotTxt(Math.abs(pos.qty)) : 'nothing more') + ' at market.'] });
+  if (!ok) return null;
+  return write({ op: 'flatten', symbol: code, idemKey: L.flattenKey(S.acct.id, code, pos.qty, String(S.lastOkStart)) }, 'Flatten ' + code);
 }
 
 // ---- read-only copy of the poll data for the Positions & Orders dock (assets/chart-posorders.js). No new routes: positions/orders come from
@@ -688,7 +727,7 @@ export function dock() {
   const pos = [], ord = [];
   for (const code of codes) {
     const n = L.netPosition(S.data.positions, code), root = L.rootOfCode(code), pv = L.pvOfCode(code);
-    if (n.qty && S.acct.mt) { pos.push({ sym: code, side: n.qty > 0 ? 'Long' : 'Short', buy: n.qty > 0, qty: Math.abs(n.qty).toFixed(2), avg: px(n.avg), last: '—', pnl: n.upl, close: () => flatten() }); }
+    if (n.qty && S.acct.mt) { pos.push({ sym: code, side: n.qty > 0 ? 'Long' : 'Short', buy: n.qty > 0, qty: Math.abs(n.qty).toFixed(2), avg: px(n.avg), last: '—', pnl: n.upl, close: () => (S.acct.ct ? flattenCt(code) : flatten()) }); }
     else if (n.qty) { const last = P.lastPrice && root ? P.lastPrice(root + '1!') : undefined; pos.push({ sym: code, side: n.qty > 0 ? 'Long' : 'Short', buy: n.qty > 0, qty: Math.abs(n.qty), avg: px(n.avg), last: px(last), pnl: pv ? L.openPnl(n.qty, n.avg, Number.isFinite(last) ? last : null, pv, n.upl) : n.upl, close: () => flatten(L.chartSymOf(code)) }); }
     for (const o of L.workingOrders(S.data.orders, code)) ord.push({ sym: code, side: o.side === 'buy' ? 'Buy' : 'Sell', buy: o.side === 'buy', type: (o.type || '').replace(/^./, (c) => c.toUpperCase()), qty: o.qty, price: o.price ? px(o.price) : '—', status: o.cancelling ? 'Cancelling' : 'Working', cancel: o.cancelling ? null : () => cancel(o.id) });
   }
@@ -775,6 +814,7 @@ export function caps() {
   if (S.acct && S.acct.mt) {
     const i = P && P.activeSymbol ? infoMt(P.activeSymbol()) : null, same = !!(i && i.map.same);
     const st = !!S.placeSchema && same && L.stopsSupported(S.placeSchema);
+    if (S.acct.ct) return { stop: same, bracket: same, limit: same, mt: true, why: same ? '' : CT_NO_SLTP, marketOnly: '' };
     return { stop: st, bracket: false, limit: same, mt: true, why: !same ? 'This chart’s prices are not your broker’s prices for this symbol, so only market orders go from here.' : MT_NO_SLTP, marketOnly: MT_NO_SLTP };
   }
   if (!S.placeSchema) return { stop: false, bracket: false, why: S.placeErr ? 'The broker’s order types could not be read.' : 'Loading the broker’s order types…' };
@@ -785,7 +825,7 @@ export function opInfo(sym) {
   if (!S.acct) return null;
   const i = info(sym); if (!i) return null;
   const g = S.group && S.group.code === i.code ? S.group : null;
-  if (i.mt) return { mt: i.mt, map: i.map, lots: i.lots, code: i.code, root: i.root, tick: i.tick, pv: null, last: i.last, chartLast: i.chartLast, pos: i.pos, working: i.working, pnl: i.pnl, held: false, env: envWord(), killed: !!S.killed, block: blockReason(), busy: S.busy, rtt: L.rttText(S.rtt), retry: !S.env && !!S.envErr && !S.envBusy, group: null, alarm: '' };
+  if (i.mt) return { mt: i.mt, map: i.map, lots: i.lots, code: i.code, root: i.root, tick: i.tick, pv: null, last: i.last, chartLast: i.chartLast, pos: i.pos, working: i.working, pnl: i.pnl, held: false, env: envWord(), killed: !!S.killed, block: blockReason(), busy: S.busy, rtt: L.rttText(S.rtt), retry: !S.env && !!S.envErr && !S.envBusy, group: null, alarm: '', admin: isAdmin, needsEnable: !!(S.acct.ct && S.env && S.env.consent === false && S.env.blocked !== true) };
   return { code: i.code, root: i.root, tick: i.tick || 0.01, pv: i.pv, asset: i.asset, last: i.last, pos: i.pos, working: i.working, pnl: i.pnl, held: i.held, env: envWord(), killed: !!S.killed, block: blockReason(), busy: S.busy, rtt: L.rttText(S.rtt),
     retry: !S.env && !!S.envErr && !S.envBusy, admin: isAdmin, needsEnable: !!(S.env && S.env.consent === false && S.env.blocked !== true), group: g, alarm: g && g.state === 'unprotected' ? g.why : '' };
 }
@@ -948,11 +988,41 @@ const CSS = `
 }
 `;
 
+// ---- cTrader (admins and beta testers): the saved trading sign-in becomes one more live account; "Allow trading with cTrader" starts the sign-in
+function ctLots(code) { const l = CT.link && CT.mod ? CT.mod.lotsForName(CT.link, code) : null; if (!l && CT.link && !ctLots.wait) { ctLots.wait = true; setTimeout(() => { ctLots.wait = false; render(); }, 800); } return l || { min: 0.01, step: 0.01, max: 10, fromSchema: false }; }
+function ctTick(code, key) { const id = CT.link && CT.link.byName.get(String(code || '').toUpperCase()), d = id && CT.link.details.get(id); return d && Number.isInteger(d.digits) ? Math.pow(10, -d.digits) : L.mtTick(key); }
+// admin, or a beta tester (POST /api/beta/status: verified email on settings/betaTesters). This only shows the option; the trade
+// relay decides again on the server (functions/connect/ctrader/trade.js mayTrade) before anything is sent.
+async function ctAllowed() {
+  if (isAdmin) return true;
+  if (TEST && TEST.isBeta) return !!TEST.isBeta();
+  try {
+    const t = await firebase.auth().currentUser.getIdToken();
+    const r = await fetch('/api/beta/status', { method: 'POST', headers: { 'content-type': 'application/json', authorization: 'Bearer ' + t }, body: '{}' });
+    const j = r.ok ? await r.json() : null; return !!(j && j.beta === true);
+  } catch (e) { return false; }
+}
+async function loadCt() {
+  try {
+    CT.mod = CT.mod || await import('./ctrader-trade.js?v=1227');
+    window.__stkCt = { open: () => CT.mod.startTradeSignIn(uid).catch((e) => toast(e.message || 'Could not open cTrader.', 'error')), get connected() { return !!CT.acct; } };
+    const c = TEST && TEST.ctCreds ? TEST.ctCreds : await CT.mod.loadTradeCreds();   // test: localhost fixture creds + a mocked socket
+    if (!c || !c.access || !c.accountId) { CT.acct = null; return; }
+    CT.creds = c; CT.link = new CT.mod.TradeLink(c, TEST && TEST.ctDeps ? TEST.ctDeps : undefined);
+    CT.link.keep = () => !!(S.acct && S.acct.ct);   // heartbeats only while the account is picked; else the relay's idle close ends it
+    CT.link.onEvent = (k, m) => { if (k === 'exec' && S.acct && S.acct.ct) fastReads(); if (k === 'resolved') { toast('Your last cTrader order was checked: ' + (m.result === 'accepted' ? 'it reached cTrader.' : 'it did not reach cTrader. Nothing was sent twice.'), 'info'); if (S.acct && S.acct.ct) read(); } };
+    CT.ops = CT.mod.ctOps(CT.link, { lastPrice: () => { const i = P && P.activeSymbol ? infoMt(P.activeSymbol()) : null; return i && Number.isFinite(i.last) ? i.last : null; } });
+    const a = L.acctInfo({ accountId: 'ct-' + c.accountId, accountNumber: String(c.login || c.accountId) });
+    a.broker = 'cTrader'; a.text = 'cTrader ' + a.number + (c.isLive === false ? ' demo' : ''); a.name = a.number; a.mt = 'cTrader'; a.ct = true; a.demo = c.isLive === false;
+    CT.acct = withShow(a);
+  } catch (e) { CT.acct = null; }
+}
 export function mountLive(paperApi, opts) {
   P = paperApi; uid = opts.uid; toastFn = opts.toast || null; isAdmin = !!opts.admin;
   if (!document.getElementById('stklv-css')) { const st = document.createElement('style'); st.id = 'stklv-css'; st.textContent = CSS; document.head.appendChild(st); }
   P.setLiveHook({ mtFor, mtSetSymbol, active, noLiveWhy, lines, chipText, badgeFor, tickOf, chipX, drag, flattenActive, openTicket, renderHead, renderSummary, renderView, foot, dock, dockTrades, ladder, domState, cancel, flatten, caps, opInfo, placeTicket, kill, killOn, retryEnv, enableLive });
   loadMeta(); loadAccounts();
+  ctAllowed().then((ok) => { if (ok) loadCt().then(loadAccounts); });   // cTrader trading: admins and beta testers (the relay re-checks)
   if (isAdmin) import('./chart-copy.js?v=1227').then((m) => m.mountCopy({ live: window.__stkLive, paper: P, toast })).catch((e) => console.warn('TradeZoro: copy trading', e));   // Trade menu > Copy trading
   window.addEventListener('storage', (e) => { if (e.key === lsUserKey()) loadAccounts(); });
   Object.assign(window.__stkLive, { mtFor, mtSetSymbol, connect, reconnect, pick, leave, read, loadAccounts, info, confirmSheet, balance, summary, metaOf, saveMeta, disconnect, L, envCheck, retryEnv, syncGroup, enableLive, get admin() { return isAdmin; } });

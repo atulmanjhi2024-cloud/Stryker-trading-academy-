@@ -2,6 +2,8 @@
 // Flow: strip the code from the URL at once, check the single-use state (same signed-in user, under 10 min), swap the code
 // through /connect/ctrader/token, list the accounts over the relay, let the member pick one if there are several, keep the
 // tokens + chosen account in the device vault, go back to /charts (fixed address; never taken from the URL).
+// 23 Nov: the SAME return page also finishes the admin-only "Allow trading" sign-in (assets/ctrader-trade.js). That sign-in has its
+// own single-use state record; when it matches, the tokens go to the separate trading vault entry, never to the data source.
 (function () {
   var q = new URLSearchParams(location.search);
   var code = q.get('code'), state = q.get('state'), denied = q.get('error');
@@ -29,10 +31,23 @@
       p.after(box);
     });
   }
+  function trade(c, ct, tr, u) {   // "Allow trading": pick the account, keep it in the trading vault entry, back to the charts
+    h.textContent = 'Allowing trading…';
+    return u.getIdToken().then(function (idt) { return tr.swapTradeCode(code, idt); }).then(function (creds) {
+      return ct.listAccounts(creds).then(function (list) {
+        if (!list.length) return end('No cTrader account found', 'This cTrader ID has no trading account.');
+        return (list.length === 1 ? Promise.resolve(list[0]) : pick(list)).then(function (x) {
+          creds.accountId = x.id; creds.isLive = x.isLive; creds.login = x.login; creds.broker = x.broker;
+          return c.bindUser(u.uid).then(function () { return tr.saveTradeCreds(creds); }).then(function () { try { localStorage.setItem('tz-ctrader-trade-at', String(Date.now())); } catch (e) { /* private mode */ } location.replace('/charts'); });
+        });
+      });
+    }).catch(function () { end('Trading was not allowed', 'Something went wrong. Try again from the Trade menu in the charts.'); });
+  }
   user().then(function (u) {
     if (!u) return end('Sign in first', 'Sign in to TradeZoro, then connect cTrader again.');
-    return Promise.all([import('./byo-core.js?v=1227'), import('./byo-ctrader.js?v=1227')]).then(function (m) {
-      var c = m[0], ct = m[1];
+    return Promise.all([import('./byo-core.js?v=1227'), import('./byo-ctrader.js?v=1227'), import('./ctrader-trade.js?v=1227')]).then(function (m) {
+      var c = m[0], ct = m[1], tr = m[2];
+      if (tr.takeTradeState(state, u.uid)) return trade(c, ct, tr, u);
       var rec = ct.takeCtraderState(state, u.uid);
       if (!rec) return end('cTrader was not connected', 'The sign-in link expired. Start again from Data source in the charts.');
       return u.getIdToken().then(function (idt) { return ct.ctraderTokenCall({ grant: 'code', code: code }, idt); })

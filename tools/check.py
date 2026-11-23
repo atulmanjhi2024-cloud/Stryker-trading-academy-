@@ -655,6 +655,15 @@ def check_stripe_void():
         fail('stripe void: ' + (r.stdout + r.stderr).strip()[-300:])
 
 
+def check_ctrader():
+    """cTrader (data relay + admin-only trading relay, 23 Nov): allow-lists, per-type checks, gates, audit, idempotency, account lock,
+    mocked cTrader end to end. tools/tests/ctrader*.test.mjs. No network, never a real order."""
+    for t in ('ctrader.test.mjs', 'ctrader-trade.test.mjs', 'ctrader-trade-link.test.mjs'):
+        r = subprocess.run(['node', 'tools/tests/' + t], capture_output=True, text=True, cwd=ROOT, timeout=180)
+        if r.returncode != 0 or 'Error' in r.stderr:
+            fail('ctrader ' + t + ': ' + (r.stdout + r.stderr).strip()[-300:])
+
+
 def check_metric_alerts():
     """Metric alerts (Owner 2026-11-07): client logic + engine/rules parity (tools/tests/metric-alerts.test.mjs) and the engine rules
     (tools/tests/metric-alerts-test.py, pure + one fake round; no network)."""
@@ -850,7 +859,7 @@ def main():
     # two browser checks start first so they overlap the rest
     fast = '--fast' in sys.argv   # static checks only; the browser suites run in GitHub (site-checks.yml)
     browser = [] if fast else [check_app_shell_browser, check_drawer_touch]
-    order = [check_desktop_signin, check_pro_features, check_compare_page, check_push_rules, check_stripe_void, check_metric_alerts, check_phantom, check_days_load, check_finatic, check_workspaces, check_account_sync, check_latency, check_zscript_engine, check_thinkscript_engine, check_mql5_engine, *browser, check_roadmap_log, check_roadmap_cards,
+    order = [check_desktop_signin, check_pro_features, check_compare_page, check_push_rules, check_stripe_void, check_ctrader, check_metric_alerts, check_phantom, check_days_load, check_finatic, check_workspaces, check_account_sync, check_latency, check_zscript_engine, check_thinkscript_engine, check_mql5_engine, *browser, check_roadmap_log, check_roadmap_cards,
              check_nav_features_menu, check_home_stats, check_charts_css_subset, check_merge_markers, check_unversioned_assets,
              check_module_import_versions, check_versioned_sources, check_js_syntax, check_html_structure,
              check_css_braces, check_referenced_assets_exist, check_build_markers, check_mobile_width_guards,

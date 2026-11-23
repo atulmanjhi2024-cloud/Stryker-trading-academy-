@@ -20,7 +20,10 @@ export const brokerKey = (name) => { const k = String(name || '').toLowerCase().
 // Broker tile: a coloured rounded square with the broker's initial (text only). Owner decision 21 Nov 2026: broker NAMES and simple text
 // labels are allowed for members, third-party logo images are not, so the old assets/img/brokers/*.png marks are no longer used.
 export function logo(name, size) {
-  const k = brokerKey(name), ini = esc((String(name || '?').trim()[0] || '?').toUpperCase());
+  const k = brokerKey(name);
+  // cTrader (admin-only live trading, Owner 23 Nov): its own mark is allowed on the broker tile
+  if (k === 'ctrader') return '<span class="stktm-logo stktm-ct ' + (size === 16 ? 'stktm-s16' : size === 24 ? 'stktm-s24' : size === 40 ? 'stktm-s40' : 'stktm-s28') + '" aria-hidden="true"><img src="/assets/venue-logos/ctrader.png" alt="" width="32" height="32" decoding="async"></span>';
+  const ini = esc((String(name || '?').trim()[0] || '?').toUpperCase());
   const hue = HUES[[...k].reduce((n, c) => n + c.charCodeAt(0), 0) % HUES.length];
   return '<span class="stktm-logo ' + (size === 16 ? 'stktm-s16' : size === 24 ? 'stktm-s24' : size === 40 ? 'stktm-s40' : 'stktm-s28') + '" aria-hidden="true"><span class="stktm-fb" style="background:' + hue + '">' + ini + '</span></span>';
 }
@@ -105,6 +108,8 @@ export function draw(pop, live, paper) {
     if (window.__stkCopy && live.accounts.length) { const st = window.__stkCopy.badge(); h += '<button type="button" role="menuitem" class="stktm-pill stktm-copytr" data-x="copytrade" tabindex="-1">' + SV(16, '<rect x="8" y="8" width="12" height="12" rx="2"/><path d="M4 16V6a2 2 0 0 1 2-2h10"/>') + '<span>Copy trading</span>' + (st ? '<span class="stktm-copyst' + (st.on ? ' on' : '') + '">' + esc(st.text) + '</span>' : '') + '</button>'; }
     // the saved connection expired: a quiet Reconnect (reloads it, no broker portal); "Connect a broker" always opens the portal
     if (act && live.readErr && /renew/i.test(live.readErr)) h += '<button type="button" role="menuitem" class="stktm-pill stktm-recon" data-a="reconnect" tabindex="-1">' + SV(16, '<path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/>', 2.2) + 'Reconnect</button>';
+    // cTrader (admins and beta testers): the separate "Allow trading" sign-in; the view-only data sign-in (Data source) is never upgraded by it
+    if (window.__stkCt && !window.__stkCt.connected) h += '<button type="button" role="menuitem" class="stktm-pill stktm-ctadd" data-a="ctrader" tabindex="-1">' + logo('cTrader', 16) + 'Allow trading with cTrader</button>';
     if (window.__stkHl) h += '<button type="button" role="menuitem" class="stktm-pill stktm-hl" data-a="hl" tabindex="-1">Hyperliquid wallet</button>';   // admin only: hl-trade.js sets window.__stkHl after its admin check
   }
   pop.innerHTML = h;

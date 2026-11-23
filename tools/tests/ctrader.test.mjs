@@ -156,13 +156,16 @@ await t('OAuth URL: scope=accounts only, fixed redirect, single-use state', () =
   assert.ok(ct.takeCtraderState(s3, 'u1', st)); assert.equal(ct.takeCtraderState(s3, 'u1', st), null, 'single use');
   assert.throws(() => ct.ctraderAuthUrl('C', null, st), /Sign in/);
 });
-await t('the trading scope word appears nowhere in cTrader code, pages or this app', () => {
+// 23 Nov: the admin-only "Allow trading" sign-in lives ONLY in assets/ctrader-trade.js (tools/tests/ctrader-trade.test.mjs); the data
+// sign-in files below must stay view-only.
+await t('the trading scope word appears nowhere in the data sign-in code, pages or this app', () => {
   const bad = 'scope=' + 'trading';
   const files = ['assets/byo-ctrader.js', 'assets/ctrader-callback.js', 'ctrader-callback.html', 'assets/byo-ui.js', 'assets/byo-core.js', 'functions/connect/ctrader/ws.js', 'functions/connect/ctrader/token.js', 'functions/connect/ctrader/_relay.js', '_redirects', '_headers'];
   for (const p of files) assert.ok(!readFileSync(new URL('../../' + p, import.meta.url), 'utf8').includes(bad), p);
   assert.ok(!ct.ctraderAuthUrl('C', 'u1', mem()).includes(bad));
   assert.equal(ct.CT.SCOPE, 'accounts');
-  assert.ok(!/trading/i.test(JSON.stringify({ ...SOURCES.find((s) => s.id === 'ctrader') })), 'catalogue copy has no trading word');
+  // "trading account" is cTrader's own word for an account; the copy must never offer trading permission
+  assert.ok(!/allow trading|trading permission|place orders|scope.{0,3}trading/i.test(JSON.stringify({ ...SOURCES.find((s) => s.id === 'ctrader') })), 'catalogue copy never offers trading');
   const walk = (d) => readdirSync(d).flatMap((x) => { const p = d + '/' + x; return statSync(p).isDirectory() ? (x === 'node_modules' || x === '.git' || x === 'vendor' ? [] : walk(p)) : /\.(js|mjs|html)$/.test(x) && x !== 'ctrader.test.mjs' ? [p] : []; });
   for (const p of [...walk(new URL('../../assets', import.meta.url).pathname), ...walk(new URL('../../functions', import.meta.url).pathname)]) assert.ok(!readFileSync(p, 'utf8').includes(bad), p);
 });

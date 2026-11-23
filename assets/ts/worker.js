@@ -10,7 +10,7 @@
 //                   {type:'run', id, source, bars, inputs, symbol, tfMs, futuresDay, tick, securities}
 //                                                                         -> out (compiler.js execute; out.need = more bars wanted)
 //   worker -> page  {type:'ready'} | {type:'result', id, out} | {type:'error', id, message}
-import { analyze, execute, LIMITS } from './compiler.js?v=1233';
+import { analyze, execute, LIMITS } from './compiler.js?v=1234';
 
 const post = self.postMessage.bind(self);
 const MAX_OUT = 32 * 1024 * 1024;

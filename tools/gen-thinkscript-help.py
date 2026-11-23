@@ -98,7 +98,7 @@ body = '''<p>thinkScript is a study language many traders already use. On ZoroCh
 <li>Drawing tools that only exist on other platforms. Use plots, clouds, labels and bubbles.</li></ul></div>
 <h2 id="limits">Limits</h2>
 <ul><li>Up to 8 thinkScript studies per chart, 256 KB per study, 50,000 bars.</li>
-<li>A <code>fold</code> can run up to 20,000 times on one bar. A study that runs longer than about 20 seconds is stopped with a message.</li>
+<li>A <code>fold</code> can run up to 20,000 times on one bar. There is no time limit: a long study keeps going until it finishes or you remove it.</li>
 <li>Another timeframe or symbol is loaded through the chart. It must be the chart's timeframe or longer.</li>
 <li>Results can differ slightly from other platforms where the first bars of an average are seeded differently. Check a study against a chart you trust before you rely on it.</li></ul>
 <p class="bh-small">thinkScript is the name of the language. TradeZoro wrote its own engine for it. Education only. Not financial advice.</p>''' % dict(example=html.escape(example), nf=len(cat['f']), fn=names(cat['f']), ns=len(cat['s']), st=names(cat['s']), consts=consts)

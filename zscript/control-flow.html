@@ -199,7 +199,7 @@ higher = <span class="m">0</span>
 <p>Zscript runs your script on every bar, so a loop that runs 500 times does 500 times the work on every one of thousands of bars. Two safeguards protect you and everyone else:</p>
 <ul>
 <li>A loop has a maximum number of turns per bar, and your script has a maximum amount of work per bar. Hit either and the script stops with a clear message on the line that went too far.</li>
-<li>The first run must finish in 20 seconds.</li>
+<li>There is no time limit: a long first run keeps going until it finishes or you remove the script.</li>
 </ul>
 <p>When you can, use the built-in functions such as <code>ta.highest</code> or <code>ta.sma</code>: they are faster than the same logic in a loop. More in <a href="/zscript/limits">Limits</a>.</p>
 <p><code>break</code> leaves a loop early. <code>continue</code> skips to the next turn.</p></div>

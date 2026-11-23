@@ -41,8 +41,9 @@ const post = (m) => self.postMessage(m);
 // commit re-uploaded the chart canvases, and that starved this worker: Liquidity Master on 1m
 // NQ took ~40 s on the chart page vs ~5 s alone.
 const computing = new Set();
-function busyOn(s){ const was = computing.size; computing.add(s.id); if (!was) post({ kind: 'busy', on: true }); }
-function busyOff(s){ if (!computing.delete(s.id)) return; if (!computing.size) post({ kind: 'busy', on: false }); }
+// 'run' {sessionId, on}: this session is computing / done (page: Calculating chip after 3 s, chart-pine.js).
+function busyOn(s){ const was = computing.size; if (computing.has(s.id)) return; computing.add(s.id); post({ kind: 'run', sessionId: s.id, on: true }); if (!was) post({ kind: 'busy', on: true }); }
+function busyOff(s){ if (!computing.delete(s.id)) return; post({ kind: 'run', sessionId: s.id, on: false }); if (!computing.size) post({ kind: 'busy', on: false }); }
 let engine = null;
 const sessions = new Map();
 const fetchWaits = new Map();

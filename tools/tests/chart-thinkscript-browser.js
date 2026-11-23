@@ -206,17 +206,17 @@ const RSI_SRC = [
     });
     check(lock.got === 'ready' && /Unknown function/.test(lock.msg || ''), 'worker starts and member text never reaches JS: ' + JSON.stringify(lock));
     const killed = await p.evaluate(async () => {
-      const { TsRunner, KILL_MS } = await import('/assets/ts/runner.js?v=' + document.querySelector('meta[name="stryker-build"]').content);
-      KILL_MS.run = 1500;
-      const r = new TsRunner(); const t0 = Date.now();
+      const { TsRunner } = await import('/assets/ts/runner.js?v=' + document.querySelector('meta[name="stryker-build"]').content);
+      const r = new TsRunner();
       const n = 50000, b = { time: [], open: [], high: [], low: [], close: [], volume: [] };
       for (let i = 0; i < n; i++) { b.time.push(i * 6e4); b.open.push(1); b.high.push(1); b.low.push(1); b.close.push(1); b.volume.push(1); }
       await r.analyze('plot x = 1;');   // worker up
-      const out = await r.run({ source: 'plot a = fold i = 0 to 20000 with s do s + (fold j = 0 to 20000 with q do q + 1);', bars: b });
-      r.dispose();
-      return { ms: Date.now() - t0, msg: out && out.error && out.error.message };
+      let settled = false; const pr = r.run({ source: 'plot a = fold i = 0 to 20000 with s do s + (fold j = 0 to 20000 with q do q + 1);', bars: b }).then(() => { settled = true; }, () => { settled = true; });
+      await new Promise((res) => setTimeout(res, 3000));
+      const before = settled; const t0 = Date.now(); r.dispose(); await pr;
+      return { before, ms: Date.now() - t0, gone: r.w === null };
     });
-    check(killed.ms < 6000 && /stopped|longer/.test(killed.msg || ''), 'a runaway study is killed: ' + JSON.stringify(killed));
+    check(!killed.before && killed.gone && killed.ms < 1000, 'no time limit: a long study keeps running until removed (dispose ends it): ' + JSON.stringify(killed));
     // indicator window rows
     await p.evaluate(() => window.STRYKER_TS.close());
     await p.evaluate(() => window.STRYKER_VELA.indicatorPicker.open());

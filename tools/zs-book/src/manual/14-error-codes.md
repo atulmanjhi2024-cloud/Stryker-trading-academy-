@@ -66,7 +66,7 @@ Each message has a code, a line and column, and often a hint. Words in {braces} 
 
 | Code | Meaning |
 |---|---|
-| E401 | Script took longer than 20 s. |
+| E401 | Script ran past its time limit (not used on charts). |
 | E402 | History `[{n}]` is beyond max_bars_back ({m}). Hint: raise max_bars_back in indicator(). |
 | E403 | Too many operations on one bar (limit 1,000,000). Hint: a loop may be too large. |
 | E404 | Loop ran more than 100,000 times on one bar. |

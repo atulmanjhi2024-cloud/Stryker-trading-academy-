@@ -226,7 +226,9 @@ export function createShell(o){
     // state: 'ok' | 'err' | 'info' | 'busy'
     head(state, text){
       // busy -> busy (progress %): change the text only, so the spinner keeps turning
-      if (state === 'busy' && probHd.dataset.s === 'busy' && probHd.lastChild && probHd.lastChild.tagName === 'SPAN' && probHd.firstChild !== probHd.lastChild) { probHd.lastChild.textContent = text; return; }
+      // (a Cancel button at the end stays put too)
+      const tx = probHd.dataset.s === 'busy' && probHd.querySelector(':scope > span:not(.sed-spin)');
+      if (state === 'busy' && tx) { if (tx.textContent !== text) tx.textContent = text; return; }
       probHd.dataset.s = state; probHd.innerHTML = state === 'busy' ? '<span class="sed-spin" aria-hidden="true"></span>' : svg(state === 'ok' ? ICONS.ok : state === 'err' ? ICONS.err : ICONS.info, 16); probHd.appendChild(el('span', { text })); },
     // list: [{ text, line, col }] ; onPick(line, col)
     list(items, onPick){

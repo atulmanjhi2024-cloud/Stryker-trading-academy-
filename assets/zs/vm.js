@@ -8,7 +8,8 @@ import { VARIABLES, FUNCTIONS } from './catalog.js?v=1232';
 import { ZsRuntimeError, diag, MESSAGES, fmt } from './errors.js?v=1232';
 
 export const RUN_LIMITS = Object.freeze({
-  bars: 50000, opsPerBar: 5000000, loopIters: 100000, firstRunMs: 20000, updateMs: 5000, maxBarsBack: 5000,
+  // firstRunMs / updateMs: no wall-clock limit (Owner 22 Nov, "remove the limit altogether"); limitsOverride can still set one (tests).
+  bars: 50000, opsPerBar: 5000000, loopIters: 100000, firstRunMs: Infinity, updateMs: Infinity, maxBarsBack: 5000,
 });
 const NA = NaN;
 const fin = (x) => typeof x === 'number' && x === x && x !== Infinity && x !== -Infinity;

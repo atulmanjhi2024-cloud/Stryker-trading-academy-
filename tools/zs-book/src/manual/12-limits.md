@@ -20,7 +20,7 @@ These are the limits the engine enforces today.
 | Script size | 256 KB, 20,000 lines |
 | Nesting depth | 128 |
 | Bars in one run | 50,000 |
-| First full run | 20 seconds |
+| First full run | No time limit |
 | Work per bar | 1,000,000 operations |
 | Turns of one loop, per bar | 100,000 |
 | Function calls inside each other | 64 (a function cannot call itself) |
@@ -38,7 +38,6 @@ These are the limits the engine enforces today.
 
 | Limit | What you see |
 |---|---|
-| Run takes longer than 20 seconds | The run stops (E401). |
 | Too much work on one bar | The script stops on that bar and shows the line (E403). |
 | A loop turns too many times | The loop stops with an error on its line (E404). |
 | Too many items in an array or map | Error on the line that added the extra item (E405, E406). |

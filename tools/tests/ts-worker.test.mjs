@@ -35,7 +35,7 @@ t('_headers gives the worker an enforced no-network CSP', () => {
   const block = h.slice(i, i + 300).split('\n').slice(0, 2).join('\n');
   assert.match(block, /Content-Security-Policy: default-src 'none'/); assert.match(block, /connect-src 'none'/);
 });
-t('runner kills a run that takes too long', () => { assert.match(src['runner.js'], /terminate\(\)/); assert.match(src['runner.js'], /KILL_MS/); });
+t('runner has no time limit; dispose ends the worker', () => { assert.match(src['runner.js'], /terminate\(\)/); assert.doesNotMatch(src['runner.js'], /KILL_MS/); });   // Owner 22 Nov: no limit
 
 // hostile member text: names that look like JavaScript are only thinkScript names
 const B = makeBars(60, 3);

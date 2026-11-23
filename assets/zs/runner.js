@@ -1,4 +1,4 @@
-// Zscript runner (page side): owns the sandboxed worker, enforces the wall-clock kill,
+// Zscript runner (page side): owns the sandboxed worker (no wall-clock kill since 22 Nov),
 // and turns the message protocol into promises. SPEC.md section 11.2.
 //   const r = new ZsRunner();
 //   const out = await r.run({ program, bars, symbol, timeframe, inputs, allowed, data, securities });
@@ -7,14 +7,9 @@
 //   options: new ZsRunner({ onLive(out), onNotice({ns, state, upgrade, text}) })
 //   protected: const pub = await r.session(); ...get sealed from the API...; await r.run({ sealed, bars, ... })
 const WORKER_URL = new URL('./worker.js?v=1232', import.meta.url);
-export const KILL_MS = { run: 25000, update: 8000, compile: 10000 };
 // a fresh worker still has to download the engine (~250 KB): on a slow line that must not count as a runaway script
 export const START_MS = 30000;
 
-function killed(ms) {
-  return { ok: false, error: { code: 'E401', severity: 'error', line: 1, col: 1, message: 'The script took longer than ' + Math.round(ms / 1000) + ' seconds and was stopped.', hint: 'Look for a loop that runs too many times.' },
-    plots: [], hlines: [], fills: [], labels: [], lines: [], boxes: [], tables: [], alerts: [], alertconditions: [], notices: [], bars: 0, ms };
-}
 
 export class ZsRunner {
   constructor(opts) {
@@ -47,40 +42,38 @@ export class ZsRunner {
     for (const [, p] of this.pending) { clearTimeout(p.timer); p.reject(err); }
     this.pending.clear();
   }
-  send(type, msg, ms) {
+  // NO TIME LIMIT (Owner 22 Nov: "remove the limit altogether"): a run takes as long as it needs; removing the script
+  // (stop -> dispose) ends its worker. The only timer left: a fresh worker that never starts (engine download blocked).
+  send(type, msg) {
     const w = this.spawn();
     const id = ++this.seq;
     return new Promise((resolve, reject) => {
-      const started = this.ready;
-      const timer = setTimeout(() => {
-        this.pending.delete(id);
-        if (!this.ready) { this.reset(new Error('stopped')); reject(new Error('The Zscript worker did not start in time.')); return; }
-        // a runaway script: kill the worker outright (the VM also stops itself at 20 s)
-        this.reset(new Error('stopped'));
-        resolve(type === 'compile' ? { ok: false, diagnostics: [killed(ms).error], program: null, meta: null } : killed(ms));
-      }, started ? ms : ms + START_MS);
+      const timer = this.ready ? 0 : setTimeout(() => {
+        if (this.ready || !this.pending.has(id)) return;
+        this.pending.delete(id); this.reset(new Error('stopped')); reject(new Error('The Zscript worker did not start in time.'));
+      }, START_MS);
       this.pending.set(id, { resolve, reject, timer });
       w.postMessage(Object.assign({ type, id }, msg));
     });
   }
-  compile(source) { return this.send('compile', { source }, KILL_MS.compile); }
+  compile(source) { return this.send('compile', { source }); }
   // Protected scripts: the worker makes a key pair and returns the public half for the delivery API.
-  async session() { const out = await this.send('session', {}, KILL_MS.compile); return out && out.pub; }
+  async session() { const out = await this.send('session', {}); return out && out.pub; }
   // Protected library script: the worker opens the sealed program and keeps it; only titles/inputs/overlay come back.
-  open(sealed) { return this.send('open', { sealed }, KILL_MS.compile); }
+  open(sealed) { return this.send('open', { sealed }); }
   // Data hub (S3) messages go to the worker untouched: hub.open({ post: (m) => runner.post(m) }).
   post(msg) { if (msg && typeof msg === 'object') this.spawn().postMessage(msg); }
   async run(o) {
     const out = await this.send('run', {
       program: o.program, sealed: o.sealed, held: !!o.held, bars: o.bars, symbol: o.symbol, timeframe: o.timeframe, inputs: o.inputs || {},
       allowed: o.allowed || {}, data: o.data || {}, securities: o.securities || {}, lastBarClosed: !!o.lastBarClosed,
-    }, KILL_MS.run);
+    });
     this.hasRun = !!(out && out.bars);
     return out;
   }
   update(o) {
     if (!this.hasRun) return Promise.reject(new Error('run() first'));
-    return this.send('update', { bar: Object.assign({}, o.bar, o.data ? { data: o.data } : {}) }, KILL_MS.update);
+    return this.send('update', { bar: Object.assign({}, o.bar, o.data ? { data: o.data } : {}) });
   }
   dispose() { this.reset(new Error('disposed')); }
 }

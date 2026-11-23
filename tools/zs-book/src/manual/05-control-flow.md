@@ -86,7 +86,7 @@ while n < 10 and close[n] > open[n]
 Zscript runs your script on every bar, so a loop that runs 500 times does 500 times the work on every one of thousands of bars. Two safeguards protect you and everyone else:
 
 - A loop has a maximum number of turns per bar, and your script has a maximum amount of work per bar. Hit either and the script stops with a clear message on the line that went too far.
-- The first run must finish in 20 seconds.
+- There is no time limit: a long first run keeps going until it finishes or you remove the script.
 
 When you can, use the built-in functions such as `ta.highest` or `ta.sma`: they are faster than the same logic in a loop. More in [Limits](/zscript/limits).
 

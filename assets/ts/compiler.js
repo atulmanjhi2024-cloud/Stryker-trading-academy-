@@ -16,7 +16,8 @@ import { TsError } from './lexer.js?v=1232';
 import { NATIVES, NS_LC, NS_NAMES, CONSTS, BAR_FIELDS, UNSUPPORTED, AGG, AVG_TYPES, COLOR, PALETTE, num, truth, text, isColor, colorOf, allOf, crossAt } from './natives.js?v=1232';
 import { LIBRARY } from './library.js?v=1232';
 
-export const LIMITS = { source: 256 * 1024, bars: 50000, ops: 4e8, foldIter: 20000, vars: 4000, instances: 400, depth: 12, labels: 40, bubbles: 2000, vlines: 500, plots: 64, ms: 20000, cells: 2.5e7, text: 10000 };
+// ms / ops: no time or total-work limit (Owner 22 Nov, "remove the limit altogether"); a fold is still capped at foldIter. opts.deadline can still set one.
+export const LIMITS = { source: 256 * 1024, bars: 50000, ops: Infinity, foldIter: 20000, vars: 4000, instances: 400, depth: 12, labels: 40, bubbles: 2000, vlines: 500, plots: 64, ms: Infinity, cells: 2.5e7, text: 10000 };
 const SOURCES = ['close', 'open', 'high', 'low', 'hl2', 'hlc3', 'ohlc4', 'volume'];
 const PLOT_METHODS = ['setpaintingstrategy', 'setdefaultcolor', 'assignvaluecolor', 'setlineweight', 'setstyle', 'hide', 'sethiding', 'hidebubble', 'hidetitle', 'showbubble', 'definecolor', 'assignnormgradientcolor', 'assigngradientcolor', 'takevaluecolor', 'color'];
 const DECLARES = ['lower', 'upper', 'on_volume', 'once_per_bar', 'hide_on_intraday', 'hide_on_daily', 'real_size', 'zerobase', 'weak_volume_graph', 'fullrange', 'all_for_one', 'scan'];
@@ -72,7 +73,7 @@ function build(source, opts, mode) {
   };
   c.note = (t) => { if (c.notes.size < 10) c.notes.add(t); };
   c.rand = () => { c.seed = (c.seed * 1664525 + 1013904223) >>> 0; return c.seed / 4294967296; };
-  const tick = () => { if ((++c.ops & 1023) === 0) { if (Date.now() > c.deadline) throw new TsError('The script took longer than ' + Math.round(LIMITS.ms / 1000) + ' seconds and was stopped.', 1, 1, 'Look for a fold that runs too many times.'); if (c.ops > LIMITS.ops) throw new TsError('The script did too much work and was stopped.', 1, 1); } };
+  const tick = () => { if ((++c.ops & 1023) === 0) { if (Date.now() > c.deadline) throw new TsError('The script ran past its time limit and was stopped.', 1, 1, 'Look for a fold that runs too many times.'); if (c.ops > LIMITS.ops) throw new TsError('The script did too much work and was stopped.', 1, 1); } };
   // memory: every history holds one number per bar, so the budget is histories x bars (about 200 MB at most)
   const newHist = (rec) => { const h = new Hist(rec); c.hists.push(h); if (c.hists.length > LIMITS.vars * 4 || c.hists.length * Math.max(n, 1) > LIMITS.cells) throw new TsError('The script uses too much memory for this many bars.', 1, 1, 'Use fewer studies or a shorter history.'); return h; };
   const site = () => { const k = c.sites.length; c.sites.push(null); return () => c.sites[k] || (c.sites[k] = {}); };

@@ -186,8 +186,9 @@ t('limits: fold iterations, too-large source', () => {
   assert.equal(run('#'.repeat(LIMITS.source + 10) + '\nplot x = 1;').ok, false);
 });
 t('limits: deep nesting gives an error, not a crash', () => { const r = run('plot a = ' + '('.repeat(5000) + '1' + ')'.repeat(5000) + ';'); assert.equal(r.ok, false); });
-t('limits: a runaway script stops itself (time limit)', () => {
-  const r = run('plot a = fold i = 0 to 20000 with s do s + fold j = 0 to 20000 with q do q + 1;', { bars: makeBars(50000, 2) });
+// No time limit on charts (Owner 22 Nov); the deadline option still works when a caller sets one.
+t('limits: an explicit deadline still stops a runaway script', () => {
+  const r = run('plot a = fold i = 0 to 20000 with s do s + fold j = 0 to 20000 with q do q + 1;', { bars: makeBars(50000, 2), deadline: Date.now() + 300 });
   assert.equal(r.ok, false); assert.match(r.error.message, /long|stopped|too much|limit/i);
 });
 done('ts-lang');

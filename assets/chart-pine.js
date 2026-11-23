@@ -25,8 +25,8 @@
 // which lacks newer built-ins such as `scale.*`. A script the worker rejects with
 // "X is not defined" is retried once on the in-process PineEngine, which runs the newer
 // pinets pinned in charts.html' import map; such scripts are recorded as engine:'main'.
-// The in-process engine runs on the page thread, so the 20 s cap can't interrupt it
-// mid-run; PineTS' own loop guard still applies.
+// The in-process engine runs on the page thread and can't be interrupted mid-run;
+// PineTS' own loop guard still applies.
 //
 // NEXT ENGINE (build 456): assets/chart-pine-next.js + chart-pine-next-worker.js run the
 // newer pinets (0.11.0, same as the import map) inside a module Web Worker, language id
@@ -34,11 +34,13 @@
 // the in-process engine is now only the last resort when module workers are unavailable.
 // The built-in TradeZoro Pine indicators (chart-pine-builtins.js) run on it directly.
 //
-// HOW IT RUNS: PineWorkerEngine — each chart cell gets its own Web Worker, so a heavy
-// script never blocks the page. A first run that takes longer than RUN_LIMIT_MS is
-// stopped: the indicator is removed, that cell's worker is terminated and replaced,
-// and the member sees "Script stopped: took too long". PineTS itself aborts runaway
-// loops ("Loop exceeded maximum iterations").
+// HOW IT RUNS: off the page thread, in Web Workers. NO TIME LIMIT (Owner 22 Nov: "remove the limit
+// altogether"): a script runs as long as it needs. After 3 s the editor shows "Calculating… NN%" with
+// Cancel and the legend row a small chip with ×; only Cancel, removing the indicator or closing the
+// chart stops it. Every member / community script runs in its OWN worker (chart-pine-next.js lanes,
+// classicLanes below), so a long one never holds up the others and stopping it terminates just that
+// worker. Built-in TradeZoro indicators share one worker as before. PineTS itself still aborts runaway
+// loops ("Loop exceeded maximum iterations"), and real errors show at once.
 //
 // PERSISTENCE: Vela's shell does not persist script indicators added through the
 // public API, so a cell-scope persistence handler ('stryker.pine') writes each cell's
@@ -51,11 +53,7 @@ import { current as verCurrent, baseOf as verBase, verOf as verPinned } from './
 import { createShell, el, ib, ICONS, libRow, emptyState, renderDocs, descOf, ago, download, pickFile, fileName } from './chart-script-editor.js?v=1232';
 
 const PINE_PKG = '/assets/vendor/vela-pinets-0.2.11/index.js';
-const RUN_LIMIT_MS = 90000;   // Owner 22 Nov: 20 s cut off normal scripts on slower machines (engine download + first run). Hotfix; the progress-based limit replaces this.
-// Time limit = the script's OWN compute time (not its wait in the worker queue, not the ms other scripts' runs
-// overlapped it). A phone is slower, so a first run gets 40 s there. Hard wall-clock backstop: 3x the limit.
-const RUN_LIMIT_PHONE_MS = 120000;
-const runLimitMs = () => (typeof window !== 'undefined' && (window.innerWidth <= 700 || (window.matchMedia && window.matchMedia('(pointer:coarse)').matches))) ? RUN_LIMIT_PHONE_MS : RUN_LIMIT_MS;
+const CALC_AFTER_MS = 3000;   // a run longer than this shows "Calculating… NN%" (editor) and the legend chip
 const MAX_PER_CELL = 8;
 const SRC_MAX = 65536;
 const BUILTIN_SRC_MAX = 131072;
@@ -95,11 +93,18 @@ async function tvStyle(chart){
     (await TvStyle).installTvStyle(chart);
   } catch (e) { TvStyle = null; }
 }
+// An indicator left the chart: drop its worker lane at once (an idle lane otherwise lingers a few seconds).
+const dropHooked = new WeakSet();
+function hookDrop(chart){
+  if (dropHooked.has(chart)) return; dropHooked.add(chart);
+  calcCss();
+  try { chart.on('indicator:removed', ({ id }) => { [nextEngines.get(chart), engines.get(chart)].forEach((e) => { try { if (e && e.dropInstance) e.dropInstance(id); } catch (x) {} }); setTimeout(calcTick, 0); }); } catch (e) {}
+}
 async function ensureNext(chart){
-  tvStyle(chart);
+  tvStyle(chart); hookDrop(chart);
   const m = await loadNext();
   if (!nextEngines.has(chart)) {
-    const e = wrapAlerts(new m.PineNextEngine({ props: 'strategy' }));
+    const e = wrapAlerts(new m.PineNextEngine({ props: 'strategy', isolate: (src) => !builtinIdOf(src), onRun: calcKick }));
     chart.registerEngine(LANG_NEXT, e);
     nextEngines.set(chart, e);
     try { e.w(); } catch (x) {}   // LAYOUT-PERF: start the worker (it downloads the engine) now, not at the first run
@@ -140,6 +145,86 @@ function wrapAlerts(eng){
   return eng;
 }
 
+// SAFARI (UnoMas bug 22 Nov: every Pine script, even a 10-line SMA, failed with "heavy for this device").
+// vela-pinets' PineWorkerEngine starts its worker with new Worker(blobUrl) and revokes the blob URL on the
+// very next line. Chromium/Firefox have read the URL by then; WebKit (Safari, every iOS browser) loads the
+// worker script later, finds the URL gone, fires a bare 'error' Event the engine never listens to, and the
+// run waits for an answer that never comes. Fix: keep the blob URL alive until the worker has answered
+// (or 60 s), and turn a worker that fails to start into a real error (pineStartFailed) instead of a timeout.
+let classicFail = null;   // why the classic worker could not start (last failure), or null
+function pineStartFailed(why){
+  const msg = "Pine couldn't start in this browser: " + (why || 'the script engine did not load') + '.';
+  try { console.error('TradeZoro: ' + msg); } catch (e) {}
+  // beta-report.js (bug-report button) collects window 'error' events: send it to the error log too
+  try { window.dispatchEvent(new ErrorEvent('error', { message: msg, filename: 'chart-pine.js' })); } catch (e) {}
+  return msg;
+}
+function classicEngine(m){
+  const eng = new m.PineWorkerEngine({ props: 'strategy' });
+  const spawn = eng.spawn;
+  eng.spawn = () => {
+    const rv = URL.revokeObjectURL, held = [];
+    URL.revokeObjectURL = (u) => { held.push(u); };
+    let w;
+    try { w = spawn(); } finally { URL.revokeObjectURL = rv; }
+    let answered = false;
+    const free = () => { held.splice(0).forEach((u) => { try { rv.call(URL, u); } catch (e) {} }); };
+    const t = setTimeout(free, 60000);
+    w.addEventListener('message', () => { if (!answered) { answered = true; classicFail = null; clearTimeout(t); free(); } });
+    w.addEventListener('error', (e) => {
+      if (answered) return;   // a script error inside a running worker is reported by the engine itself
+      classicFail = (e && e.message) || 'the script engine file did not load';
+      pineStartFailed(classicFail);
+    });
+    return w;
+  };
+  return eng;
+}
+
+// CLASSIC LANES (no time limit, Owner 22 Nov): the classic engine is only used for scripts the next engine rejects
+// and for community scripts. Each indicator gets its own PineWorkerEngine (own worker, see classicEngine), so a long
+// run can be stopped on its own: stop() while it computes terminates that worker; the engine respawns one on the
+// next run. A static run is "computing" from execute/update/notifyBars until its done/error/model; a live one until
+// its first model after a (re)start.
+function classicLanes(m){
+  const lanes = new Map();   // instanceId -> { eng, runs: Map(sid -> { since }) }
+  let sq = 0;
+  const laneOf = (id) => { let L = lanes.get(id); if (!L) { L = { eng: classicEngine(m), runs: new Map() }; lanes.set(id, L); } return L; };
+  return {
+    language: 'pine',
+    capabilities: { streaming: true, visibleRange: true, inputs: true, props: true },
+    prepare(source, instanceId){ return laneOf(instanceId).eng.prepare(source, instanceId); },
+    calcOf(id){ const L = lanes.get(id); if (!L) return null; let t = 0; L.runs.forEach((r) => { if (r.since && (!t || r.since < t)) t = r.since; }); return t ? { since: t, pct: null } : null; },
+    execute(req, h){
+      const id = req.prepared && req.prepared.token && req.prepared.token.instanceId, L = laneOf(id), sid = ++sq, r = { since: 0 };
+      L.runs.set(sid, r);
+      const on = () => { if (!r.since) { r.since = Date.now(); calcKick(); } }, off = () => { if (r.since) { r.since = 0; calcKick(); } };
+      on();
+      const sess = L.eng.execute(req, Object.assign({}, h, {
+        onModel: (x) => { off(); if (h.onModel) h.onModel(x); },
+        onDone: () => { off(); if (h.onDone) h.onDone(); },
+        onError: (e) => { off(); if (h.onError) h.onError(e); }
+      }));
+      const busy = (f) => function () { if (req.mode !== 'live' || f === 'update') on(); return sess[f].apply(sess, arguments); };
+      return {
+        getContext: (sel) => sess.getContext(sel),
+        stop: () => {
+          const was = !!r.since; off(); L.runs.delete(sid);
+          try { sess.stop(); } catch (e) {}
+          if (was) { try { L.eng.terminate(); } catch (e) {} }   // its run can't be interrupted: end that worker (respawned on the next run)
+          // no session left (removed, or the chart closed: no 'indicator:removed' then): drop the worker after a while
+          if (!L.runs.size) setTimeout(() => { if (!L.runs.size && lanes.get(id) === L) { lanes.delete(id); try { L.eng.terminate(); } catch (e) {} } }, 8000);
+        },
+        update: busy('update'),
+        setVisibleRange: (range) => sess.setVisibleRange(range),
+        notifyBars: (reason) => { if (reason !== 'backfill' && req.mode !== 'live') on(); return sess.notifyBars(reason); }
+      };
+    },
+    dropInstance(id){ const L = lanes.get(id); if (L && !L.runs.size) { lanes.delete(id); try { L.eng.terminate(); } catch (e) {} } },
+    terminate(){ lanes.forEach((L) => { try { L.eng.terminate(); } catch (e) {} }); lanes.clear(); }
+  };
+}
+
 function loadPine(){
   if (!enginePromise) {
     // The in-process engine (LANG_MAIN) runs the page's pinets (import map): give it the same empty-live-stream guard as the worker (Owner bug 22 Nov, 'openTime' toasts).
@@ -147,7 +232,7 @@ function loadPine(){
     enginePromise = import(PINE_PKG).then((m) => {
       if (!m || !m.PineWorkerEngine) throw new Error('Pine engine did not load');
       // Cells created from now on (layout widened) get an engine automatically.
-      try { Core.registerDefaultEngine(LANG, () => wrapAlerts(new m.PineWorkerEngine({ props: 'strategy' }))); } catch (e) {}
+      try { Core.registerDefaultEngine(LANG, () => wrapAlerts(classicLanes(m))); } catch (e) {}
       try { Core.registerDefaultEngine(LANG_MAIN, () => wrapAlerts(new m.PineEngine({ props: 'strategy' }))); } catch (e) {}
       return m;
     }).catch((e) => { enginePromise = null; throw e; });
@@ -156,10 +241,10 @@ function loadPine(){
 }
 
 async function ensureEngine(chart){
-  tvStyle(chart);
+  tvStyle(chart); hookDrop(chart);
   const m = await loadPine();
   if (!engines.has(chart)) {
-    const eng = wrapAlerts(new m.PineWorkerEngine({ props: 'strategy' }));
+    const eng = wrapAlerts(classicLanes(m));
     chart.registerEngine(LANG, eng);
     engines.set(chart, eng);
   }
@@ -306,19 +391,19 @@ async function addSealedOn(chart, z, inputs, restoring){
   const tok = await idToken();
   if (!tok) return { ok: false, msg: 'Sign in to use ' + (z.name || 'community indicators') + '.' };
   let res;
+  const ref = randRef();   // the indicator's own worker lane is keyed by it (chart-pine-next.js)
   try {
-    const pub = await eng.sealKey();
+    const pub = await eng.sealKey(ref);
     const r = await fetch('/api/creator/ind', { method: 'POST', headers: { 'content-type': 'application/json', authorization: 'Bearer ' + tok }, body: JSON.stringify({ cid: z.cid, iid: z.iid, pub }) });
     res = await r.json().catch(() => ({}));
     if (!r.ok || !res.ok) return { ok: false, msg: (res && res.message) || 'Could not load ' + (z.name || 'the indicator') + '.', code: res && res.error };
   } catch (e) { return { ok: false, msg: 'Could not reach TradeZoro. Check your connection.' }; }
-  const ref = randRef();
   try { await eng.unseal(ref, res.sealed); } catch (e) { return { ok: false, msg: String(e && e.message || 'Could not open the indicator.') }; }
   const stub = sealStub(res.name || z.name, ref);
   const out = restoring
     ? (() => { const h = chart.addIndicator(stub, { language: LANG_NEXT, inputs: inputs || {} }); return { ok: !!h, handle: h }; })()
     : await runOnChart(chart, stub, inputs || {}, false, { sealed: true });
-  if (!out.ok) return { ok: false, heavy: out.heavy, msg: (out.msg || 'Could not run the indicator.').replace(/^Line \d+: /, '') };
+  if (!out.ok) return { ok: false, heavy: out.heavy, cancelled: out.cancelled, msg: (out.msg || 'Could not run the indicator.').replace(/^Line \d+: /, '') };
   onNext.add(out.handle);
   sealOf.set(out.handle, { cid: z.cid, iid: z.iid, name: res.name || z.name, version: res.version, logo: z.logo || '' });
   changed();
@@ -380,19 +465,6 @@ function trackRightOffset(chart, handle, ro){
   applyRightOffset(chart);
 }
 
-// Restart a cell's worker (after a run went over the time limit) and re-add the others.
-async function resetCell(chart, keep){
-  const old = engines.get(chart);
-  pineHandles(chart).forEach((h) => { try { h.remove(); } catch (e) {} }); applyRightOffset(chart);
-  try { if (old && old.terminate) old.terminate(); } catch (e) {}
-  engines.delete(chart);
-  const nx = nextEngines.get(chart);
-  if (nx) { try { nx.terminate(); } catch (e) {} }   // its worker respawns on the next run
-  await ensureEngine(chart);
-  keep.forEach((k) => { try { addOn(chart, k); } catch (e) {} });
-  changed();
-}
-
 // Real Pine built-in namespaces and functions (TradingView reference). A name on this
 // list that the runtime doesn't know is a GAP in our engine, not a typo by the member.
 const PINE_BUILTINS = new Set(('ta math str array matrix map color input request strategy label line box table polyline '
@@ -424,6 +496,18 @@ function explain(err, source){
         : '"' + name + '" is not a known variable or function.';
     }
   }
+  // Clear reasons instead of a parser message for the two things pinets can't run at all (member report 22 Nov).
+  const imp = /\bimport\b/.test(msg) && /^\s*import\s+[\w-]+\/[\w-]+\/\d+/m.test(String(source || ''));
+  if (imp) {
+    const i = String(source).split('\n').findIndex((l) => /^\s*import\s+[\w-]+\/[\w-]+\/\d+/.test(l));
+    const lib = (/^\s*import\s+([\w-]+\/[\w-]+\/\d+)/.exec(String(source).split('\n')[i]) || [])[1] || '';
+    return { msg: 'Pine libraries (import ' + lib + ') aren\'t supported on our charts yet. Copy the library functions the script uses into the script itself, then add it again.', line: i + 1 };
+  }
+  const ver = /^Unsupported Pine Script version (\d+)/.exec(msg);
+  if (ver) {
+    const i = String(source || '').split('\n').findIndex((l) => /^\s*\/\/\s*@version\s*=/.test(l));
+    return { msg: 'Pine Script v' + ver[1] + ' isn\'t supported yet: our charts run v5 and v6. In TradingView\'s Pine Editor, open the script\'s menu, choose "Convert code to v5", then paste the new version here.', line: i >= 0 ? i + 1 : 1 };
+  }
   msg = msg.replace(/^Failed to transpile Pine Script version \d+:\s*/, 'Syntax error: ');
   if (/request\.security|getMarketData|fetchSeries/i.test(msg)) msg += ' (request.security works only for symbols this chart can load, e.g. futures:ES1! or a crypto pair.)';
   if (/Loop exceeded maximum iterations/i.test(msg)) msg = 'Script stopped: a loop ran too many times.';
@@ -435,7 +519,7 @@ function explain(err, source){
 // itself is already removed by runIndicator.
 function hideVelaErrorToast(){
   const kill = () => document.querySelectorAll('.vela-toast[data-type="error"][data-open]').forEach((t) => { delete t.dataset.open; });
-  kill(); setTimeout(kill, 60); setTimeout(kill, 400);
+  kill(); setTimeout(kill, 60); setTimeout(kill, 400); setTimeout(kill, 1200);   // 1200: the next engine's toast can land late (22 Nov sweep)
 }
 
 // opts.engine === 'next': run straight on the next engine (built-in TradeZoro indicators).
@@ -497,66 +581,67 @@ async function runOnChart(chart, source, inputs, shared, opts){
 async function runOnChartInner(chart, source, inputs, shared, opts){
   // LAYOUT-PERF (2026-11-08): the next engine (and its worker) loads alongside the classic one, not after it.
   // A next-engine add no longer waits for the classic engine (parsed on the main thread); that loads only for the fallback.
-  const nextFirst = !!(opts && (opts.sealed || (opts.engine === 'next' && !shared)));
+  // A member's own script (editor, My scripts, examples) runs on the next engine first, like the built-ins (newer pinets,
+  // O(n) pivots, a first window of the last 5,000 bars, progress reports); the classic worker is the fallback when the
+  // next engine rejects it. Community (shared) scripts run on the classic worker first.
+  // NO TIME LIMIT (Owner 22 Nov): a run ends only when it draws, fails with a real error, or is cancelled (Cancel in the
+  // editor, the × on the legend chip, removing the indicator, closing the chart) -> { ok:false, cancelled:true }.
+  const nextFirst = !!(opts && opts.sealed) || !shared;
   if (nextFirst) ensureNext(chart).catch(() => {}); else await ensureEngine(chart);
   if (pineHandles(chart).length >= MAX_PER_CELL) return { ok: false, msg: 'This chart already has ' + MAX_PER_CELL + ' Pine scripts. Remove one first.' };
-  const keep = pineHandles(chart).map(snapshot);
-  let timer;
-  const LIMIT = runLimitMs();
-  // clock.sid stays null on the old worker engine (no 'started' message): then it is plain wall time like before.
-  const clock = { t0: Date.now(), next: false, sid: null, start: 0, other: 0 };
-  const hook = (m) => {
-    if (m.kind === 'started' && clock.sid == null) { clock.sid = m.sessionId; clock.start = Date.now(); }
-    else if (m.kind === 'own' && m.sessionId === clock.sid) clock.other = m.otherMs || 0;
-  };
-  const ownMs = () => { const n = Date.now(); return clock.next ? (clock.sid == null ? 0 : n - clock.start - clock.other) : n - clock.t0; };
-  const timeout = new Promise((r) => { timer = setInterval(() => { if (ownMs() > LIMIT || Date.now() - clock.t0 > LIMIT * 3) r({ timedOut: true }); }, 500); });
+  // NO BARS YET (found in the 22 Nov sweep): on a chart that is still loading, or whose data feed is down, wait up to
+  // 15 s for bars, then say what is really wrong.
+  const barCount = () => { try { return chart.orchestrator.rawBars.length; } catch (e) { return -1; } };   // -1 = can't tell: run as before
+  for (let i = 0; i < 60 && barCount() === 0; i++) await new Promise((r) => setTimeout(r, 250));
+  if (barCount() === 0) return { ok: false, msg: 'This chart has no price data yet, so the script has nothing to run on. Wait for the candles to load (or pick another symbol), then add it again.' };
+  const run = (language) => runTracked(chart, source, { language, inputs: inputs || {} }, opts, language === LANG);
   const runNext = async () => {
     try { await ensureNext(chart); } catch (e) { console.warn('TradeZoro: Pine next engine', e); return null; }
-    clock.next = true; clock.sid = null; (window.__stkPineClockHooks = window.__stkPineClockHooks || new Set()).add(hook);
-    return Promise.race([chart.runIndicator(source, { language: LANG_NEXT, inputs: inputs || {} }), timeout]);
+    return run(LANG_NEXT);
   };
+  const stopped = (r) => r && (r.cancelled || r.startFailed);
   let res = null, engine = 'worker';
   // Sealed community indicators run ONLY on the next worker (the stub means nothing anywhere else).
   if (opts && opts.sealed) { res = (await runNext()) || { ok: false, error: new Error("The Pine engine didn't start.") }; engine = 'next'; }
-  else if (opts && opts.engine === 'next' && !shared) { res = await runNext(); engine = 'next'; }
-  // vela logs `[vela] indicator "ind-N" failed: ...` (console.error) when the worker's older
-  // PineTS rejects a script (seen: HTF PO3 Lens "stacks is not defined", ICT Pro+ "ta.max is
-  // not a function"). The retry below then runs it fine on the next engine, so that line is
-  // noise. Hold it during this attempt; print it only if the script really fails in the end.
+  else if (!shared) {
+    res = await runNext(); engine = 'next';
+    // Rejected by the next engine (not a syntax error, not cancelled, not a built-in): give the classic worker one try.
+    if (res && !res.ok && !stopped(res) && !(opts && opts.engine === 'next') && !/^Failed to transpile|^Unsupported Pine Script version/.test(String(res.error && res.error.message))) {
+      hideVelaErrorToast();
+      const first = res;
+      res = null;
+      await ensureEngine(chart);
+      const held0 = [], rel0 = holdVelaErrors(held0);
+      try { res = await run(LANG); engine = 'worker'; }
+      finally { rel0(); }
+      if (!res || (!res.ok && !stopped(res))) { res = first; engine = 'next'; }   // the next engine's message is the one to show
+    }
+  }
+  // vela logs `[vela] indicator "ind-N" failed: ...` (console.error) when the worker's older PineTS rejects a script; the
+  // retry below then runs it fine on the next engine, so that line is noise. Hold it; print it only on a real failure.
   const held = [];
   let release = () => {};
   if (!res) {
     if (nextFirst) await ensureEngine(chart);
     release = holdVelaErrors(held);
-    try { res = await Promise.race([chart.runIndicator(source, { language: LANG, inputs: inputs || {} }), timeout]); engine = 'worker'; }
+    try { res = await run(LANG); engine = 'worker'; }
     finally { release(); }
   }
   const flushHeld = () => { held.splice(0).forEach((a) => console.error(...a)); };
-  // The worker's built-in PineTS is older than the page's (vela-pinets 0.2.11 inlines
-  // its own copy): it lacks names such as `scale.right` and fails at run time on some
-  // newer constructs (e.g. a box held in a user-defined type). Retry once on the next
-  // engine (newer pinets, still off the page thread); only if module workers can't start,
-  // on the in-process engine.
-  if (!shared && engine === 'worker' && res && !res.timedOut && !res.ok && !/^Failed to transpile/.test(String(res.error && res.error.message))) {
+  // The worker's built-in PineTS is older than the page's: retry once on the next engine (newer pinets, still off the
+  // page thread); only if module workers can't start, on the in-process engine.
+  if (!shared && engine === 'worker' && res && !stopped(res) && !res.ok && !/^Failed to transpile/.test(String(res.error && res.error.message))) {
     hideVelaErrorToast();
     const r2 = await runNext();
     if (r2) { res = r2; engine = 'next'; }
-    else if (/is not defined/.test(String(res.error && res.error.message))) {
-      res = await Promise.race([chart.runIndicator(source, { language: LANG_MAIN, inputs: inputs || {} }), timeout]);
-      engine = 'main';
-    }
+    else if (/is not defined/.test(String(res.error && res.error.message))) { res = await run(LANG_MAIN); engine = 'main'; }
   }
   if (engine === 'worker' || !res || !res.ok) flushHeld(); // a real failure keeps vela's line
-  clearInterval(timer);
-  if (window.__stkPineClockHooks) window.__stkPineClockHooks.delete(hook);
-  if (res && res.timedOut) {
-    await resetCell(chart, keep);
-    const heavyMsg = 'This indicator is heavy for this device. It did not finish within ' + (LIMIT / 1000) + ' seconds, so it was not added. Your other indicators are unchanged.';
-    // Plain editor Add keeps its inline red box (r.msg); every other caller gets the toast with Retry.
-    const again = (opts && opts.sealed) ? null : () => runOnChart(chart, source, inputs, shared, opts).then((r2) => { if (r2 && r2.ok) toast2('Added ' + titleOf(r2.handle) + ' to the chart', 'success'); return r2; });
-    if (!(opts && opts.inline)) { try { window.showToast && window.showToast('error', heavyMsg, { title: 'Indicator is heavy', duration: 15000, action: again ? { label: 'Retry', onClick: again } : null }); } catch (e) {} }
-    return { ok: false, heavy: true, msg: heavyMsg };
+  if (res && res.cancelled) return { ok: false, cancelled: true, heavy: true, msg: 'Stopped. The script was not added.' };   // heavy: callers show no extra toast
+  if (res && res.startFailed) {
+    const why = "Pine couldn't start in this browser: " + res.startFailed + '.';
+    if (!(opts && opts.inline)) { try { window.showToast && window.showToast('error', why + ' Reload the page and try again.', { title: 'Pine script', duration: 15000 }); } catch (e) {} }
+    return { ok: false, startFailed: true, msg: why + ' Reload the page and try again.' };
   }
   if (!res || !res.ok) {
     hideVelaErrorToast();
@@ -570,6 +655,98 @@ async function runOnChartInner(chart, source, inputs, shared, opts){
   applyRightOffset(chart);
   changed();
   return { ok: true, handle: res.handle, engine };
+}
+
+// chart.runIndicator, but it also ends when the new indicator leaves the chart (Cancel / × / removed / chart closed)
+// -> { cancelled: true }, or when the classic worker could not start -> { startFailed }. opts.run(handle) hands the
+// caller the handle while it computes (the editor's Cancel removes it); opts.onProgress(pct|null) after CALC_AFTER_MS.
+function runTracked(chart, source, ro, opts, classic){
+  const before = new Set(pineHandles(chart));
+  const p = chart.runIndicator(source, ro);
+  const h = pineHandles(chart).find((x) => !before.has(x)) || null;   // addIndicator ran synchronously inside runIndicator
+  if (!h) return p;
+  if (opts && typeof opts.run === 'function') { try { opts.run(h); } catch (e) {} }
+  const failAt = classic ? classicFail : undefined;
+  return new Promise((resolve) => {
+    let done = false;
+    const end = (r) => { if (done) return; done = true; tracked.delete(t); resolve(r); };
+    const t = { chart, h, onProgress: opts && opts.onProgress, tick: () => {
+      if (!onChart(chart, h)) end({ ok: false, handle: null, cancelled: true });
+      else if (classic && classicFail && classicFail !== failAt) { try { h.remove(); } catch (e) {} end({ ok: false, handle: null, startFailed: classicFail }); }
+    } };
+    tracked.add(t); calcKick();
+    p.then(end, (e) => end({ ok: false, handle: null, error: e }));
+  });
+}
+function onChart(chart, h){ try { return chart.indicators().includes(h); } catch (e) { return false; } }
+
+// ---- "Calculating… NN%" (Owner 22 Nov) ----
+// One ticker while anything computes or an add is in flight: every 250 ms it ends adds whose indicator left the chart,
+// feeds the editor's percentage, and keeps a chip on each long-running indicator's legend row (non-blocking:
+// the chart, crosshair and other indicators work as normal). × on the chip removes that indicator.
+const tracked = new Set();
+let calcTimer = 0;
+function calcKick(){ if (!calcTimer) calcTimer = setInterval(calcTick, 250); }
+function calcOf(chart, h){
+  const nx = nextEngines.get(chart), cl = engines.get(chart);
+  const r = nx && nx.runs ? nx.runs().find((x) => x.id === h.id) : null;
+  if (r) return { since: r.since, pct: r.pct };
+  return cl && cl.calcOf ? cl.calcOf(h.id) : null;
+}
+function cellsNow(){ try { const ws = getWs(); return ws ? ws.context().cells.map((c) => c.chart).filter(Boolean) : []; } catch (e) { return []; } }
+function calcTick(){
+  tracked.forEach((t) => { try { t.tick(); } catch (e) {} });
+  const now = Date.now();
+  let any = tracked.size > 0;
+  tracked.forEach((t) => {
+    const c = calcOf(t.chart, t.h);
+    if (c) any = true;
+    if (t.onProgress && c && now - c.since >= CALC_AFTER_MS) { try { t.onProgress(c.pct); } catch (e) {} }
+  });
+  const live = new Set();
+  cellsNow().forEach((chart) => {
+    let ui = null; try { ui = chart.orchestrator.renderer.inputsUI; } catch (e) {}
+    pineHandles(chart).forEach((h) => {
+      const c = calcOf(chart, h);
+      if (!c) return;
+      any = true;
+      if (now - c.since < CALC_AFTER_MS || h.visible === false) return;
+      const row = ui && ui.rows && ui.rows.get(h.id);
+      if (!row || !row.el) return;
+      live.add(row.el);
+      let chip = row.el.querySelector(':scope > .stk-calc');
+      if (!chip) {
+        chip = document.createElement('span');
+        chip.className = 'stk-calc';
+        chip.setAttribute('role', 'status');
+        chip.innerHTML = '<span class="stk-calc-t"></span><button type="button" class="stk-calc-x" aria-label="Stop calculating and remove this indicator" title="Stop and remove"><svg viewBox="0 0 12 12" width="10" height="10" aria-hidden="true"><path d="M3 3l6 6M9 3L3 9" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></button>';
+        chip.querySelector('button').addEventListener('click', (e) => { e.stopPropagation(); try { h.remove(); } catch (x) {} changed(); setTimeout(calcTick, 0); });
+        chip.addEventListener('dblclick', (e) => e.stopPropagation());
+        const at = row.controlsEl && row.controlsEl.parentNode === row.el ? row.controlsEl : null;
+        row.el.insertBefore(chip, row.valuesEl && row.valuesEl.parentNode === row.el ? row.valuesEl : at);
+      }
+      const txt = 'Calculating…' + (c.pct > 0 ? ' ' + c.pct + '%' : '');
+      const tEl = chip.firstChild; if (tEl.textContent !== txt) tEl.textContent = txt;
+    });
+  });
+  document.querySelectorAll('.stk-calc').forEach((c) => { if (!live.has(c.parentNode)) c.remove(); });
+  if (!any) { clearInterval(calcTimer); calcTimer = 0; }
+}
+function calcCss(){
+  if (document.getElementById('stk-calc-css')) return;
+  const st = document.createElement('style');
+  st.id = 'stk-calc-css';
+  // Legend row chip: 20 px pill; text and the × glyph both sit 8 px from the pill's edges (5 px pad + 3 px inside the
+  // 16 px round × target); tabular digits. Day + dark.
+  // The chip replaces Vela's own 3-dot loading mark on that row (the span right before it), so it isn't said twice.
+  st.textContent = 'span:has(+ .stk-calc){display:none!important}.stk-calc{display:inline-flex;align-items:center;gap:4px;flex:none;height:20px;box-sizing:border-box;margin-left:8px;padding:0 5px 0 8px;border-radius:10px;'
+    + 'background:rgba(3,201,136,.14);color:#03c988;font:600 11px/1 inherit;font-variant-numeric:tabular-nums;white-space:nowrap;pointer-events:auto}'
+    + '.stk-calc-t{display:block;line-height:20px}'
+    + '.stk-calc-x{display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;padding:0;margin:0;border:0;border-radius:50%;background:transparent;color:inherit;cursor:pointer}'
+    + '.stk-calc-x:hover,.stk-calc-x:focus-visible{background:rgba(3,201,136,.22);outline:none}'
+    + ':root[data-theme="light"] .stk-calc{background:rgba(7,153,106,.12);color:#07996a}'
+    + ':root[data-theme="light"] .stk-calc-x:hover,:root[data-theme="light"] .stk-calc-x:focus-visible{background:rgba(7,153,106,.2)}';
+  document.head.appendChild(st);
 }
 
 // Called by vela-chart.js BEFORE the workspace is constructed.
@@ -776,8 +953,17 @@ export function mountPine(ws, barL, opts){
     Sh.problems.head('busy', 'Running on the chart…'); Sh.problems.list([]);
     try {
       if (old) { try { old.remove(); } catch (er) {} }   // Update: the new version replaces the one this editor added
-      const r = await runOnChart(a.cell.chart, src, undefined, false, { inline: true });
+      // A run past 3 s: "Calculating… NN%" + Cancel (no time limit, Owner 22 Nov). Cancel removes the indicator, which stops its worker.
+      let running = null;
+      const onProgress = (pct) => {
+        if (!busy) return;
+        Sh.problems.head('busy', 'Calculating…' + (pct > 0 ? ' ' + pct + '%' : ''));
+        const hd = Sh.errBox.previousElementSibling;
+        if (hd && !hd.querySelector('.sed-retry')) hd.appendChild(el('button', { type: 'button', class: 'sed-tool sed-retry stk-calc-cancel', text: 'Cancel', onclick: () => { try { if (running) running.remove(); } catch (er) {} } }));
+      };
+      const r = await runOnChart(a.cell.chart, src, undefined, false, { inline: true, run: (h) => { running = h; }, onProgress });
       busy = false;
+      if (r.cancelled) { Sh.problems.head('info', 'Stopped. The script was not added.'); Sh.problems.list([]); }
       if (r.ok) {
         handle = r.handle; hasErr = false;
         let n = 0; try { n = Object.keys((a.cell.chart.inspect().indicators.find((x) => x.id === r.handle.id) || {}).series || {}).length; } catch (er) {}
@@ -785,7 +971,7 @@ export function mountPine(ws, barL, opts){
         toast((old ? 'Updated ' : 'Added ') + titleOf(r.handle) + (old ? ' on the chart' : ' to the chart')); if (isPhone()) setOpen(false);
       } else {
         if (old) { try { handle = (await runOnChart(a.cell.chart, old.source, undefined, false, { inline: true })).handle || null; } catch (er) { handle = null; } }
-        showErr(r.msg, r.line);
+        if (!r.cancelled) showErr(r.msg, r.line);
       }
     } catch (e) {
       busy = false;
@@ -926,7 +1112,7 @@ export function mountPine(ws, barL, opts){
     if (!a.cell) return { ok: false, msg: 'No chart to add it to.' };
     try {
       const r = await runOnChart(a.cell.chart, s.source, {}, true);
-      if (!r.ok) return { ok: false, heavy: r.heavy, msg: r.msg };
+      if (!r.ok) return { ok: false, heavy: r.heavy, cancelled: r.cancelled, msg: r.msg };
       libOf.set(r.handle, { id: s.id, version: s.version, openSource: s.openSource, ownerUid: s.ownerUid, name: s.name });
       changed();
       toast('Added ' + s.name + ' to the chart');
@@ -949,7 +1135,7 @@ export function mountPine(ws, barL, opts){
     if (source.length > max) return { ok: false, msg: 'This script is longer than ' + Math.round(max / 1024) + ' KB.' };
     try {
       const r = await runOnChart(a.cell.chart, source, undefined, false, opts);
-      if (!r.ok) return { ok: false, heavy: r.heavy, msg: (r.line ? 'Line ' + r.line + ': ' : '') + r.msg };
+      if (!r.ok) return { ok: false, heavy: r.heavy, cancelled: r.cancelled, msg: (r.line ? 'Line ' + r.line + ': ' : '') + r.msg };
       toast('Added ' + ((typeof name === 'string' && name) || (name && typeof name.name === 'string' && name.name) || titleOf(r.handle)) + ' to the chart');
       if (!panel.hidden) renderLists();
       return { ok: true };
@@ -973,6 +1159,6 @@ export function mountPine(ws, barL, opts){
   // LAYOUT-PERF (2026-11-08): warm both engines (modules + worker download) when the Indicators window opens,
   // so the first built-in added draws without waiting for ~350 KB of engine in a chain.
   const warm = () => { const a = activeCell(); if (a.cell) ensureEngine(a.cell.chart).then(() => ensureNext(a.cell.chart)).catch(() => {}); };
-  window.STRYKER_PINE = { warm, addSealed, sealOf, ensureRoom, open: () => setOpen(true), close: () => setOpen(false), load, addToChart, addShared, addSource, runOnChart, pineHandles, titleOf, explain, renderLists, toast, libOf, RUN_LIMIT_MS };
+  window.STRYKER_PINE = { warm, addSealed, sealOf, ensureRoom, open: () => setOpen(true), close: () => setOpen(false), load, addToChart, addShared, addSource, runOnChart, pineHandles, titleOf, explain, renderLists, toast, libOf };
   return { setOpen };
 }

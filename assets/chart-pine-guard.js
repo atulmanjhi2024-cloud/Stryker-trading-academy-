@@ -91,7 +91,7 @@
   function check(source) {
     var src = String(source || '');
     if (!src.trim()) return fail('The script is empty.');
-    if (src.length > 65536) return fail('The script is longer than 64 KB.');
+    if (src.length > 262144) return fail('This script is too long (' + Math.round(src.length / 1024) + ' KB, limit 256 KB).');
     var r = tokenize(src);
     if (r.err) return r.err;
     var T = r.toks, declared = Object.create(null), i, t;

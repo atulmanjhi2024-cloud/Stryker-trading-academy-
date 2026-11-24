@@ -4,7 +4,7 @@
 //
 // A saved script is { name, source }. Signed-in members: Firestore
 //   students/{uid}/pineScripts/{id}
-//   { name: string 1-60, source: string <= 65536 chars, createdAt, updatedAt: server timestamps }
+//   { name: string 1-60, source: string <= 262144 chars, createdAt, updatedAt: server timestamps }
 // Rules (firestore.rules, pineScripts block): owner only, fields and sizes validated.
 // The 50-script cap is enforced here (rules can't count documents).
 // Signed-out visitors, or a Firestore read/write that fails, use localStorage key
@@ -18,7 +18,7 @@
 (function () {
   'use strict';
   var NAME_MAX = 60;
-  var SOURCE_MAX = 65536;
+  var SOURCE_MAX = 262144;
   var MAX_COUNT = 50;
 
   var EXAMPLES = [
@@ -107,7 +107,7 @@
   function cleanSource(s) {
     s = String(s || '');
     if (!s.trim()) throw err('The script is empty.');
-    if (s.length > SOURCE_MAX) throw err('This script is too long to save (' + Math.round(s.length / 1024) + ' KB, limit 64 KB).');
+    if (s.length > SOURCE_MAX) throw err('This script is too long to save (' + Math.round(s.length / 1024) + ' KB, limit 256 KB).');
     return s;
   }
 

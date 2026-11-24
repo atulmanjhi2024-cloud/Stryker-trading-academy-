@@ -41,7 +41,7 @@ for (const [id, [name, author, md5]] of Object.entries(SCRIPTS)) {
   else console.log('SKIP ' + id + ': original not on this machine');
 }
 const cp = fs.readFileSync(path.join(root, 'assets', 'chart-pine.js'), 'utf8');
-check(/const SRC_MAX = 65536;/.test(cp), 'member uploads still capped at 64 KB (SRC_MAX 65536)');
+check(/const SRC_MAX = 262144;/.test(cp), 'member uploads capped at 256 KB (SRC_MAX 262144)');
 
 const PINETS = process.env.PINETS;
 if (!PINETS) { console.log('SKIP engine checks: set PINETS=<path to node_modules/pinets>'); process.exit(fails ? 1 : 0); }

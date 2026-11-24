@@ -55,7 +55,7 @@ import { createShell, el, ib, ICONS, libRow, emptyState, renderDocs, descOf, ago
 const PINE_PKG = '/assets/vendor/vela-pinets-0.2.11/index.js';
 const CALC_AFTER_MS = 3000;   // a run longer than this shows "Calculating… NN%" (editor) and the legend chip
 const MAX_PER_CELL = 8;
-const SRC_MAX = 65536;
+const SRC_MAX = 262144;
 const BUILTIN_SRC_MAX = 131072;
 const EXT_KEY = 'stryker.pine';
 
@@ -945,7 +945,7 @@ export function mountPine(ws, barL, opts){
     if (busy) return;
     const src = cur();
     if (!src.trim()) { showErr('The script is empty.'); return; }
-    if (src.length > SRC_MAX) { showErr('This script is longer than 64 KB.'); return; }
+    if (src.length > SRC_MAX) { showErr('This script is too long (' + Math.round(src.length / 1024) + ' KB, limit 256 KB).'); return; }
     const a = activeCell();
     if (!a.cell) return;
     const old = onChartNow() ? handle : null;
@@ -996,7 +996,7 @@ export function mountPine(ws, barL, opts){
   async function more(k){
     if (k === 'dup') { load(copyName(nameIn.value.trim() || 'Script'), cur(), null, 'new'); nameIn.focus(); nameIn.select(); }
     else if (k === 'export') download(fileName(nameIn.value.trim() || 'script', '.pine'), cur());
-    else if (k === 'import') { const f = await pickFile('.pine,.txt,text/plain'); if (!f) return; if (f.error) { showErr(f.error); return; } load(f.name, f.text, null, 'new'); }
+    else if (k === 'import') { const f = await pickFile('.pine,.txt,text/plain', SRC_MAX); if (!f) return; if (f.error) { showErr(f.error); return; } load(f.name, f.text, null, 'new'); }
     else if (k === 'publish') { if (window.StrykerPineLibrary) window.StrykerPineLibrary.openPublish({ name: nameIn.value.trim(), source: cur() }); else showErr('Publishing is unavailable.'); }
     else if (k === 'community') { if (window.StrykerPineLibrary) window.StrykerPineLibrary.openCommunity(); }
     else if (k === 'delete' && editingId && S) {
@@ -1132,7 +1132,7 @@ export function mountPine(ws, barL, opts){
     if (!a.cell) return { ok: false, msg: 'No chart to add it to.' };
     if (!source || !String(source).trim()) return { ok: false, msg: 'The script is empty.' };
     const max = opts && opts.builtin ? BUILTIN_SRC_MAX : SRC_MAX;
-    if (source.length > max) return { ok: false, msg: 'This script is longer than ' + Math.round(max / 1024) + ' KB.' };
+    if (source.length > max) return { ok: false, msg: 'This script is too long (' + Math.round(source.length / 1024) + ' KB, limit ' + Math.round(max / 1024) + ' KB).' };
     try {
       const r = await runOnChart(a.cell.chart, source, undefined, false, opts);
       if (!r.ok) return { ok: false, heavy: r.heavy, cancelled: r.cancelled, msg: (r.line ? 'Line ' + r.line + ': ' : '') + r.msg };

@@ -111,7 +111,7 @@
     if (!name) throw err('Give the script a name.');
     var src = String(f.source || '');
     if (!src.trim()) throw err('The script is empty.');
-    if (src.length > 65536) throw err('The script is longer than 64 KB.');
+    if (src.length > 262144) throw err('This script is too long (' + Math.round(src.length / 1024) + ' KB, limit 256 KB).');
     var g = window.StrykerPineGuard ? window.StrykerPineGuard.check(src) : { ok: false, msg: 'Safety check unavailable.' };
     if (!g.ok) throw err('Can\'t publish: ' + (g.line ? 'line ' + g.line + ': ' : '') + g.msg);
     var tags = (f.tags || []).filter(function (t) { return TAGS.indexOf(t) >= 0; }).slice(0, 5);

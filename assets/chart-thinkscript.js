@@ -429,7 +429,7 @@ export function mountThinkscript(ws, opts){
     const e = await ensureEditor().catch(() => null); if (!e) return;
     if (k === 'dup') { await load(copyName(nameIn.value.trim() || titleOf(e.get())), e.get(), null, 'new'); nameIn.focus(); nameIn.select(); }
     else if (k === 'export') download(fileName(nameIn.value.trim() || titleOf(e.get()), '.ts'), e.get());
-    else if (k === 'import') { const f = await pickFile('.ts,.txt,text/plain'); if (!f) return; if (f.error) { showErr(null, f.error); return; } await load(f.name, f.text, null, 'new'); }
+    else if (k === 'import') { const f = await pickFile('.ts,.txt,text/plain', SRC_MAX); if (!f) return; if (f.error) { showErr(null, f.error); return; } await load(f.name, f.text, null, 'new'); }
     else if (k === 'help') window.open('/help/thinkscript-on-tradezoro', '_blank', 'noopener');
     else if (k === 'delete' && editingId) {
       if (!window.confirm('Delete the study "' + (nameIn.value.trim() || 'this study') + '"? It stays on any chart it is already on.')) return;

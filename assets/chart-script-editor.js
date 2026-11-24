@@ -279,13 +279,13 @@ export function download(name, text){
   const a = el('a', { href: URL.createObjectURL(new Blob([text], { type: 'text/plain' })), download: name });
   document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 500);
 }
-export function pickFile(accept){
+export function pickFile(accept, max = 65536){
   return new Promise((res) => {
     const i = el('input', { type: 'file', accept, hidden: true });
     i.addEventListener('change', () => {
       const f = i.files && i.files[0]; i.remove();
       if (!f) return res(null);
-      if (f.size > 65536) return res({ error: 'This file is larger than 64 KB.' });
+      if (f.size > max) return res({ error: 'This file is too large (' + Math.round(f.size / 1024) + ' KB, limit ' + Math.round(max / 1024) + ' KB).' });
       f.text().then((text) => res({ name: f.name.replace(/\.[^.]+$/, '').slice(0, 60), text })).catch(() => res({ error: 'Could not read the file.' }));
     });
     document.body.appendChild(i); i.click();

@@ -335,6 +335,13 @@
       "alt": "About TradeZoro share card with the TradeZoro logo"
     },
     {
+      "page": "team.html",
+      "title": "The TradeZoro Team",
+      "og_title": "The TradeZoro Team — Moderators and Ambassadors",
+      "visual": "brand",
+      "alt": "The TradeZoro team share card with the TradeZoro logo"
+    },
+    {
       "page": "traders-for-traders.html",
       "title": "Traders for Traders",
       "og_title": "Traders for Traders: The Open Trading Project | TradeZoro",

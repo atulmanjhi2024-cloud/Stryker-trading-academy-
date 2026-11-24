@@ -837,6 +837,43 @@ def check_pro_features():
             fail('pro.html / pro-page.js / pro-features-data.js contain a "$": /pro shows no prices')
 
 
+def check_team_json():
+    """assets/data/team.json: {moderators:[], ambassadors:[]}; each entry needs a name, optional avatar (https Discord CDN),
+    tz (string) and socials{x,instagram,youtube,tiktok} (plain handles). The CoS edits this file without code changes."""
+    import json
+    try:
+        d = json.load(open(os.path.join(ROOT, 'assets', 'data', 'team.json'), encoding='utf-8'))
+    except Exception as exc:
+        fail(f'assets/data/team.json unreadable: {exc}')
+        return
+    if not isinstance(d, dict) or set(d) != {'moderators', 'ambassadors'}:
+        fail('team.json must have exactly the keys moderators and ambassadors')
+        return
+    for sec in ('moderators', 'ambassadors'):
+        if not isinstance(d[sec], list):
+            fail(f'team.json {sec} must be a list')
+            continue
+        for i, m in enumerate(d[sec]):
+            w = f'team.json {sec}[{i}]'
+            if not isinstance(m, dict) or not isinstance(m.get('name'), str) or not m['name'].strip():
+                fail(f'{w}: name (non-empty string) required')
+                continue
+            extra = set(m) - {'name', 'avatar', 'tz', 'socials'}
+            if extra:
+                fail(f'{w}: unknown fields {sorted(extra)}')
+            if 'avatar' in m and not (isinstance(m['avatar'], str) and re.match(r'^https://(cdn\.discordapp\.com|media\.discordapp\.net)/', m['avatar'])):
+                fail(f'{w}: avatar must be an https Discord CDN URL')
+            if 'tz' in m and not isinstance(m['tz'], str):
+                fail(f'{w}: tz must be a string')
+            so = m.get('socials', {})
+            if not isinstance(so, dict) or set(so) - {'x', 'instagram', 'youtube', 'tiktok'}:
+                fail(f'{w}: socials may only hold x, instagram, youtube, tiktok')
+            else:
+                for k, v in so.items():
+                    if not (isinstance(v, str) and re.match(r'^@?[A-Za-z0-9._]{1,40}$', v)):
+                        fail(f'{w}: socials.{k} must be a plain handle')
+
+
 def check_dl_logos():
     """Owner 22 Nov: the header Download menu shows the real OS logos (Windows/Apple/Linux/Android). A header rebuild once
     wiped them; fail if any menu link to /dl/ or the .apk uses the generic icon."""
@@ -872,7 +909,7 @@ def main():
              check_module_import_versions, check_versioned_sources, check_js_syntax, check_html_structure,
              check_css_braces, check_referenced_assets_exist, check_build_markers, check_mobile_width_guards,
              check_assets_changed_without_bump, check_share_images, check_help_center,
-             check_feature_image_frames, check_app_shell, check_sidebar_closed_before_main, check_dl_logos]
+             check_feature_image_frames, check_app_shell, check_sidebar_closed_before_main, check_dl_logos, check_team_json]
     with ThreadPoolExecutor(len(order)) as ex:
         list(ex.map(timed, order))
     FAILURES.sort()

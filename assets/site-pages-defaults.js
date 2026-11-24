@@ -24,6 +24,8 @@ const SITE_PAGES_DEFAULTS = {
       '<p>We built the curriculum the way a trading desk would train a new analyst: starting with candles, market structure, and liquidity, then building up to order blocks, fair value gaps, and full ICT models like the Judas Swing, ICT 2022, and Candle Range Theory. Every chapter includes worked examples and diagrams, not just theory.</p>' +
       '<h2>What we are — and are not</h2>' +
       '<p>TradeZoro is an <strong>educational service</strong>. We teach concepts and frameworks for reading price action; we do not manage money, provide personalized financial advice, or guarantee trading results. Trading involves substantial risk, and nothing in our curriculum should be taken as a recommendation to buy or sell any specific instrument. See our <a href="terms.html">Terms &amp; Risk Disclosure</a> for the full picture.</p>' +
+      '<h2>Our team</h2>' +
+      '<p>Meet the moderators and ambassadors who help run our Discord community on the <a href="team">TradeZoro team</a> page.</p>' +
       '<h2>Traders for Traders</h2>' +
       '<p>TradeZoro also runs <a href="traders-for-traders">Traders for Traders</a>, a community-driven initiative to make professional-grade tools, data and education available to every trader.</p>' +
       '<h2>[Add your story here]</h2>' +

@@ -1,0 +1,32 @@
+/* /team: Discord community team. Tokens from style.css; cards = surface + hairline + 16 radius + 16 padding. */
+.tm-hero{ padding:64px 0 40px; text-align:center; }
+.tm-hero h1{ font-size:clamp(28px,4vw,40px); line-height:1.2; font-weight:700; margin:0 0 12px; }
+.tm-hero p{ font-size:17px; line-height:24px; color:var(--ink-2); max-width:560px; margin:0 auto; }
+.tm-sec{ padding:0 0 48px; text-align:center; }
+.tm-sec h2{ font-size:22px; line-height:28px; font-weight:700; margin:0 0 4px; }
+.tm-sec .tm-sub{ font-size:14px; line-height:20px; color:var(--ink-2); margin:0 auto 24px; max-width:520px; }
+.tm-grid{ display:flex; flex-wrap:wrap; justify-content:center; gap:16px; }
+.tm-grid .tm-card{ width:240px; }
+.tm-card{ display:flex; flex-direction:column; align-items:center; gap:8px; padding:24px 16px; background:var(--surface-2); border:1px solid var(--line-card); border-radius:16px; text-align:center; }
+.tm-av{ width:72px; height:72px; border-radius:50%; flex:none; display:flex; align-items:center; justify-content:center; overflow:hidden; background:var(--bg-3); color:var(--gold); font-size:22px; font-weight:700; line-height:1; margin-bottom:4px; }
+.tm-av img{ width:100%; height:100%; object-fit:cover; display:block; }
+.tm-name{ font-size:17px; line-height:22px; font-weight:600; color:var(--ink-0); max-width:100%; overflow-wrap:anywhere; margin:0; }
+.tm-badge{ display:inline-flex; align-items:center; justify-content:center; height:24px; padding:0 12px; border-radius:999px; font-size:12px; line-height:16px; font-weight:600; color:var(--gold); background:rgba(3,201,136,.12); border:1px solid rgba(3,201,136,.28); }
+.tm-tz{ font-size:13px; line-height:18px; color:var(--ink-2); margin:0; font-variant-numeric:tabular-nums; }
+.tm-soc{ display:flex; flex-wrap:wrap; justify-content:center; gap:4px; margin-top:4px; }
+.tm-soc a{ width:44px; height:44px; display:inline-flex; align-items:center; justify-content:center; border-radius:12px; color:var(--ink-2); transition:color .15s cubic-bezier(.2,0,0,1),background .15s cubic-bezier(.2,0,0,1); }
+.tm-soc a:hover{ color:var(--gold); background:var(--bg-3); }
+.tm-soc a:focus-visible,.tm-cta:focus-visible{ outline:2px solid var(--gold); outline-offset:2px; }
+.tm-soc svg{ width:20px; height:20px; fill:currentColor; }
+.tm-empty{ max-width:480px; margin:0 auto; padding:32px 24px; background:var(--surface-2); border:1px solid var(--line-card); border-radius:16px; text-align:center; }
+.tm-empty h3{ font-size:17px; line-height:22px; font-weight:600; margin:0 0 8px; }
+.tm-empty p{ font-size:14px; line-height:20px; color:var(--ink-2); margin:0 0 20px; }
+.tm-cta{ display:inline-flex; align-items:center; justify-content:center; height:48px; padding:0 24px; border-radius:12px; background:var(--gold); color:#04120d; font-size:15px; font-weight:600; text-decoration:none; }
+.tm-cta:hover{ background:var(--gold-bright); }
+.tm-foot{ text-align:center; font-size:12px; line-height:16px; color:var(--ink-3); padding:0 0 48px; margin:0; }
+:root[data-theme="light"] .tm-card,:root[data-theme="light"] .tm-empty{ background:#fff; border-color:rgba(0,0,0,.1); }
+:root[data-theme="light"] .tm-av{ background:#eef0f3; color:#027a54; }
+:root[data-theme="light"] .tm-badge{ color:#027a54; background:rgba(3,201,136,.12); border-color:rgba(2,122,84,.3); }
+:root[data-theme="light"] .tm-cta{ color:#04120d; }
+:root[data-theme="light"] .tm-soc a:hover{ background:#eef0f3; color:#027a54; }
+@media (max-width:640px){ .tm-hero{ padding:40px 0 32px; } .tm-grid{ gap:12px; } .tm-grid .tm-card{ width:calc((100% - 12px) / 2); padding:20px 12px; } }

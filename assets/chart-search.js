@@ -23,6 +23,7 @@ import { classify, venueOf, pairOf, metaOf, search, symOf, keyOf, quoteOf, decim
 import { parseFormula, bodyOf } from './chart-formula-core.js?v=1250';
 import { resolveLegs } from './chart-formula.js?v=1250';
 import { venueChip } from './venue-logos.js?v=1250';
+import { fxMark } from './fx-flags.js?v=1250';
 import { getInfo } from './chart-symbol-info.js?v=1250';
 
 const PHONE_MAX = 700;
@@ -363,7 +364,7 @@ export function mountSearch(ws, o = {}) {
     const star = el('button', { type: 'button', class: 'stkss-star', tabindex: '-1', 'aria-label': 'Favourite ' + d.ticker, 'aria-pressed': String(favs.has(sym)), html: svg(IC.star, 18) });
     if (d.__formula) star.hidden = true;
     const ic = el('span', { class: 'stkss-ic stkss-ic-' + c, 'aria-hidden': 'true' });
-    if (d.__formula) ic.innerHTML = svg(IC.ratio, 18); else ic.textContent = initials(d);
+    if (d.__formula) ic.innerHTML = svg(IC.ratio, 18); else if (c === 'forex' && fxMark(d.ticker, 36)) { ic.classList.add('stkss-ic-fx'); ic.appendChild(fxMark(d.ticker, 36)); } else ic.textContent = initials(d);
     const tk = el('span', { class: 'stkss-tk' }); tk.appendChild(hl(String(d.ticker), cur.hits.get(d)));
     const line1 = el('span', { class: 'stkss-l1' }, [tk, statusTag(d, i)]);
     const tl = d.__formula ? '' : TYPE_LABEL[c] || '', vl = d.__formula ? '' : VENUE_LABEL[v] || (v ? v.toUpperCase() : '');

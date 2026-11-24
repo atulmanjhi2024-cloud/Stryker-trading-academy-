@@ -1,8 +1,9 @@
 // TradeZoro — venue logos: a small mark of the exchange / broker beside its text tag (VEST, BINANCE, CME ...)
 // in the symbol search list, the chart's symbol button, the indicator-dialog symbol field, watchlist rows and
-// the Book panel's source chips. Marks are local 32 px PNGs in assets/venue-logos/ (shown at 14 px on an 18 px
-// white tile so each one reads on dark and light), loaded lazily; no venue file = a neutral letter chip.
+// the Book panel's source chips. Marks are local 32 px PNGs in assets/venue-logos/ (shown at 14 px in an 18 px
+// transparent box; the few marks that vanish on one theme get a per-file filter, see INVERT_DARK), loaded lazily; no venue file = a neutral letter chip.
 // Data vendors are NOT venues and never get a logo. Education only. Not financial advice.
+import { fxMark, fxCss } from './fx-flags.js?v=1250';
 const DIR = '/assets/venue-logos/';
 // lower-case venue / exchange code -> file stem. CME Group's own mark covers CME, CBOT, NYMEX and COMEX (all CME Group
 // exchanges). NYSE (NYSE, AMEX, ARCA) has no usable official file, so it gets the letter chip. Never a wrong picture.
@@ -15,6 +16,9 @@ const FILE = {
   mt5: 'mt5', ninja: 'ninjatrader', ninjatrader: 'ninjatrader', tradovate: 'tradovate', ibkr: 'ibkr', rithmic: 'rithmic'
 };
 const SIZE = 18;
+// marks drawn dark-on-transparent: unreadable on the dark theme, so only these files are lightened there (nothing else is filtered)
+const INVERT_DARK = []; // none of the current files need it; add a stem here if a black-text mark is added
+const INVERT_CSS = INVERT_DARK.map((f) => ':root:not([data-theme="light"]) .vlogo img[data-v="' + f + '"]').join(',') + (INVERT_DARK.length ? '{filter:invert(1) hue-rotate(180deg);}' : '');
 
 // "binance:BTCUSDT" / "CBOT_MINI:YM1!" / "stocks:NASDAQ:AAPL" / a row's venue + ticker -> file stem or ''
 export function venueFile(venue, ticker, byoId) {
@@ -50,14 +54,15 @@ export function venueChip(key) {
   return chip(FILE[k] || '', k.charAt(0).toUpperCase());
 }
 
-export function chip(file, letter) {
+export function chip(file, letter, fx) {
+  const f = fx && fxMark(fx, SIZE + 2); if (f) return f;   // forex pair: two round flags instead of a venue mark
   const s = document.createElement('span');
   s.className = 'vlogo' + (file ? '' : ' vlogo-m');
   s.setAttribute('aria-hidden', 'true');
   if (file) {
     const i = new Image(); i.alt = ''; i.width = 14; i.height = 14; i.decoding = 'async'; i.loading = 'lazy';
     i.onerror = () => { s.classList.add('vlogo-m'); s.textContent = letter || '?'; };
-    i.src = DIR + file + '.png';
+    i.src = DIR + file + '.png'; i.dataset.v = file;
     s.appendChild(i);
   } else s.textContent = letter || '?';
   return s;
@@ -66,8 +71,8 @@ export function chip(file, letter) {
 function css() {
   if (document.getElementById('stk-vlogo-style')) return;
   const st = document.createElement('style'); st.id = 'stk-vlogo-style';
-  st.textContent =
-    '.vlogo{flex:none;display:inline-flex;align-items:center;justify-content:center;box-sizing:border-box;width:' + SIZE + 'px;height:' + SIZE + 'px;border-radius:5px;background:#fff;box-shadow:0 0 0 1px rgba(128,128,128,.35);vertical-align:middle;overflow:hidden;}' +
+  st.textContent = fxCss + INVERT_CSS +
+    '.vlogo{flex:none;display:inline-flex;align-items:center;justify-content:center;box-sizing:border-box;width:' + SIZE + 'px;height:' + SIZE + 'px;border-radius:5px;vertical-align:middle;overflow:hidden;}' +
     '.vlogo img{width:14px;height:14px;display:block;}' +
     '.vlogo-m{background:var(--vela-surface-elev,#2a2e39);color:var(--vela-fg-muted,#9aa0aa);font:700 10px/1 system-ui,sans-serif;box-shadow:0 0 0 1px var(--vela-border,rgba(128,128,128,.35));}' +
     '.vela-sp-badge.has-vlogo{display:inline-flex;align-items:center;gap:6px;padding-left:3px;}' +
@@ -104,11 +109,11 @@ export function mountVenueLogos(ws) {
       const sym = activeSym(), pre = /^([^:]+):/.exec(sym);
       let own = ''; try { own = pre && /^byo$/i.test(pre[1]) && byoLabel ? (byoLabel(sym) || {}).id || '' : ''; } catch (e) {}
       const f = venueFile(pre ? pre[1] : '', sym.replace(/^[^:]+:/, ''), own);
-      const have = b.querySelector(':scope > .vlogo');
+      const have = b.querySelector(':scope > .vlogo, :scope > .fxm');
       if (have && have.dataset.k === (f || sym)) return;
       if (have) have.remove();
       if (!pre) return;
-      const c = chip(f, venueLabel(pre[1], sym)); c.dataset.k = f || sym;
+      const c = chip(f, venueLabel(pre[1], sym), /^fx$/i.test(pre[1]) ? sym : ''); c.dataset.k = f || sym;
       b.classList.add('has-vlogo'); b.insertBefore(c, b.firstChild);
     });
   };
@@ -125,13 +130,13 @@ export function mountVenueLogos(ws) {
       const v = p[1].toLowerCase();
       let f = '';
       if (v === 'futures') f = 'cme'; else f = venueFile(v, p[2]);
-      if (v === 'fx' || v === 'idx') return;
-      const c = chip(f, venueLabel(p[1], p[2])); c.classList.add('stkw-sym-v'); s.after(c);
+      if (v === 'idx') return;
+      const c = chip(f, venueLabel(p[1], p[2]), v === 'fx' ? p[2] : ''); c.classList.add('stkw-sym-v'); s.after(c);
     });
     document.querySelectorAll('.stk-symin-btn:not([data-vl])').forEach((b) => {
       const sy = b.dataset.symbol || ''; if (!sy) return;
       const m = /^([^:]+):/.exec(sy); if (!m) return;
-      b.dataset.vl = '1'; b.insertBefore(chip(venueFile(m[1], sy.slice(m[1].length + 1)), venueLabel(m[1], sy)), b.firstChild);
+      b.dataset.vl = '1'; b.insertBefore(chip(venueFile(m[1], sy.slice(m[1].length + 1)), venueLabel(m[1], sy), /^fx$/i.test(m[1]) ? sy : ''), b.firstChild);
     });
     document.querySelectorAll('.stkbp-ex:not([data-vl])').forEach((e) => {
       e.dataset.vl = '1';

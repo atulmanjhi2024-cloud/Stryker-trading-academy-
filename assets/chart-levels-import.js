@@ -20,7 +20,7 @@
 // The maths lives in assets/chart-levels-core.js (node tests: tools/tests/levels-import.test.mjs).
 // Education only. Not financial advice.
 
-import * as Core from './chart-levels-core.js?v=1257';
+import * as Core from './chart-levels-core.js?v=1258';
 
 const VENDOR = new URL('./vendor/tesseract-7.0.0/', import.meta.url).href;
 const MAX_W = 2600;           // larger screenshots are scaled down first (speed; lines stay > 1 px)
@@ -29,7 +29,7 @@ const GROUP_KEY = 'stryker.levelgroups';
 // ------------------------------------------------------------------ OCR (lazy)
 let tessP = null, workerP = null;
 function tess(){
-  if (!tessP) tessP = import('./vendor/tesseract-7.0.0/tesseract.esm.min.js?v=1257').then((m) => m.default || m);
+  if (!tessP) tessP = import('./vendor/tesseract-7.0.0/tesseract.esm.min.js?v=1258').then((m) => m.default || m);
   return tessP;
 }
 function ocrWorker(onProgress){

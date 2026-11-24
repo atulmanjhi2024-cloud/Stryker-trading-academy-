@@ -2,7 +2,7 @@
 //   await strykerBeta.ready()          -> { beta, admin, cap } (cached; the answer comes from POST /api/beta/status: admin, or verified email on settings/betaTesters)
 //   strykerBeta.isBeta(featureId?)     -> true for beta testers and admins (sync; false until ready() resolved). A feature gated "beta" calls isBeta('mql5') instead of being hidden.
 //   strykerBeta.badge()                -> small "Beta" tag html; <span data-beta-uid="UID"></span> placeholders anywhere fill themselves from profiles/{uid}.beta.
-// Copy trading and admin pages never use this: they stay admin-only. Depends on: firebase auth (+ firestore compat for the tags).
+// Copy trading is admin OR beta tester (Owner 23 Nov; server: functions/connect/finatic/copy.js). Admin pages stay admin-only. Depends on: firebase auth (+ firestore compat for the tags).
 (function () {
   'use strict';
   (function () {   // the badge / report styles come with the script, so every page that loads it can show them

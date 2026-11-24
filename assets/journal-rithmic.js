@@ -1,6 +1,6 @@
 // TradeZoro — Nemesis: "Import from Rithmic" button + visibility switch (classic script)
 // Depends on: the journal page globals (db, auth, JOURNAL_UID) and assets/rithmic-journal-ui.js (loaded on click).
-// Visible only to admins, and only when settings/commerce.rithmicJournal is true or the URL has ?rjournal=1
+// Visible only to admins and beta testers (Owner 23 Nov), and only when settings/commerce.rithmicJournal is true or the URL has ?rjournal=1
 // (the Chief of Staff flips the switch once Rithmic confirms order-history access).
 (function () {
   'use strict';
@@ -18,13 +18,17 @@
     });
     anchor.parentNode.insertBefore(b, anchor.nextSibling);
   }
+  // beta tester? (assets/beta.js, loaded async by auth.js; server-checked verified email). Waits up to 10 s.
+  function betaReady() {
+    return new Promise(function (res) { var n = 0; (function t() { if (window.strykerBeta) window.strykerBeta.ready().then(function (s) { res(!!(s && s.beta)); }, function () { res(false); }); else if (n++ > 40) res(false); else setTimeout(t, 250); })(); });
+  }
   function init() {
     if (typeof auth === 'undefined' || typeof db === 'undefined') return;
     var seen = false;
     auth.onAuthStateChanged(function (user) {
       if (!user || seen) return; seen = true;
-      db.collection('admins').doc(user.uid).get().then(function (a) {
-        if (!a.exists) return;
+      db.collection('admins').doc(user.uid).get().then(function (a) { return a.exists || betaReady(); }).then(function (ok) {
+        if (!ok) return;
         var force = /[?&]rjournal=1\b/.test(location.search);
         if (force) return addButton(user.uid);
         return db.collection('settings').doc('commerce').get().then(function (c) {

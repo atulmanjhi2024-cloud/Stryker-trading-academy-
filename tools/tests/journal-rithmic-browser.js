@@ -49,11 +49,12 @@ function overlay({ admin, free, dev }) {
   }.toString()})(${!!admin}, ${!!free}, ${JSON.stringify(MOCK)})`;
 }
 
-async function open(b, { w, h, mobile, admin = true, free = false }) {
+async function open(b, { w, h, mobile, admin = true, free = false, beta = false }) {
   const ctx = await b.newContext({ viewport: { width: w, height: h }, deviceScaleFactor: 1, isMobile: !!mobile, hasTouch: !!mobile });
   await ctx.addInitScript(stub);
   await ctx.addInitScript(overlay({ admin, free }));
   await ctx.route(/^https?:\/\/(?!127\.0\.0\.1)/, (r) => r.abort());
+  await ctx.route(/\/api\/beta\/status/, (r) => r.fulfill({ contentType: 'application/json', body: JSON.stringify({ beta, admin: false, cap: 30 }) }));   // beta tester program (Owner 23 Nov)
   const p = await ctx.newPage();
   const errors = [];
   p.on('console', (m) => { if (m.type() === 'error' && !/ERR_FAILED|net::/.test(m.text())) errors.push(m.text()); });
@@ -172,6 +173,12 @@ async function run(b, w, h, mobile, shots) {
     await sleep(3000);
     check(!(await p.$('#ji-open-rithmic')), 'non-admin: no Import from Rithmic button even with ?rjournal=1');
     await ctx.close();
+    // beta tester (verified email on settings/betaTesters) sees it like an admin (Owner 23 Nov)
+    { const { ctx, p } = await open(b, { w: 1440, h: 900, admin: false, beta: true });
+      await p.goto(BASE + '/trade-journal.html?rjournal=1', { waitUntil: 'domcontentloaded' });
+      await p.waitForSelector('#ji-open-rithmic', { timeout: 15000 }).catch(() => {});
+      check(!!(await p.$('#ji-open-rithmic')), 'beta tester: Import from Rithmic button shown');
+      await ctx.close(); }
     const st = await (await fetch(MOCK_HTTP + '/__stats')).json();
     check(Array.isArray(st.forbidden) && st.forbidden.length === 0, 'mock saw zero order-entry requests');
   } catch (e) { fail++; console.log('FAIL exception ' + (e && e.stack || e)); }

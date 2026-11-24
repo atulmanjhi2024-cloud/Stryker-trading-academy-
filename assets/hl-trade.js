@@ -1,4 +1,4 @@
-// TradeZoro — ZoroCharts: Hyperliquid trading from the member's OWN wallet (ES module). DARK: admins only (admins/{uid}), testnet,
+// TradeZoro — ZoroCharts: Hyperliquid trading from the member's OWN wallet (ES module). DARK: admins + beta testers only, testnet,
 // until the Owner signs off (Owner order 2026-11-08 "Vest and hyperliquid"). No public copy, no marketing, no result claims.
 // NON-CUSTODIAL: connect an injected wallet (MetaMask / Rabby / Coinbase, EIP-1193) -> "Enable trading" = the wallet signs ONE
 // approveAgent for a session key made in this browser (assets/hl-trade-core.js) -> that key signs orders here. The key lives in
@@ -36,13 +36,17 @@ export function installHlTrade(Core) {
   CORE = Core;
   try { Core.registerRendererLayer({ id: LAYER, placement: 'above-data', create: layerFactory }); } catch (e) { console.warn('TradeZoro HL trade: layer', e); }
 }
+// beta tester? waits up to 10 s for assets/beta.js (auth.js / app-nav.js load it async)
+const betaReady = () => new Promise((res) => { let n = 0; const t = () => { if (window.strykerBeta) window.strykerBeta.ready().then((st) => res(!!(st && st.beta)), () => res(false)); else if (n++ > 40) res(false); else setTimeout(t, 250); }; t(); });
 export function mountHlTrade(ws, opts) {
   WS = ws;
   const bar = opts && opts.bar;
   const go = (uid) => {
     const d = window.db || (window.firebase && firebase.firestore && firebase.firestore());
     if (!d || !uid) return;
-    d.collection('admins').doc(uid).get().then((a) => { if (a.exists) { S.admin = true; window.__stkHl = { open: openPanel }; setInterval(pushLines, 2000); } }).catch(() => {});
+    // admins + beta testers (Owner 23 Nov: "release it for beta testers as well"); beta = assets/beta.js (server-checked verified email)
+    const on = () => { if (S.admin) return; S.admin = true; window.__stkHl = { open: openPanel }; setInterval(pushLines, 2000); };
+    d.collection('admins').doc(uid).get().then((a) => a.exists || betaReady()).then((ok) => { if (ok) on(); }).catch(() => {});
   };
   try { firebase.auth().onAuthStateChanged((u) => { if (u && !S.admin) go(u.uid); }); } catch (e) {}
 }
@@ -342,7 +346,7 @@ function seg(k, opts) {
 }
 function render() {
   if (!panel || !C) return;
-  panel.querySelector('.stkhl-tag').textContent = 'Admin beta · ' + (isMain() ? 'Mainnet' : 'Testnet');
+  panel.querySelector('.stkhl-tag').textContent = 'Beta · ' + (isMain() ? 'Mainnet' : 'Testnet');
   const body = panel.querySelector('.stkhl-body');
   const msg = S.msg ? '<p class="stkhl-msg" role="alert">' + esc(S.msg) + '</p>' : '';
   if (S.geo) {

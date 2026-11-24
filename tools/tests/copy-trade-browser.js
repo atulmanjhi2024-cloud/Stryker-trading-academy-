@@ -16,15 +16,16 @@ let fail = 0;
 const check = (ok, msg, x) => { if (!ok) fail++; console.log((ok ? 'PASS ' : 'FAIL ') + msg + (!ok && x !== undefined ? ' ' + JSON.stringify(x).slice(0, 600) : '')); };
 const A1 = '123e4567-e89b-12d3-a456-426614174001', A2 = '123e4567-e89b-12d3-a456-426614174002', A3 = '123e4567-e89b-12d3-a456-426614174003', US = '0aaa1111-2222-3333-4444-555566667777';
 
-async function open(b, { w, h, mobile, theme }) {
+async function open(b, { w, h, mobile, theme, role = 'beta' }) {
   const ctx = await b.newContext({ viewport: { width: w, height: h }, deviceScaleFactor: mobile ? 2 : 1, isMobile: !!mobile, hasTouch: !!mobile });
   await ctx.addInitScript(stub);
-  await ctx.addInitScript(({ t, US }) => {
-    window.__stkLiveTest = { isAdmin: () => false, last: () => 28750, fastRetry: true };
+  await ctx.addInitScript(({ t, US, role }) => {
+    // role: 'admin' | 'beta' (verified email on settings/betaTesters) | 'member' (Owner 23 Nov: copy trading = admin OR beta tester)
+    window.__stkLiveTest = { isAdmin: () => role === 'admin', isBeta: () => role === 'beta', last: () => 28750, fastRetry: true };
     window.__toasts = []; const keep = () => (ty, m) => { window.__toasts.push(String(m)); return Promise.resolve(); };
     Object.defineProperty(window, 'showToast', { configurable: true, get: () => keep(), set: () => {} });
     try { localStorage.setItem('stryker_install_prompt_shown_u1', '1'); localStorage.setItem('stryker_push_prompt_shown_u1', '1'); localStorage.setItem('stryker_theme', t === 'light' ? 'day' : 'night'); localStorage.setItem('stryker_broker_sync_user_u1', US); } catch (e) {}
-  }, { t: theme, US });
+  }, { t: theme, US, role });
   await ctx.route(/^https?:\/\/(?!127\.0\.0\.1|localhost|cdn\.jsdelivr\.net)/, (r) => r.abort());
   await ctx.route('**/api/chart/bars/**', (r) => {
     const u = new URL(r.request().url()), tf = Number(u.searchParams.get('tf') || 1), P = 8 * 3600, now = Math.floor(Date.now() / 1000);
@@ -80,6 +81,7 @@ async function open(b, { w, h, mobile, theme }) {
   await p.goto(BASE + '/charts.html', { waitUntil: 'domcontentloaded' });
   await p.waitForFunction(() => window.__stkHeavyReady && window.STRYKER_VELA && window.STRYKER_VELA.chart && window.__stkPaper, null, { timeout: 60000 });
   await p.evaluate(async () => { const ws = window.STRYKER_VELA; ws.active.setSymbol('futures:NQ1!'); ws.active.setTimeframe('1'); for (let i = 0; i < 40; i++) { await new Promise((r) => setTimeout(r, 250)); if (ws.chart.market.symbol === 'futures:NQ1!') break; } });
+  if (role === 'member') { await p.waitForFunction(() => window.__stkLive && window.__stkLive.state && window.__stkLive.state.accounts.length === 3, null, { timeout: 30000 }); await sleep(1500); return { ctx, p, errors, M }; }
   await p.waitForFunction(() => window.__stkLive && window.__stkLive.state && window.__stkLive.state.accounts.length === 3 && window.__stkCopy && window.__stkCopy.state.loaded, null, { timeout: 30000 }).catch(async (e) => { console.log('DBG', JSON.stringify(await p.evaluate(() => ({ live: !!window.__stkLive, n: window.__stkLive && window.__stkLive.state.accounts.length, copy: !!window.__stkCopy, cs: window.__stkCopy && window.__stkCopy.state }))), errors, M.calls.map((c) => c.path + ':' + c.body.op)); throw e; });
   return { ctx, p, errors, M };
 }
@@ -196,10 +198,22 @@ async function run(b, w, h, mobile, theme) {
   await ctx.close();
 }
 
+// GATE (Owner 23 Nov): admin and beta tester get Trade menu > Copy trading; a normal member does not (and no copy route call is made)
+async function gate(b, role) {
+  const { ctx, p, M } = await open(b, { w: 1440, h: 900, mobile: false, theme: 'dark', role });
+  await p.evaluate(() => window.__stkPaper.openTradeMenu());
+  const has = await wait(p, () => !!document.querySelector('#stkc-trade-pop:not([hidden]) [data-x=copytrade]'), null, 4000);
+  const copyCalls = M.calls.filter((c) => /\/copy$/.test(c.path)).length;
+  if (role === 'member') check(!has && !(await p.evaluate(() => !!window.__stkCopy)) && copyCalls === 0, 'gate member: no Copy trading entry, no copy calls', { has, copyCalls });
+  else check(has, 'gate ' + role + ': Trade menu has Copy trading');
+  await ctx.close();
+}
+
 (async () => {
   const b = await launch({ args: ['--no-sandbox'] });
   try {
-    for (const theme of ['dark', 'light']) {
+    for (const role of ['admin', 'beta', 'member']) await gate(b, role);
+    for (const theme of (process.env.GATE_ONLY ? [] : ['dark', 'light'])) {
       await run(b, 1440, 900, false, theme);
       await run(b, 390, 844, true, theme);
     }

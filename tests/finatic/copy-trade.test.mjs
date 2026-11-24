@@ -40,7 +40,7 @@ assert.equal(C.resultOf(503, { error: 'Insufficient margin' }).message, 'Insuffi
 // ---- server -------------------------------------------------------------------------------------------------------------
 const { privateKey, publicKey } = generateKeyPairSync('rsa', { modulusLength: 2048 });
 const b64 = (o) => Buffer.from(JSON.stringify(o)).toString('base64url');
-const token = (uid) => { const now = Math.floor(Date.now() / 1000); const h = b64({ alg: 'RS256', kid: 'k1' }), p = b64({ iss: 'https://securetoken.google.com/strykertrades-e0cd8', aud: 'strykertrades-e0cd8', sub: uid, iat: now - 5, exp: now + 3000 }); return h + '.' + p + '.' + createSign('RSA-SHA256').update(h + '.' + p).sign(privateKey).toString('base64url'); };
+const token = (uid, email) => { const now = Math.floor(Date.now() / 1000); const h = b64({ alg: 'RS256', kid: 'k1' }), p = b64({ iss: 'https://securetoken.google.com/strykertrades-e0cd8', aud: 'strykertrades-e0cd8', sub: uid, iat: now - 5, exp: now + 3000, ...(email ? { email, email_verified: !/unverified/.test(email) } : {}) }); return h + '.' + p + '.' + createSign('RSA-SHA256').update(h + '.' + p).sign(privateKey).toString('base64url'); };
 const jwk = { ...publicKey.export({ format: 'jwk' }), kid: 'k1', alg: 'RS256', use: 'sig' };
 // copy trading is ADMIN ONLY (Owner 21 Nov): memberA/memberB are admins here; 'outsider' is not
 const ADMINS = new Set(['memberA', 'memberB']);
@@ -179,3 +179,27 @@ console.log('copy-trade tests: all passed');
 
 // ADMIN ONLY gate: a signed-in non-admin member gets 403 copy_admin_only
 { const r = await go({ op: 'get' }, 'outsider'); assert.equal(r.status, 403); assert.equal(r.j.code || r.j.reason || r.j.error && 'x', r.j.code || r.j.reason || 'x'); assert.ok(JSON.stringify(r.j).includes('copy_admin_only'), 'non-admin refused'); console.log('ok admin-only gate'); }
+
+// ADMIN OR BETA TESTER gate (Owner 23 Nov). Beta = verified email on settings/betaTesters, read with the same helper as /api/beta
+// (functions/api/beta/_lib.js isBetaToken). Mocked service account + Firestore; nothing leaves this process.
+{
+  const sa = { client_email: 'sa@test', private_key: privateKey.export({ type: 'pkcs8', format: 'pem' }) };
+  const envB = { ...live, FIREBASE_SA_KEY: JSON.stringify(sa) };
+  let listDown = false;
+  const betaFetch = async (url) => {
+    const u = String(url);
+    if (u === 'https://oauth2.googleapis.com/token') return new Response(JSON.stringify({ access_token: 't', expires_in: 3000 }));
+    if (u.includes('/documents/admins/')) return new Response('{}', { status: 404 });
+    if (u.includes('/documents/settings/betaTesters')) return listDown ? new Response('{}', { status: 500 }) : new Response(JSON.stringify({ name: 'x/settings/betaTesters', fields: { emails: { arrayValue: { values: [{ stringValue: 'tester@example.com' }, { stringValue: 'unverified@example.com' }] } } } }));
+    throw new Error('unmocked ' + u);
+  };
+  const dB = { ...deps, betaFetch };
+  const reqE = (body, uid, email) => new Request('https://tradezoro.com/connect/finatic/copy', { method: 'POST', headers: { 'cf-connecting-ip': '10.8.' + (ip++ % 250) + '.1', origin: 'https://tradezoro.com', 'content-type': 'application/json', authorization: 'Bearer ' + token(uid, email) }, body: JSON.stringify(body) });
+  const goE = async (uid, email) => { const r = await CP.handle(reqE({ op: 'get' }, uid, email), envB, dB); return { status: r.status, j: await r.json() }; };
+  let r = await goE('memberA'); assert.equal(r.status, 200, 'admin ok'); console.log('ok gate: admin');
+  r = await goE('betaC', 'Tester@Example.com'); assert.equal(r.status, 200, 'beta tester ok'); assert.equal(r.j.cfg.on, false); console.log('ok gate: beta tester');
+  r = await goE('memberD', 'someone@example.com'); assert.equal(r.status, 403); assert.equal(r.j.code, 'copy_admin_only', 'normal member blocked'); console.log('ok gate: normal member blocked');
+  r = await goE('memberE', 'unverified@example.com'); assert.equal(r.status, 403, 'listed but unverified email blocked'); console.log('ok gate: unverified email blocked');
+  r = await goE('memberF'); assert.equal(r.status, 403, 'no email blocked');
+  listDown = true; r = await goE('memberG', 'tester@example.com'); assert.equal(r.status, 403, 'list unreadable = blocked (fail closed)'); console.log('ok gate: fail closed');
+}

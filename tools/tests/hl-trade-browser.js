@@ -21,7 +21,7 @@ let fail = 0;
 const check = (ok, msg) => { if (!ok) fail++; console.log((ok ? 'PASS ' : 'FAIL ') + msg); };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-async function open(b, { w, h, mobile, theme, admin = true, country = 'IN' }) {
+async function open(b, { w, h, mobile, theme, admin = true, country = 'IN', beta = false }) {
   const ctx = await b.newContext({ viewport: { width: w, height: h }, deviceScaleFactor: mobile ? 2 : 1, isMobile: !!mobile, hasTouch: !!mobile });
   await ctx.addInitScript(stub);
   await ctx.addInitScript(([theme, admin, user]) => {
@@ -56,6 +56,7 @@ async function open(b, { w, h, mobile, theme, admin = true, country = 'IN' }) {
   }, [theme, admin, USER]);
   const sent = [], bad = [];
   await ctx.route(/^https?:\/\/(?!127\.0\.0\.1|cdn\.jsdelivr\.net|api\.hyperliquid\.xyz|api\.hyperliquid-testnet\.xyz)/, (r) => r.abort());
+  await ctx.route(/\/api\/beta\/status/, (r) => r.fulfill({ contentType: 'application/json', body: JSON.stringify({ beta, admin: false, cap: 30 }) }));   // beta tester program (Owner 23 Nov)
   await ctx.route(/\/api\/hl-geo/, (r) => r.fulfill({ contentType: 'application/json', body: JSON.stringify({ country, region: '' }) }));
   await ctx.routeWebSocket(/api\.hyperliquid-testnet\.xyz\/ws/, () => {});   // account stream: stays quiet (REST fixtures are the state)
   const cors = { 'access-control-allow-origin': '*' };
@@ -106,6 +107,7 @@ async function run(b, tag, o) {
   const { ctx, p, errors, sent, bad } = await open(b, o);
   const btn = await p.evaluate(() => !!document.getElementById('stkhl-btn') || !!document.getElementById('stkhl-btn-gone'));
   const hlOk = await p.evaluate(() => !!(window.__stkHl && window.__stkHl.open));
+  if (o.beta) { await p.waitForFunction(() => !!(window.__stkHl && window.__stkHl.open), null, { timeout: 15000 }).catch(() => {}); check(await p.evaluate(() => !!(window.__stkHl && window.__stkHl.open)), tag + ': beta tester: panel reachable via window.__stkHl (Trade menu row)'); await ctx.close(); return; }
   if (!o.admin) { check(!btn && !hlOk && !(await p.evaluate(() => !!document.getElementById('stkhl'))), tag + ': non-admin sees no Hyperliquid trading button or panel'); check(!errors.length, tag + ': no page errors ' + errors.join(' | ').slice(0, 300)); await ctx.close(); return; }
   check(!btn && hlOk, tag + ': admin: no Wallet button in the bar, panel reachable via window.__stkHl (Trade menu row)');
   await p.evaluate(() => window.__stkHl.open()); await sleep(1200);
@@ -115,7 +117,7 @@ async function run(b, tag, o) {
     await shot(p, 'hl-' + tag + '-geo.png'); await ctx.close(); return;
   }
   let t = await txt(p, '#stkhl');
-  check(/Connect wallet/.test(t) && /TradeZoro never holds your funds/.test(t) && /cannot withdraw/i.test(t) && /Education only\. Not financial advice\./.test(t) && /Admin beta · Testnet/.test(t), tag + ': signed-out panel: connect, custody line, cannot withdraw, education line, Admin beta · Testnet');
+  check(/Connect wallet/.test(t) && /TradeZoro never holds your funds/.test(t) && /cannot withdraw/i.test(t) && /Education only\. Not financial advice\./.test(t) && /Beta · Testnet/.test(t), tag + ': signed-out panel: connect, custody line, cannot withdraw, education line, Beta · Testnet');
   if (o.shots) await shot(p, 'hl-' + tag + '-connect.png');
   await click(p, '#stkhl [data-a="connect"]'); await sleep(1500);
   t = await txt(p, '#stkhl');
@@ -193,7 +195,7 @@ async function run(b, tag, o) {
     const runs = [['1440-dark', { w: 1440, h: 900, theme: 'dark', admin: true, shots: true }], ['1440-light', { w: 1440, h: 900, theme: 'light', admin: true, shots: true }],
       ['412-dark', { w: 412, h: 915, mobile: true, theme: 'dark', admin: true, shots: true }], ['390-dark', { w: 390, h: 844, mobile: true, theme: 'dark', admin: true, shots: true }],
       ['390-light', { w: 390, h: 844, mobile: true, theme: 'light', admin: true, shots: true }],
-      ['1440-member', { w: 1440, h: 900, theme: 'dark', admin: false }], ['390-us', { w: 390, h: 844, mobile: true, theme: 'dark', admin: true, country: 'US' }]];
+      ['1440-member', { w: 1440, h: 900, theme: 'dark', admin: false }], ['1440-beta', { w: 1440, h: 900, theme: 'dark', admin: false, beta: true }], ['390-us', { w: 390, h: 844, mobile: true, theme: 'dark', admin: true, country: 'US' }]];
     for (const [tag, o] of runs) { if (only && !tag.includes(only)) continue; await run(b, tag, o); }
   } catch (e) { fail++; console.log('FAIL crashed: ' + (e && e.stack || e)); }
   await b.close();

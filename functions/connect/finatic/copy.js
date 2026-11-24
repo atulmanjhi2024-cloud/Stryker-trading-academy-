@@ -27,6 +27,7 @@ import { exec } from './order.js';
 import { getBracket } from './_audit.js';
 import { groupId } from '../../../assets/chart-live-core.js';
 import * as C from '../../../assets/copy-trade-core.js';
+import { isBetaToken } from '../../api/beta/_lib.js';
 
 const LEAD_OPS = ['place', 'modify', 'cancel', 'flatten'];
 const parse = (s, d) => { try { const v = JSON.parse(s); return v == null ? d : v; } catch (e) { return d; } };
@@ -41,12 +42,22 @@ const view = (c) => (c ? { on: c.on, paused: c.paused, leader: c.leader, followe
 // a Response -> { status, j } (the order route always answers JSON)
 const unpack = async (r) => { let j = {}; try { j = await r.clone().json(); } catch (e) {} return { status: r.status, j }; };
 
+// shortcut: a "yes" is kept 60 s per isolate so a fan is not slowed by two list reads; a removed tester keeps access up to 60 s.
+const betaMemo = new Map();
+async function betaUid(env, request, deps, uid) {
+  const hit = betaMemo.get(uid); if (hit && Date.now() - hit < 60000) return true;
+  const b = await isBetaToken(env, request, { verifyFetch: deps.verifyFetch, fetchImpl: deps.betaFetch });
+  if (!(b && b.beta && b.uid === uid)) return false;
+  if (betaMemo.size > 500) betaMemo.clear();
+  betaMemo.set(uid, Date.now()); return true;
+}
 async function run(request, env, deps) {
   if (request.method !== 'POST') return methodNotAllowed('POST');
   const g = await gate(request, env, deps, 'finatic-copy');
   if (g instanceof Response) return g;
-  // ADMIN ONLY (Owner 21 Nov: "Only enable copytrading for admin for now, let me first test it")
-  if (!g.admin) return fail(403, 'Copy trading is not available yet.', 'copy_admin_only');
+  // ADMIN OR BETA TESTER (Owner 21 Nov: admin only while he tests; Owner 23 Nov: "release it for beta testers as well").
+  // Beta = verified sign-in email on settings/betaTesters (functions/api/beta/_lib.js). Unreadable list = refused. Code kept for old clients.
+  if (!g.admin && !(await betaUid(env, request, deps, g.uid))) return fail(403, 'Copy trading is not available yet.', 'copy_admin_only');
   const b = await readBody(request);
   if (!b || typeof b !== 'object') return fail(400, 'Bad request');
   const op = b.op;

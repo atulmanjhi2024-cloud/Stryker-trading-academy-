@@ -72,8 +72,8 @@ for (const who of ['admin', 'beta']) {
   r = await go(O, 'order', { op: 'env', src: 'chart' }, who); assert.equal(r.status, 200, who + ' env'); assert.equal(r.j.enabled !== false, true);
   r = await go(O, 'order', place(who === 'admin' ? 2 : 3), who); assert.notEqual(r.j.code, 'brokers_paused', who + ' order not paused'); assert.notEqual(r.j.code, 'switched_off');
 }
-// copy trading stays admin only (unchanged): beta tester gets copy_admin_only, not the pause
-assert.equal((await go(C, 'copy', { op: 'list' }, 'beta')).j.code, 'copy_admin_only');
+// copy trading = admin OR beta tester: a beta tester gets past both the pause and the copy gate (not brokers_paused, not copy_admin_only)
+{ const r = await go(C, 'copy', { op: 'list' }, 'beta'); assert.notEqual(r.j.code, 'brokers_paused'); assert.notEqual(r.j.code, 'copy_admin_only'); }
 
 // 3. emergency stop settings/liveTrading off: every order refused for everyone, admin and beta tester too
 globalOn = false;

@@ -1017,13 +1017,22 @@ async function loadCt() {
     CT.acct = withShow(a);
   } catch (e) { CT.acct = null; }
 }
+function mountCopyTrading() {
+  import('./chart-copy.js?v=1238').then((m) => m.mountCopy({ live: window.__stkLive, paper: P, toast })).catch((e) => console.warn('TradeZoro: copy trading', e));   // Trade menu > Copy trading
+}
+// beta tester? (assets/beta.js, loaded async by auth.js / app-nav.js; waits up to 10 s for it). Local test hook: __stkLiveTest.isBeta.
+function betaReady() {
+  const T = window.__stkLiveTest; if (T && T.isBeta && /^(127\.0\.0\.1|localhost)$/.test(location.hostname)) return Promise.resolve(!!T.isBeta());
+  return new Promise((res) => { let n = 0; const t = () => { if (window.strykerBeta) window.strykerBeta.ready().then((s) => res(!!(s && s.beta)), () => res(false)); else if (n++ > 40) res(false); else setTimeout(t, 250); }; t(); });
+}
 export function mountLive(paperApi, opts) {
   P = paperApi; uid = opts.uid; toastFn = opts.toast || null; isAdmin = !!opts.admin;
   if (!document.getElementById('stklv-css')) { const st = document.createElement('style'); st.id = 'stklv-css'; st.textContent = CSS; document.head.appendChild(st); }
   P.setLiveHook({ mtFor, mtSetSymbol, active, noLiveWhy, lines, chipText, badgeFor, tickOf, chipX, drag, flattenActive, openTicket, renderHead, renderSummary, renderView, foot, dock, dockTrades, ladder, domState, cancel, flatten, caps, opInfo, placeTicket, kill, killOn, retryEnv, enableLive });
   loadMeta(); loadAccounts();
   ctAllowed().then((ok) => { if (ok) loadCt().then(loadAccounts); });   // cTrader trading: admins and beta testers (the relay re-checks)
-  if (isAdmin) import('./chart-copy.js?v=1238').then((m) => m.mountCopy({ live: window.__stkLive, paper: P, toast })).catch((e) => console.warn('TradeZoro: copy trading', e));   // Trade menu > Copy trading
+  // Copy trading: admins + beta testers (Owner 23 Nov). The server (functions/connect/finatic/copy.js) re-checks every call.
+  if (isAdmin) mountCopyTrading(); else betaReady().then((b) => { if (b) mountCopyTrading(); });
   window.addEventListener('storage', (e) => { if (e.key === lsUserKey()) loadAccounts(); });
   Object.assign(window.__stkLive, { mtFor, mtSetSymbol, connect, reconnect, pick, leave, read, loadAccounts, info, confirmSheet, balance, summary, metaOf, saveMeta, disconnect, L, envCheck, retryEnv, syncGroup, enableLive, get admin() { return isAdmin; } });
   Object.defineProperty(window.__stkLive, 'blockReason', { configurable: true, get: () => blockReason() });   // a getter (Object.assign would copy one frozen value)

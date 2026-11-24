@@ -3,9 +3,9 @@
 // /connect/finatic/data (server allow-list, scoped to the member's own connection). The "Order test" step is admins only (admin flag).
 // Flow: start session -> broker portal in a new tab (the member logs in there) -> Continue -> pick account + dates -> preview -> import.
 // Depends on the journal page globals: auth, db, firebase, JOURNAL_UID, JOURNAL_TRADES, journalCollectionRef, reloadJournalData, showToast.
-import { CSS } from './rithmic-journal-ui.js?v=1242';
-import { acctInfo, grantFor, ageText } from './chart-live-core.js?v=1242';
-import { tripsFromBroker, tripToTrade, tripId, ordersToFetch, planImport } from './finatic-fills.js?v=1242';
+import { CSS } from './rithmic-journal-ui.js?v=1243';
+import { acctInfo, grantFor, ageText } from './chart-live-core.js?v=1243';
+import { tripsFromBroker, tripToTrade, tripId, ordersToFetch, planImport } from './finatic-fills.js?v=1243';
 
 const esc = (s) => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 const toast = (t, m) => { try { window.showToast(t, m); } catch (e) {} };

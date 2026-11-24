@@ -35,7 +35,7 @@
 // Tests: tests/finatic/chart-live.test.mjs (core + server, mocked broker), tools/tests/chart-live-browser.js (mocked endpoints only),
 // tools/tests/ctrader-trade.test.mjs + tools/tests/ctrader-trade-browser.js (mocked cTrader frames).
 // Education only. Not financial advice.
-import * as L from './chart-live-core.js?v=1246';
+import * as L from './chart-live-core.js?v=1247';
 
 const POLL_MS = 10000, STALE_MS = 25000, IDLE_MS = 15 * 60000, HIDDEN_MS = 2 * 60000;
 const DISCLAIMER = 'Education only. Not financial advice.';
@@ -302,7 +302,7 @@ async function disconnect(id) {
 // (Owner 19 Nov: a new broker could not be added because the saved session auto-reconnected and closed). reconnect(): the quiet path
 // for an expired connection, reloads the saved one without the portal (the portal is one tap away if that fails).
 function openSync(portal) {
-  import('./finatic-journal-ui.js?v=1246').then((m) => m.openBrokerSync({ uid, mode: 'chart', portal, onConnected: () => { loadAccounts().then(() => toast('Broker connected. Pick the account in the panel.', 'success')); } }))
+  import('./finatic-journal-ui.js?v=1247').then((m) => m.openBrokerSync({ uid, mode: 'chart', portal, onConnected: () => { loadAccounts().then(() => toast('Broker connected. Pick the account in the panel.', 'success')); } }))
     .catch(() => toast('Could not open the broker connection.', 'error'));
 }
 const connect = () => openSync(true), reconnect = () => openSync(false);
@@ -441,7 +441,7 @@ function blockReason() {
 function loadFronts() {
   if (S.fronts) return;
   S.fronts = {};
-  import('./chart-symbol-info.js?v=1246').then((m) => m.getInfo()).then((d) => { S.fronts = L.frontsOf(d && d.syms); render(); }).catch(() => { S.fronts = null; });
+  import('./chart-symbol-info.js?v=1247').then((m) => m.getInfo()).then((d) => { S.fronts = L.frontsOf(d && d.syms); render(); }).catch(() => { S.fronts = null; });
 }
 function info(sym) {
   if (S.acct && S.acct.mt) return infoMt(sym);
@@ -1004,7 +1004,7 @@ async function ctAllowed() {
 }
 async function loadCt() {
   try {
-    CT.mod = CT.mod || await import('./ctrader-trade.js?v=1246');
+    CT.mod = CT.mod || await import('./ctrader-trade.js?v=1247');
     window.__stkCt = { open: () => CT.mod.startTradeSignIn(uid).catch((e) => toast(e.message || 'Could not open cTrader.', 'error')), get connected() { return !!CT.acct; } };
     const c = TEST && TEST.ctCreds ? TEST.ctCreds : await CT.mod.loadTradeCreds();   // test: localhost fixture creds + a mocked socket
     if (!c || !c.access || !c.accountId) { CT.acct = null; return; }
@@ -1018,7 +1018,7 @@ async function loadCt() {
   } catch (e) { CT.acct = null; }
 }
 function mountCopyTrading() {
-  import('./chart-copy.js?v=1246').then((m) => m.mountCopy({ live: window.__stkLive, paper: P, toast })).catch((e) => console.warn('TradeZoro: copy trading', e));   // Trade menu > Copy trading
+  import('./chart-copy.js?v=1247').then((m) => m.mountCopy({ live: window.__stkLive, paper: P, toast })).catch((e) => console.warn('TradeZoro: copy trading', e));   // Trade menu > Copy trading
 }
 // beta tester? (assets/beta.js, loaded async by auth.js / app-nav.js; waits up to 10 s for it). Local test hook: __stkLiveTest.isBeta.
 function betaReady() {

@@ -31,17 +31,50 @@
       p.after(box);
     });
   }
+  // 24 Nov: say WHICH step failed, in plain words, and log the step + status to the console (never a token or a code).
+  // Steps: token (functions/connect/ctrader/token.js), accounts (relay account list), save (device vault).
+  function reason(step, e, trade) {
+    e = e || {};
+    var st = e.status, code = e.code || '', up = e.upstream || '';
+    if (step === 'token') {
+      if (code === 'not_set_up') return 'cTrader isn’t set up on TradeZoro yet.';
+      if (code === 'rate' || st === 429) return 'Too many tries. Wait a minute, then try again.';
+      if (code === 'auth' || st === 401) return 'Your TradeZoro sign-in expired. Sign in again, then try again.';
+      if (code === 'rejected' || st === 400) return 'cTrader didn’t accept the sign-in. Please try again.';
+      return 'cTrader didn’t answer. Please try again in a minute.';
+    }
+    if (step === 'accounts') {
+      if (code === 'scope') return 'This cTrader app isn’t allowed to trade yet.';
+      if (code === 'CH_ACCESS_TOKEN_INVALID' || code === 'OA_AUTH_TOKEN_EXPIRED') return 'cTrader didn’t accept the sign-in. Please try again.';
+      if (code === 'relay') return 'Couldn’t reach cTrader. Please try again in a minute.';
+      return 'cTrader didn’t send your account list. Please try again.';
+    }
+    if (step === 'save') return 'Couldn’t save the sign-in on this device. Allow site storage (not private mode), then try again.';
+    return trade ? 'Something went wrong. Try again from the Trade menu in the charts.' : 'Something went wrong. Try again from Data source in the charts.';
+  }
+  function note(kind, step, e) {   // console only: step, HTTP status, our code, cTrader's error code. Never a token.
+    e = e || {};
+    try { console.warn('[ctrader-callback]', JSON.stringify({ kind: kind, step: step, status: e.status === undefined ? null : e.status, code: e.code || null, upstream: e.upstream || null, closeCode: e.closeCode || null })); } catch (x) { /* ignore */ }
+  }
+  // at(step, promise): a failure is tagged with the step it came from
+  function at(step, pr) { return pr.catch(function (e) { throw { step: step, e: e }; }); }
   function trade(c, ct, tr, u) {   // "Allow trading": pick the account, keep it in the trading vault entry, back to the charts
     h.textContent = 'Allowing trading…';
-    return u.getIdToken().then(function (idt) { return tr.swapTradeCode(code, idt); }).then(function (creds) {
-      return ct.listAccounts(creds).then(function (list) {
-        if (!list.length) return end('No cTrader account found', 'This cTrader ID has no trading account.');
+    return at('token', u.getIdToken().then(function (idt) { return tr.swapTradeCode(code, idt); })).then(function (creds) {
+      return at('accounts', ct.listAccounts(creds)).then(function (list) {
+        // cTrader reports the token's scope with the account list: view-only here means the app (or the grant) has no trading permission
+        if (list.scope === 0) throw { step: 'accounts', e: { code: 'scope' } };
+        if (!list.length) { note('trade', 'accounts', { code: 'no_accounts' }); return end('No cTrader account found', 'No trading account found on this cTrader ID.'); }
         return (list.length === 1 ? Promise.resolve(list[0]) : pick(list)).then(function (x) {
           creds.accountId = x.id; creds.isLive = x.isLive; creds.login = x.login; creds.broker = x.broker;
-          return c.bindUser(u.uid).then(function () { return tr.saveTradeCreds(creds); }).then(function () { try { localStorage.setItem('tz-ctrader-trade-at', String(Date.now())); } catch (e) { /* private mode */ } location.replace('/charts'); });
+          return at('save', c.bindUser(u.uid).then(function () { return tr.saveTradeCreds(creds); })).then(function () { try { localStorage.setItem('tz-ctrader-trade-at', String(Date.now())); } catch (e) { /* private mode */ } location.replace('/charts'); });
         });
       });
-    }).catch(function () { end('Trading was not allowed', 'Something went wrong. Try again from the Trade menu in the charts.'); });
+    }).catch(function (f) {
+      var step = f && f.step ? f.step : 'other', e = f && f.step ? f.e : f;
+      note('trade', step, e);
+      end(step === 'accounts' && e && e.code === 'scope' ? 'Trading isn’t switched on' : 'Trading was not allowed', reason(step, e, true));
+    });
   }
   user().then(function (u) {
     if (!u) return end('Sign in first', 'Sign in to TradeZoro, then connect cTrader again.');
@@ -50,17 +83,21 @@
       if (tr.takeTradeState(state, u.uid)) return trade(c, ct, tr, u);
       var rec = ct.takeCtraderState(state, u.uid);
       if (!rec) return end('cTrader was not connected', 'The sign-in link expired. Start again from Data source in the charts.');
-      return u.getIdToken().then(function (idt) { return ct.ctraderTokenCall({ grant: 'code', code: code }, idt); })
+      return at('token', u.getIdToken().then(function (idt) { return ct.ctraderTokenCall({ grant: 'code', code: code }, idt); }))
         .then(function (j) {
           var creds = ct.ctraderCreds(j);
-          return ct.listAccounts(creds).then(function (list) {
+          return at('accounts', ct.listAccounts(creds)).then(function (list) {
             if (!list.length) return end('No cTrader account found', 'This cTrader ID has no trading account to read prices from.');
             return (list.length === 1 ? Promise.resolve(list[0]) : pick(list)).then(function (x) {
               creds.accountId = x.id; creds.isLive = x.isLive;
-              return c.bindUser(u.uid).then(function () { return c.saveSource('ctrader', creds, undefined, true); }).then(function () { location.replace('/charts'); });
+              return at('save', c.bindUser(u.uid).then(function () { return c.saveSource('ctrader', creds, undefined, true); })).then(function () { location.replace('/charts'); });
             });
           });
         });
     });
-  }).catch(function () { end('cTrader was not connected', 'Something went wrong. Try again from Data source in the charts.'); });
+  }).catch(function (f) {
+    var step = f && f.step ? f.step : 'other', e = f && f.step ? f.e : f;
+    note('data', step, e);
+    end('cTrader was not connected', reason(step, e, false));
+  });
 })();

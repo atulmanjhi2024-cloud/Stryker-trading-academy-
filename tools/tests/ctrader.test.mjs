@@ -114,7 +114,9 @@ await t('ws: 503 unconfigured, 426 no upgrade, 403 bad origin, 401 no/bad token,
 // ---- token function ----
 const treq = (o = {}) => new Request('https://tradezoro.com/connect/ctrader/token' + (o.q || ''), { method: o.method || 'POST', headers: { origin: 'https://tradezoro.com', 'content-type': 'application/json', authorization: 'Bearer ' + good, ...(o.h || {}) }, body: o.method === 'GET' ? undefined : (o.body ?? JSON.stringify({ grant: 'code', code: 'CODEABCDEFGH' })) });
 let upstream = null;
-const fetchImpl = async (u, o) => { upstream = { u, o }; return new Response(JSON.stringify({ accessToken: 'ACCESSFAKE1', refreshToken: 'REFRESHFAKE1', expiresIn: 2628000, tokenType: 'bearer', errorCode: null, description: null, extra: 'x' }), { status: 200 }); };
+// Behaves like the Cloudflare Workers runtime: redirect:'error' THROWS there (Node accepts it). That was the 24 Nov live bug.
+const workersRedirect = (o) => { if (o && o.redirect === 'error') throw new TypeError('Invalid redirect value, must be one of "follow" or "manual"'); };
+const fetchImpl = async (u, o) => { workersRedirect(o); upstream = { u, o }; return new Response(JSON.stringify({ accessToken: 'ACCESSFAKE1', refreshToken: 'REFRESHFAKE1', expiresIn: 2628000, tokenType: 'bearer', errorCode: null, description: null, extra: 'x' }), { status: 200 }); };
 const tcall = (r, env = ENV, deps = {}) => tokenHandle(r, env, { verifyFetch, fetchImpl, ...deps });
 await t('token fn: probe, method, origin, content-type, auth, body', async () => {
   assert.deepEqual(await (await tcall(treq({ method: 'GET', q: '?probe=1' }))).json(), { configured: true, client_id: 'CLIENTID123' });
@@ -140,7 +142,39 @@ await t('token fn: swap + refresh go to cTrader only, redirect fixed, reply trim
   assert.ok(!logs.join('').match(/ACCESSFAKE|REFRESHFAKE|SECRETFAKE/));
   const bad = await tcall(treq(), ENV, { fetchImpl: async () => new Response(JSON.stringify({ errorCode: 'ACCESS_DENIED', description: 'SECRETFAKE-abc123' }), { status: 200 }) });
   assert.equal(bad.status, 400); assert.ok(!(await bad.text()).includes('SECRETFAKE'));
-  assert.equal((await tcall(treq(), ENV, { fetchImpl: async () => { throw new Error('boom ' + SECRET); } })).status, 502);
+  const down = await tcall(treq(), ENV, { fetchImpl: async () => { throw new Error('boom ' + SECRET); } });
+  assert.equal(down.status, 503, 'never 502: the edge would swap the body'); assert.equal((await down.json()).code, 'upstream');
+  console.log = o[0]; console.error = o[1]; console.warn = o[2];
+  assert.ok(!logs.join('').match(/ACCESSFAKE|REFRESHFAKE|SECRETFAKE|CODEABCDEFGH|boom/), 'logs carry no token, code or secret');
+});
+await t('token fn (24 Nov bug): upstream fetch works under Workers rules; every failure says which kind in JSON', async () => {
+  upstream = null;
+  const ok = await tcall(treq()); assert.equal(ok.status, 200, 'redirect:error would throw on Workers'); assert.equal(upstream.o.redirect, 'manual');
+  const logs = []; const o = console.log; console.log = (...a) => logs.push(a.join(' '));
+  try {
+    const rej = await tcall(treq(), ENV, { fetchImpl: async (u, op) => { workersRedirect(op); return new Response(JSON.stringify({ errorCode: 'ACCESS_DENIED', description: 'x' }), { status: 200 }); } });
+    assert.equal(rej.status, 400); assert.deepEqual(await rej.json(), { error: 'cTrader did not accept this sign-in', code: 'rejected', upstream: 'ACCESS_DENIED' });
+    const odd = await tcall(treq(), ENV, { fetchImpl: async () => new Response(JSON.stringify({ errorCode: '<script>', description: 'x' }), { status: 200 }) });
+    assert.equal((await odd.json()).upstream, 'OTHER', 'only a plain error code is passed back');
+    const nt = await tcall(treq(), ENV, { fetchImpl: async () => new Response('{}', { status: 200 }) });
+    assert.deepEqual(await nt.json(), { error: 'cTrader did not accept this sign-in', code: 'rejected', upstream: 'no_token' });
+    const e5 = await tcall(treq(), ENV, { fetchImpl: async () => new Response('<html>', { status: 500 }) }); assert.equal(e5.status, 503); assert.equal((await e5.json()).code, 'upstream');
+    const e3 = await tcall(treq(), ENV, { fetchImpl: async () => new Response(null, { status: 302, headers: { location: 'https://x.example' } }) }); assert.equal(e3.status, 503, 'a redirect is refused');
+    const codes = async (r) => (await r.json()).code;
+    assert.equal(await codes(await tcall(treq(), {})), 'not_set_up');
+    assert.equal(await codes(await tcall(treq({ h: { origin: 'https://evil.example.com' } }))), 'origin');
+    assert.equal(await codes(await tcall(treq({ h: { authorization: '' } }))), 'auth');
+    assert.equal(await codes(await tcall(treq({ body: '{"grant":"x"}' }))), 'bad_request');
+  } finally { console.log = o; }
+  assert.ok(logs.some((l) => /"step":"code".*"upstream":"ACCESS_DENIED"/.test(l)), 'the step and cTrader error code are logged');
+  assert.ok(!logs.join('').match(/ACCESSFAKE|REFRESHFAKE|SECRETFAKE|CODEABCDEFGH/), 'never a token');
+});
+await t('browser token call keeps the reason (status, code, cTrader error code) on the error', async () => {
+  const mk = (status, body) => ({ fetch: async () => new Response(JSON.stringify(body), { status }) });
+  await assert.rejects(ct.ctraderTokenCall({ grant: 'code', code: 'CODEABCDEFGH' }, 'IDT', mk(400, { error: 'x', code: 'rejected', upstream: 'ACCESS_DENIED' })), (e) => e.status === 400 && e.code === 'rejected' && e.upstream === 'ACCESS_DENIED');
+  await assert.rejects(ct.ctraderTokenCall({ grant: 'code', code: 'CODEABCDEFGH' }, 'IDT', mk(503, { error: 'x', code: 'not_set_up' })), (e) => e.code === 'not_set_up' && /coming soon/.test(e.message));
+  await assert.rejects(ct.ctraderTokenCall({ grant: 'code', code: 'CODEABCDEFGH' }, 'IDT', mk(503, { error: 'x', code: 'upstream' })), (e) => e.status === 503 && e.code === 'upstream');
+  assert.equal((await ct.ctraderTokenCall({ grant: 'code', code: 'CODEABCDEFGH' }, 'IDT', mk(200, { access_token: 'A12345678' }))).access_token, 'A12345678');
 });
 
 // ---- browser side: OAuth URL, scope, adapter ----

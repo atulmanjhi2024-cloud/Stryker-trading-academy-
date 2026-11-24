@@ -658,7 +658,7 @@ def check_stripe_void():
 def check_ctrader():
     """cTrader (data relay + admin-only trading relay, 23 Nov): allow-lists, per-type checks, gates, audit, idempotency, account lock,
     mocked cTrader end to end. tools/tests/ctrader*.test.mjs. No network, never a real order."""
-    for t in ('ctrader.test.mjs', 'ctrader-trade.test.mjs', 'ctrader-trade-link.test.mjs'):
+    for t in ('ctrader.test.mjs', 'ctrader-trade.test.mjs', 'ctrader-trade-link.test.mjs', 'ctrader-callback.test.mjs'):
         r = subprocess.run(['node', 'tools/tests/' + t], capture_output=True, text=True, cwd=ROOT, timeout=180)
         if r.returncode != 0 or 'Error' in r.stderr:
             fail('ctrader ' + t + ': ' + (r.stdout + r.stderr).strip()[-300:])

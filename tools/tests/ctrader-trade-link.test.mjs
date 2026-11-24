@@ -26,6 +26,13 @@ await t('"Allow trading" sign-in asks scope=trading with its own single-use stat
   assert.ok(ct.takeCtraderState(dataState, 'u1', st), 'the data sign-in still finishes on its own record');
   assert.equal(T.TT.VAULT, 'ctrader-trade'); assert.notEqual(T.TT.VAULT, 'ctrader');
 });
+await t('account list reports the token scope (24 Nov): trading 1, view-only 0, so the callback can say the app is not allowed to trade', async () => {
+  const opts = (M) => ({ WS: makeWS(M), location: { protocol: 'https:', host: 'tradezoro.com' }, idToken: async () => 'IDT' });
+  const a = await ct.listAccounts(CREDS(), opts(mockState({ scope: 1 }))); assert.equal(a.scope, 1); assert.equal(a.length, 1); assert.equal(a[0].id, ACC);
+  assert.equal((await ct.listAccounts(CREDS(), opts(mockState({ scope: 0 })))).scope, 0);
+  assert.equal((await ct.listAccounts(CREDS(), opts(mockState({ scope: 'SCOPE_TRADE' })))).scope, 1);
+  assert.equal((await ct.listAccounts(CREDS(), opts(mockState({ scope: undefined })))).scope, null);
+});
 await t('mapping: reconcile, trader balance, new-order build (market relative SL/TP, limit absolute, size rules)', () => {
   const names = new Map([[1, 'EURUSD']]), det = new Map([[1, { lotSize: 10000000, minVolume: 100000, stepVolume: 100000, maxVolume: 1e10, digits: 5 }]]);
   const r = T.mapReconcile({ position: [{ positionId: 9, price: 1.1, tradeData: { symbolId: 1, volume: 3000000, tradeSide: 2 } }], order: [{ orderId: 5, orderType: 2, limitPrice: 1.09, tradeData: { symbolId: 1, volume: 100000, tradeSide: 1 } }, { orderId: 6, closingOrder: true, tradeData: { symbolId: 1, volume: 1 } }] }, names, det);

@@ -56,9 +56,11 @@ export function takeCtraderState(state, userId, store = globalThis.sessionStorag
 }
 export async function ctraderTokenCall(body, idToken, d) {
   const r = await dep(d).fetch(CT.TOKEN, { method: 'POST', ...HARD, headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + idToken }, body: JSON.stringify(body) });
-  if (r.status === 503) throw fail('cTrader is coming soon', { status: 503 });
-  const j = r.ok ? await r.json().catch(() => null) : null;
-  if (!j || !j.access_token) throw fail('cTrader ' + r.status, { status: r.status });
+  const j = await r.json().catch(() => null);
+  // code/upstream come from functions/connect/ctrader/token.js (no tokens in them); the callback page turns them into plain words
+  const why = { status: r.status, code: (j && typeof j.code === 'string' && j.code) || '', upstream: (j && typeof j.upstream === 'string' && j.upstream) || '' };
+  if (r.status === 503 && (!why.code || why.code === 'not_set_up')) throw fail('cTrader is coming soon', { ...why, code: 'not_set_up' });
+  if (!r.ok || !j || !j.access_token) throw fail('cTrader ' + r.status, why);
   return j;
 }
 export const ctraderCreds = (j, prev, now = Date.now()) => ({ ...(prev || {}), access: j.access_token, refresh: j.refresh_token || (prev && prev.refresh), exp: now + (Number(j.expires_in) || 2628000) * 1000 });
@@ -147,11 +149,13 @@ export async function listAccounts(c, d) {
     const { WS } = dep(d), idt = await idToken(d);
     await new Promise((res, rej) => {
       const ws = new WS(wsUrl('live', d && d.location), ['tz-auth', idt]); s.ws = ws;
-      ws.onmessage = (ev) => s.onMsg(ev.data, res); ws.onclose = () => rej(fail('cTrader relay closed', { status: 0 })); ws.onerror = () => { try { ws.close(); } catch (e) { /* closed */ } };
+      ws.onmessage = (ev) => s.onMsg(ev.data, res); ws.onclose = (ev) => rej(fail('cTrader relay closed', { status: 0, code: 'relay', closeCode: (ev && ev.code) || 0 })); ws.onerror = () => { try { ws.close(); } catch (e) { /* closed */ } };
     });
     const r = await s.send(2149, { accessToken: c.access });
-    const list = (r.payload && r.payload.ctidTraderAccount) || [];
-    return list.filter((a) => Number.isSafeInteger(a.ctidTraderAccountId)).map((a) => ({ id: a.ctidTraderAccountId, isLive: a.isLive !== false, login: a.traderLogin || null, broker: String(a.brokerTitleShort || '').slice(0, 40) }));
+    const list = (r.payload && r.payload.ctidTraderAccount) || [], ps = r.payload && r.payload.permissionScope;
+    // the token's scope as cTrader reports it: 1 = trading, 0 = view only, null = not reported (the "Allow trading" page checks it)
+    const scope = ps === 'SCOPE_TRADE' || ps === 1 ? 1 : ps === 'SCOPE_VIEW' || ps === 0 ? 0 : null;
+    return Object.assign(list.filter((a) => Number.isSafeInteger(a.ctidTraderAccountId)).map((a) => ({ id: a.ctidTraderAccountId, isLive: a.isLive !== false, login: a.traderLogin || null, broker: String(a.brokerTitleShort || '').slice(0, 40) })), { scope });
   } finally { s.shut(); }
 }
 

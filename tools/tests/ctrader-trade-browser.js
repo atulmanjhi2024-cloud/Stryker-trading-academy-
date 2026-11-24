@@ -57,6 +57,7 @@ async function open(b, { w, h, mobile, theme, admin = true, beta = false, ct = t
   const j = (o, status = 200) => ({ status, contentType: 'application/json', body: JSON.stringify(o) });
   await ctx.route('**/connect/finatic/**', async (r) => {
     const u = new URL(r.request().url()); let body = {}; try { body = JSON.parse(r.request().postData() || '{}'); } catch (e) {}
+    if (u.searchParams.get('probe')) return r.fulfill(j({ configured: true }));
     F.calls.push({ path: u.pathname, body });
     if (u.pathname.endsWith('/data')) {
       if (body.op === 'accounts') return r.fulfill(j({ userId: US, data: [{ accountId: ACC, accountName: 'SAMPLEDEMO5551234', accountNumber: '70001234', brokerName: 'tradovate' }] }));
@@ -131,13 +132,29 @@ async function notConnected(b, w, h, mobile, theme) {
   await p.waitForFunction(() => window.__stkLive && window.__stkLive.state.loaded, null, { timeout: 20000 });
   await openMenu(p);
   if (BEFORE) { await p.screenshot({ path: OUT + '/before-menu-' + w + '-' + theme + '.png' }); await ctx.close(); return; }
-  const btn = await p.$('#stkc-trade-pop [data-a=ctrader]');
-  check(!!btn, tag + ': admin sees "Allow trading with cTrader"');
-  const al = await p.evaluate(() => { const e = document.querySelector('#stkc-trade-pop [data-a=ctrader]'), b = e.getBoundingClientRect(), i = e.querySelector('.stktm-logo').getBoundingClientRect(), s = getComputedStyle(e); return { h: b.height, iconCy: i.top + i.height / 2, btnCy: b.top + b.height / 2, padL: s.paddingLeft, padR: s.paddingRight, w: b.width, popW: e.parentElement.getBoundingClientRect().width, clip: e.scrollWidth > e.clientWidth + 1 }; });
-  check(Math.abs(al.iconCy - al.btnCy) <= 1 && !al.clip, tag + ': logo centred in the Allow trading pill, text not clipped', al);
-  console.log('ALIGN ' + tag + ' ' + JSON.stringify(al));
+  check(!(await p.$('#stkc-trade-pop [data-a=ctrader]')), tag + ': no separate "Allow trading with cTrader" button in the menu');
   await p.screenshot({ path: OUT + '/after-menu-allow-' + w + '-' + theme + '.png' });
-  await tap(p, '#stkc-trade-pop [data-a=ctrader]', mobile);
+  await tap(p, '#stkc-trade-pop [data-a=connect]', mobile);
+  await p.waitForSelector('#fjs .fjs-tile[data-broker=ctrader]', { timeout: 30000 }).catch(async (e) => { console.log('DLG', await p.evaluate(() => (document.getElementById('fjs') || document.body).innerText.slice(0, 300))); throw e; });
+  await sleep(400);
+  const al = await p.evaluate(() => {
+    const t = [...document.querySelectorAll('#fjs .fjs-tile')], ids = t.map((e) => e.dataset.broker), r = t.map((e) => e.getBoundingClientRect());
+    const ct = t[0], lg = ct.querySelector('.fjs-lg'), im = ct.querySelector('img'), cs = getComputedStyle(lg);
+    const cx = r.map((b) => Math.round(b.left + b.width / 2)), tops = [...new Set(r.map((b) => Math.round(b.top)))];
+    const sc = document.querySelector('#fjs'); const soon = t.filter((e) => e.getAttribute('aria-disabled') === 'true').map((e) => e.dataset.broker);
+    const logoCx = t.map((e) => { const b = e.querySelector('.fjs-lg').getBoundingClientRect(), k = e.getBoundingClientRect(); return Math.abs(b.left + b.width / 2 - (k.left + k.width / 2)); });
+    return { ids, sameSize: r.every((b) => Math.abs(b.width - r[0].width) <= 1 && Math.abs(b.height - r[0].height) <= 1), rows: tops.length, perRow: r.filter((b) => Math.round(b.top) === tops[0]).length, bg: cs.backgroundColor, bw: cs.borderTopWidth, imgOk: im && im.complete && im.naturalWidth > 0, soon, soonTitle: t.filter((e) => e.title === 'Coming soon').length, soonCaps: [...document.querySelectorAll('#fjs .fjs-soon')].map((e) => getComputedStyle(e).fontSize), op: t.map((e) => getComputedStyle(e).opacity), logoOff: Math.max(...logoCx), hscroll: sc.scrollWidth > sc.clientWidth + 1, hdoc: document.documentElement.scrollWidth > innerWidth + 1, capClip: [...document.querySelectorAll('#fjs .fjs-tn, #fjs .fjs-soon')].some((e) => e.scrollWidth > e.clientWidth + 1) };
+  });
+  console.log('ALIGN ' + tag + ' ' + JSON.stringify(al));
+  check(al.ids.join() === 'ctrader,interactive-brokers,metatrader-4,metatrader-5,ninjatrader,rithmic,tastytrade,tradovate,webull', tag + ': 9 tiles, alphabetical', al.ids);
+  check(al.sameSize && al.rows === 3 && al.perRow === 3, tag + ': all tiles one size, 3 x 3 grid', al);
+  check(al.imgOk && /rgba\(0, 0, 0, 0\)|transparent/.test(al.bg) && al.bw === '0px', tag + ': cTrader mark loaded, transparent (no white tile)', al);
+  check(al.logoOff <= 1 && !al.hscroll && !al.hdoc && !al.capClip, tag + ': logos centred in tiles, no clipping, no horizontal scroll', al);
+  check(al.soon.join() === 'rithmic,tradovate,interactive-brokers'.split(',').sort((a, b) => al.ids.indexOf(a) - al.ids.indexOf(b)).join() && al.soonTitle === 3 && al.soonCaps.every((f) => f === '12px'), tag + ': Coming soon on Interactive Brokers, Rithmic, Tradovate only (12px, tooltip); cTrader is open for this admin', al);
+  await p.screenshot({ path: OUT + '/after-dialog-' + w + '-' + theme + '.png' });
+  await p.click('#fjs .fjs-tile[aria-disabled=true]', { force: true }); await sleep(200);
+  check(!nav.some((u) => /finatic|portal/i.test(u)) && await p.$('#fjs .fjs-tile[data-broker=ctrader]'), tag + ': a Coming soon tile does nothing');
+  await tap(p, '#fjs .fjs-tile[data-broker=ctrader]', mobile);
   for (let i = 0; i < 40 && !nav.some((u) => /id\.ctrader\.com/.test(u)); i++) await sleep(100);
   const u = nav.find((x) => /id\.ctrader\.com/.test(x));
   check(u && new URL(u).searchParams.get('scope') === 'trading' && new URL(u).searchParams.get('client_id') === 'CID_sample1', tag + ': Allow trading opens cTrader sign-in with scope=trading', u);
@@ -200,7 +217,7 @@ async function trade(b, w, h, mobile, theme) {
   await p.evaluate(() => { window.__ctM.reject = ''; });
   // flatten (confirm) closes the position
   await opWait(p, () => window.__stkLive.blockReason === '', null, 10000); await sleep(600);
-  const flat = p.evaluate(() => import('/assets/chart-live.js?v=1227').then((m) => m.flatten('futures:NQ1!')));
+  const flat = p.evaluate(() => import('/assets/chart-live.js?v=1249').then((m) => m.flatten('futures:NQ1!')));
   const cf = await opWait(p, () => !!document.querySelector('#stklv-cf [data-k=yes]'), null, 5000);
   check(cf, tag + ': Flatten asks one tap first');
   if (cf) await p.evaluate(() => document.querySelector('#stklv-cf [data-k=yes]').click());

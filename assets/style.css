@@ -13412,8 +13412,6 @@ html .vela-dsp-lab{ flex-basis:120px; }
 .stktm-hl{ width:100%; justify-content:flex-start; margin-top:8px; }
 .stktm-recon{ width:100%; justify-content:center; margin-top:8px; }
 /* Owner 23 Nov: admin "Allow trading with cTrader" row + the cTrader mark on its broker tile (white tile so it reads on dark and light) */
-.stktm-ctadd{ width:100%; justify-content:center; margin-top:8px; }
-.stkpt-tmenu.stktm .stktm-ctadd{ margin-top:8px; }
 .stktm-logo.stktm-ct{ background:#fff; }
 .stktm-logo.stktm-ct img{ object-fit:contain; padding:12%; box-sizing:border-box; }
 /* Trade menu COMPACT (Owner 17 Nov "too big"): 360px popover, 48-52px account rows, 28px logos/actions. Scoped to the popover; the Manage sheet keeps its own sizes. */

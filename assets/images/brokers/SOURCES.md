@@ -13,3 +13,4 @@ ninja.png     https://ninjatrader.com/assets/dist/images/favicons/apple-touch-ic
 ibkr.png      https://www.interactivebrokers.com/images/web/favicons/home-screen-icon-192x192.png (interactivebrokers.com site icon)
 mt4.png       https://www.metatrader4.com/i/favicons/apple-touch-icon-180x180.png (metatrader4.com apple-touch-icon)
 tradovate.png, webull.png  copied from assets/img/brokers (earlier site-icon fetches). Owner allowed broker logos in the connect picker, 22 Nov.
+ctrader-mark.svg  ctrader.svg with the white background square removed (transparent), Connect your broker tile

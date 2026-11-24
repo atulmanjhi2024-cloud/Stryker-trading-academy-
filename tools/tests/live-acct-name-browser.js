@@ -51,7 +51,7 @@ let fail = 0; const check = (ok, m, x) => { if (!ok) fail++; console.log((ok ? '
       const pop = await p.$('#stkc-trade-pop'); if (pop) await pop.screenshot({ path: OUT + '/crop-menu-' + tag + '.png' });
       // pick the live account: header strip, badge, panel footer
       await p.evaluate((id) => document.querySelector('#stkc-trade-pop [data-a=live][data-id="' + id + '"]').click(), ACC);
-      await p.waitForFunction(() => window.__stkLive.state.acct && document.querySelector('.stklv-cbadge'), null, { timeout: 10000 });
+      await p.waitForFunction(() => window.__stkLive.state.acct, null, { timeout: 10000 });
       await p.evaluate(() => window.__stkPaper.orderPanel && window.__stkPaper.orderPanel());
       await p.waitForFunction(() => { const o = document.getElementById('stkop'); return o && !o.hidden && o.getBoundingClientRect().height > 100; }, null, { timeout: 8000 }).catch(() => {});
       await new Promise((r) => setTimeout(r, 600));
@@ -61,7 +61,7 @@ let fail = 0; const check = (ok, m, x) => { if (!ok) fail++; console.log((ok ? '
         return { acct: a && a.textContent, ell: a && getComputedStyle(a).textOverflow, acctBox: bx(a), badge: cb && cb.textContent, badgeBox: bx(cb), btn: btn && btn.offsetParent ? btn.textContent : '(hidden)' };
       });
       console.log('LAB ' + tag + ' ' + JSON.stringify(lab));
-      check(/SAMPLEDEMO5551234/.test(lab.acct || '') && /SAMPLEDEMO5551234/.test(lab.badge || '') && !/70001234|…/.test((lab.acct || '') + lab.badge), tag + ': panel footer + chart badge use the account name', lab);
+      check(/SAMPLEDEMO5551234/.test(lab.acct || '') && !lab.badge && !/70001234|…/.test(lab.acct || ''), tag + ': panel footer uses the account name; no account badge on the chart (Owner 24 Nov)', lab);
       check(lab.acctBox && Math.abs(lab.acctBox.pl - lab.acctBox.pr) <= 1, tag + ': footer badge even padding', lab.acctBox);
       check(lab.acctBox && (lab.acctBox.sw <= lab.acctBox.cw + 1 || lab.ell === 'ellipsis'), tag + ': footer badge text fits (or ends in an ellipsis)', lab);
       await p.screenshot({ path: OUT + '/live-' + tag + '.png' });

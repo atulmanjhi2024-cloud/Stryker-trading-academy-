@@ -895,7 +895,7 @@ function pushLines(force){
     const data = lines.map((l) => Object.assign({ id: l.id, kind: l.kind, price: l.price, color: lineColor(l), label: fmtP(sym, l.price) }, (() => { const s = TV.lineStyle(l); return { dash: s.dash, w: s.w }; })()));
     syncChips(cell, inst, lines);
     try { if (window.__stkAxisTags) window.__stkAxisTags.setTags(R, 'trade', data.map((l) => ({ price: l.price, color: l.color, text: l.label }))); } catch (e) {}   // price tags on the scale (chart-axis-tags.js)
-    const badge = lv ? LIVE.badgeFor(sym) : '';
+    const badge = '';   // Owner 24 Nov: no LIVE/SANDBOX account badge on the chart (the order panel shows the account)
     const ex = TV.execOn() ? execsFor(sym) : [], rr = TV.rrOn() ? rrFor(sym) : null;
     const sig = JSON.stringify(data) + badge + JSON.stringify([ex, rr, tv.exeSize, tv.col.buy, tv.col.sell, tv.col.profit, tv.col.loss]);
     if (!force && lineSig.get(R) === sig) continue;

@@ -5,7 +5,7 @@
 // Join Bid/Ask = limit at the best bid/ask, Order tab (limit tick-rounding; Stop/SL/TP/Trail disabled live with the reason), DOM tab
 // embeds the ladder, footer kill switch, Flatten, NO limits (21 Nov: no size/exposure/rate cap, 500 ms double-click guard); members: the same panel on PAPER with SL/TP bracket,
 // Trail, Stop, Join Bid/Ask, hotkeys (off by default), remembered position/size/tab; phone = bottom sheet. Waits on state, not sleeps.
-// Checks: picker hidden for non-admins; Paper is the default; picking the account -> red LIVE badge (panel + chart); orders send on the
+// Checks: picker hidden for non-admins; Paper is the default; picking the account -> red LIVE badge (panel only; none on the chart); orders send on the
 // click with NO confirm (Owner 19 Nov); the broker's account NAME everywhere (number as a small second line); payload (contract, qty, idemKey unique); read failure blocks; working-order + position
 // lines; drag = modify (confirm); cancel+new when modify isn't allowed; DOM ladder click = limit at that price; flatten = server op with
 // a key; Connect a broker ALWAYS shows the connect step + portal (even with a saved connection); alignment numbers (getBoundingClientRect) printed for the report.
@@ -159,7 +159,7 @@ async function run(b, w, h, mobile, theme) {
   check(/^LIVE · SAMPLEDEMO5551234$/.test(hd.live) && hd.liveBg === 'rgb(217, 45, 32)', tag + ': red read-only "LIVE · <account name>" in the footer', hd);
   check(hd.strip, tag + ': old bottom "Live trading" strip is gone while live', hd);
   check(/^LIVE SAMPLEDEMO5551234 · NQ/.test(hd.chip), tag + ': small LIVE status chip on the chart (account name)', hd);
-  check(/^LIVE Tradovate SAMPLEDEMO5551234 · NQ[HMUZ]\d$/.test(hd.cbadge), tag + ': red LIVE badge on the chart with the account name + contract', hd);
+  check(hd.cbadge === '', tag + ': no LIVE account badge on the chart (Owner 24 Nov)', hd);
   check(!/70001234|…1234/.test(hd.live + hd.chip + hd.cbadge), tag + ': the internal number is not the account label', hd);
   // ---- Scalp: Buy market. Owner 19 Nov: NO first-order typed confirm, no tap: the click sends (like paper)
   await opTab(p, 'scalp', mobile);

@@ -1,10 +1,13 @@
 {
   "android": {
-    "versionCode": 10,
-    "versionName": "2.1.0",
+    "versionCode": 18,
+    "versionName": "2.2.0",
     "url": "/downloads/tradezoro-android-beta.apk",
     "notes": [
-      "In-app update banner: new versions show at the top of the app."
+      "Home screen widgets: watchlist, key levels and a price tile",
+      "Chart: symbol and timeframe scroll wheels, more room for the chart",
+      "Up to 4 charts on one screen, undo and redo for drawings",
+      "Faster and smoother everywhere"
     ],
     "minVersionCode": 1,
     "beta": null

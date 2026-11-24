@@ -19,11 +19,11 @@
 // favourites collection and rule; the Indicators window ignores sym: keys); guests -> localStorage. Recents: localStorage.
 // Education only. Not financial advice.
 
-import { classify, venueOf, pairOf, metaOf, search, symOf, keyOf, quoteOf, decimalsOf, VENUE_LABEL, VENUE_ORDER, CRYPTO_VENUES } from './chart-search-core.js?v=1235';
-import { parseFormula, bodyOf } from './chart-formula-core.js?v=1235';
-import { resolveLegs } from './chart-formula.js?v=1235';
-import { venueChip } from './venue-logos.js?v=1235';
-import { getInfo } from './chart-symbol-info.js?v=1235';
+import { classify, venueOf, pairOf, metaOf, search, symOf, keyOf, quoteOf, decimalsOf, VENUE_LABEL, VENUE_ORDER, CRYPTO_VENUES } from './chart-search-core.js?v=1236';
+import { parseFormula, bodyOf } from './chart-formula-core.js?v=1236';
+import { resolveLegs } from './chart-formula.js?v=1236';
+import { venueChip } from './venue-logos.js?v=1236';
+import { getInfo } from './chart-symbol-info.js?v=1236';
 
 const PHONE_MAX = 700;
 const PAGE = 50;

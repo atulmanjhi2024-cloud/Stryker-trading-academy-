@@ -115,42 +115,75 @@ const IC = {
   list: '<path d="M9 6h11M9 12h11M9 18h11"/><circle cx="4.5" cy="6" r="1"/><circle cx="4.5" cy="12" r="1"/><circle cx="4.5" cy="18" r="1"/>',
   ladder: '<path d="M7 3v18M17 3v18M7 7h10M7 12h10M7 17h10"/>',
   info: '<circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7.5h.01"/>',
+  pen: '<path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13.5 6.5l4 4"/>',
+  wallet: '<rect x="3.5" y="6" width="17" height="13" rx="2"/><path d="M3.5 10h17M16 14.5h1.5"/>',
+  clock: '<circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/>',
+  eye: '<path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="3"/>',
+  dot: '<circle cx="12" cy="12" r="5" fill="#000"/>',
+  moon: '<path d="M20 14.5A8 8 0 0 1 9.5 4 8 8 0 1 0 20 14.5z"/>',
+  spark: '<path d="M3 17l5-6 4 3 5-8 4 5"/>',
   ai: '<path d="M12 3l1.8 4.7L18.5 9.5l-4.7 1.8L12 16l-1.8-4.7L5.5 9.5l4.7-1.8z"/><path d="M18.5 15.5l.8 2 2 .8-2 .8-.8 2-.8-2-2-.8 2-.8z"/>'
 };
 const trig = (n) => (n.classList.contains('stkc-menu') ? n.querySelector(':scope > button') : n);
+const txt = (e) => (e ? e.textContent.trim() : '');
+// [match(node) -> trigger, group, order, label(trigger), icon, state(trigger)?]
+// PHONE ⋯ SHEET CATEGORIES (Owner bug 2026-11-23 "arrange it neatly with proper categorisation"): Chart /
+// Indicators & scripts / Trading / View / Panels / Share & alerts. state() = the row's current state on its right.
 const ROWS = [
   // CHART
-  [(n) => n.classList.contains('stkws-menu') && trig(n), 'chart', 0, (t) => 'Workspace: ' + ((t.querySelector('.stkws-name') || t).textContent.trim() || 'Workspace 1'), 'ws'],
-  [(n) => n.classList.contains('stkl-menu') && trig(n), 'chart', 1, (t) => 'Layout: ' + ((t.querySelector('.stkl-name') || t).textContent.replace(/^Viewing:\s*/, '').trim() || 'Unsaved'), 'layout'],
-  [(n) => n.querySelector && n.querySelector(':scope > #stkc-layout-btn'), 'chart', 2, (t) => { const m = /(\d+)/.exec((t.querySelector('.stkc-btn-l') || t).textContent || ''); return 'Charts in layout (' + (m ? m[1] : 1) + ')'; }, 'grid'],
-  [(n) => n.querySelector && n.querySelector(':scope > #stkc-tpl-btn'), 'chart', 3, () => 'Templates', 'tpl'],
-  [(n) => n.id === 'stkc-settings-btn' && n, 'chart', 4, () => 'Chart settings', 'gear'],
-  [(n) => n.id === 'stkc-heatmap-btn' && n, 'chart', 4.5, () => 'Heatmap', 'heat'],
-  [(n) => n.id === 'stkc-fs-btn' && n, 'chart', 5, () => (document.documentElement.classList.contains('stk-chart-fs') ? 'Exit full screen' : 'Full screen'), 'fs'],
-  [(n) => n.classList.contains('vela-mb-maximize') && n, 'chart', 6, () => 'Maximize / restore chart', 'max'],
-  [(n) => n.classList.contains('vela-mb-more') && n, 'chart', 7, () => 'Object tree & chart menu', 'dots'],
-  // TOOLS
-  [(n) => n.classList.contains('stkr-menu') && trig(n), 'tools', 11, () => 'Replay', 'replay'],
-  [(n) => n.id === 'stkc-alerts-btn' && n, 'tools', 12, () => 'Alerts', 'alarm'],
-  [(n) => n.id === 'stkc-pine-btn' && n, 'tools', 13, () => 'Script editor', 'pine'],
-  [(n) => n.querySelector && n.querySelector(':scope > #stkc-paper-btn'), 'tools', 15, () => 'Trade', 'trade'],
-  [(n) => n.id === 'stkc-ai-btn' && n, 'tools', 15.5, () => 'Connect your AI', 'ai'],
-  [(n) => n.classList.contains('vela-widget-undo') && n, 'tools', 16, () => 'Undo', 'undo'],
-  [(n) => n.classList.contains('vela-widget-redo') && n, 'tools', 17, () => 'Redo', 'redo'],
-  [(n) => n.classList.contains('vela-widget-screenshot') && n, 'tools', 18, () => 'Screenshot', 'shot'],
+  [(n) => n.classList.contains('vela-mb-more') && n, 'chart', 0, () => 'Chart type & options', 'dots'],
+  [(n) => n.classList.contains('vela-mb-drawings') && n, 'chart', 0.5, () => 'Drawings', 'pen'],
+  [(n) => n.classList.contains('stkws-menu') && trig(n), 'chart', 1, () => 'Workspace', 'ws', (t) => txt(t.querySelector('.stkws-name')) || 'Workspace 1'],
+  [(n) => n.classList.contains('stkl-menu') && trig(n), 'chart', 2, () => 'Layout', 'layout', (t) => (txt(t.querySelector('.stkl-name')) || txt(t)).replace(/^Viewing:\s*/, '') || 'Unsaved'],
+  [(n) => n.querySelector && n.querySelector(':scope > #stkc-layout-btn'), 'chart', 3, () => 'Charts in layout', 'grid', (t) => { const m = /(\d+)/.exec(txt(t.querySelector('.stkc-btn-l') || t)); return m ? m[1] : '1'; }],
+  [(n) => n.querySelector && n.querySelector(':scope > #stkc-tpl-btn'), 'chart', 4, () => 'Templates', 'tpl'],
+  [(n) => n.id === 'stkc-settings-btn' && n, 'chart', 5, () => 'Chart settings', 'gear'],
+  [(n) => n.classList.contains('vela-widget-undo') && n, 'chart', 6, () => 'Undo', 'undo'],
+  [(n) => n.classList.contains('vela-widget-redo') && n, 'chart', 7, () => 'Redo', 'redo'],
+  // INDICATORS & SCRIPTS
+  [(n) => n.classList.contains('vela-mb-indicators') && n, 'scripts', 10, () => 'Indicators', 'spark'],
+  [(n) => n.id === 'stkc-pine-btn' && n, 'scripts', 11, () => 'Script editor', 'pine'],
+  [(n) => n.id === 'stkc-ai-btn' && n, 'scripts', 12, () => 'Connect your AI', 'ai'],
+  // TRADING
+  [(n) => n.querySelector && n.querySelector(':scope > #stkc-paper-btn'), 'trading', 20, () => 'Trade', 'trade', () => { const P = window.__stkPaper; return P && P.live ? 'Live' : P && P.enabled ? 'Paper' : ''; }],
+  [(n) => n.id === 'stkas' && n.querySelector('.stkas-b'), 'trading', 21, () => 'Account', 'wallet', (t) => txt(t.querySelector('[data-k="bal"] .stkas-f'))],
+  // VIEW
+  [(n) => n.querySelector && n.querySelector(':scope > #byo-btn'), 'view', 30.5, () => 'Data source', 'link'],
+  [(n) => n.id === 'mclock' && n.querySelector('.mclock-pill'), 'view', 31, () => 'Market sessions', 'clock', (t) => txt(t.querySelector('.mclock-shead'))],
+  [(n) => n.id === 'stkc-hideprice-btn' && n, 'view', 32, () => 'Price candles', 'eye', (t) => (t.getAttribute('aria-pressed') === 'true' ? 'Hidden' : 'Shown')],
+  [(n) => n.id === 'stkc-heatmap-btn' && n, 'view', 33, () => 'Heatmap', 'heat'],
+  [(n) => n.id === 'stkc-fs-btn' && n, 'view', 34, () => (document.documentElement.classList.contains('stk-chart-fs') ? 'Exit full screen' : 'Full screen'), 'fs'],
+  [(n) => n.classList.contains('vela-mb-maximize') && n, 'view', 35, () => 'Maximize / restore chart', 'max'],
   // PANELS
-  [(n) => n.classList.contains('stknw-phonebtn') && n, 'panels', 21, () => 'News', 'news'],
-  [(n) => n.classList.contains('stkw-phonebtn') && n, 'panels', 22, () => 'Watchlist', 'list'],
-  [(n) => n.classList.contains('stkgl-phonebtn') && n, 'panels', 23, () => 'GEX Ladder', 'ladder'],
-  [(n) => n.classList.contains('stkl2-phonebtn') && n, 'panels', 23, () => 'Book · DOM · Trades', 'ladder'],
-  [(n) => n.classList.contains('stkdkp-phonebtn') && n, 'panels', 24, () => 'Dark pool prints', 'ladder'],
-  [(n) => n.classList.contains('stkph-phonebtn') && n, 'panels', 24.5, () => 'Phantom options flow', 'trade'],
-  [(n) => n.classList.contains('stkin-phonebtn') && n, 'panels', 25, () => 'Symbol info', 'info'],
-  [(n) => n.querySelector && n.querySelector(':scope > #byo-btn'), 'tools', 19, () => 'Data source', 'link'],
-  [(n) => n.id === 'stkc-credits-btn' && n, 'panels', 24, () => 'Data source & credits', 'info']
+  [(n) => n.classList.contains('stkw-phonebtn') && n, 'panels', 41, () => 'Watchlist', 'list'],
+  [(n) => n.classList.contains('stknw-phonebtn') && n, 'panels', 42, () => 'News', 'news'],
+  [(n) => n.classList.contains('stkgl-phonebtn') && n, 'panels', 43, () => 'GEX Ladder', 'ladder'],
+  [(n) => n.classList.contains('stkl2-phonebtn') && n, 'panels', 44, () => 'Book · DOM · Trades', 'ladder'],
+  [(n) => n.classList.contains('stkdkp-phonebtn') && n, 'panels', 45, () => 'Dark pool prints', 'ladder'],
+  [(n) => n.classList.contains('stkph-phonebtn') && n, 'panels', 46, () => 'Phantom options flow', 'trade'],
+  [(n) => n.classList.contains('stksp-phonebtn') && n, 'panels', 47, () => 'Spectra', 'heat'],
+  [(n) => n.classList.contains('stkin-phonebtn') && n, 'panels', 48, () => 'Symbol info', 'info'],
+  [(n) => n.id === 'stkc-credits-btn' && n, 'panels', 49, () => 'Data source & credits', 'info'],
+  // SHARE & ALERTS
+  [(n) => n.id === 'stkc-alerts-btn' && n, 'share', 51, () => 'Price alerts', 'alarm'],
+  [(n) => n.classList.contains('stkr-menu') && trig(n), 'share', 52, () => 'Replay', 'replay'],
+  [(n) => n.classList.contains('vela-widget-screenshot') && n, 'share', 53, () => 'Snapshot', 'shot']
 ];
-const GROUP_ORDER = { chart: 0, tools: 10, panels: 20 };
-const GROUP_LABEL = { chart: 'Chart', tools: 'Tools', panels: 'Panels' };
+const GROUP_ORDER = { chart: -0.5, scripts: 9.5, trading: 19.5, view: 29.5, panels: 39.5, share: 49.5 };
+const GROUP_LABEL = { chart: 'Chart', scripts: 'Indicators & scripts', trading: 'Trading', view: 'View', panels: 'Panels', share: 'Share & alerts' };
+// Phone sheet only: rows that are not a toolbar button. [id, group, order, label, icon, state, run]
+const DOT = { rt: '#089981', delayed: '#F5A623', closed: '#787B86', replay: '#787B86' };
+const EXTRA = [
+  ['stkc-ob-data', 'view', 30, () => 'Market data', 'dot', () => { const d = dataStatus(); return d ? (d.s === 'rt' ? 'Live data' : d.s === 'delayed' ? 'Delayed data' : d.tag) : ''; },
+    () => { const b = document.querySelector('.stkin-phonebtn'); if (b) b.click(); }],
+  ['stkc-ob-theme', 'view', 36, () => 'Theme', 'moon', () => (document.documentElement.getAttribute('data-theme') === 'light' ? 'Light' : 'Dark'),
+    () => { if (window.toggleStrykerTheme) window.toggleStrykerTheme(); }]
+];
+function dataStatus(){
+  try { const D = window.STRYKER_DATA_DOT, V = window.STRYKER_VELA; return D && V && V.active ? D.statusOf(V.active.symbol) : null; } catch (e) { return null; }
+}
+// CSS `order` takes integers only (4.5 was ignored): the list orders are doubled
+const ord2 = (o) => Math.round(o * 2);
 const icUrl = (k) => 'url("data:image/svg+xml,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#000" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">' + IC[k] + '</svg>') + '")';
 
 export function mountOneBar(ws){
@@ -209,15 +242,21 @@ export function mountOneBar(ws){
     h.className = 'stkc-ob-gh';
     h.setAttribute('role', 'presentation');
     h.textContent = GROUP_LABEL[g];
-    h.style.order = String(GROUP_ORDER[g]);
+    h.style.order = String(ord2(GROUP_ORDER[g]));
     h.hidden = true;
     heads[g] = h;
     morePop.appendChild(h);
   });
   // phone list: while a menu opened from it is showing, the list itself steps back (style.css .stkc-ob-sub)
-  const subOpen = () => !!morePop.querySelector('.stkc-pop:not([hidden]), #stkc-credits:not([hidden])');
-  new MutationObserver(() => { morePop.classList.toggle('stkc-ob-sub', !merged && !morePop.hidden && subOpen()); })
-    .observe(morePop, { subtree: true, attributes: true, attributeFilter: ['hidden'] });
+  const subOpen = () => !!morePop.querySelector('.stkc-pop:not([hidden]), #stkc-credits:not([hidden]), .mclock-pop:not([hidden]), .stkas-pop:not([hidden])');
+  new MutationObserver(() => {
+    const was = morePop.classList.contains('stkc-ob-sub'), now = !merged && !morePop.hidden && subOpen();
+    morePop.classList.toggle('stkc-ob-sub', now);
+    if (strict) scrim.hidden = morePop.hidden || now;   // a sub-menu shown from ⋯ has its own scrim: ours would cover it (dim, taps dead)
+    if (was && !now && !morePop.hidden && strict) setMore(false);   // a sheet opened from the phone list closes back to the chart
+  }).observe(morePop, { subtree: true, attributes: true, attributeFilter: ['hidden'] });
+  // phone list: a tap on a heading or the sheet's padding keeps it open (only rows act)
+  morePop.addEventListener('click', (e) => { if (strict && !(e.target.closest && e.target.closest('[data-ob-trig], .stkc-pop, #stkc-credits, .mclock-pop, .stkas-pop'))) e.stopPropagation(); });
   // phone list: a row that does its job in place (opens a sheet / panel / editor, toggles full
   // screen) closes the list, even when its button stops the click; a row that opens a menu inside
   // the list (Templates, Layout, Charts in layout, Replay, Credits) keeps it, as the sub-menu
@@ -228,7 +267,12 @@ export function mountOneBar(ws){
   const more = document.createElement('div');
   more.className = 'stkc-menu stkc-ob-more';
   more.hidden = true;
-  more.append(moreBtn, morePop);
+  // phone sheet scrim: dims the page and catches the outside tap (only while the phone list is open)
+  const scrim = document.createElement('div');
+  scrim.className = 'stkc-ob-scrim';
+  scrim.hidden = true;
+  scrim.addEventListener('click', (e) => { e.stopPropagation(); setMore(false); });
+  more.append(moreBtn, scrim, morePop);
   const setMore = (open, keep) => {
     // phone list: room from just under the toolbar to the bottom of the screen; taller lists scroll
     if (open && !merged) {
@@ -240,6 +284,9 @@ export function mountOneBar(ws){
     } else if (merged) morePop.style.removeProperty('top');
     if (!open) morePop.classList.remove('stkc-ob-sub');
     morePop.hidden = !open; moreBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
+    scrim.hidden = !(open && strict);
+    bar.classList.toggle('stkc-ob-up', !!(open && strict));   // the bar is a z 40 stacking context: lift it over open panels while its sheet shows
+    if (open && strict) refreshStates();
     if (open) { const n = document.getElementById('notif-panel'); if (n) n.style.display = 'none'; }   // one menu at a time
     else if (late) { late = false; queue(); }
   };
@@ -278,8 +325,9 @@ export function mountOneBar(ws){
   tb.addEventListener('keydown', route);
   morePop.addEventListener('keydown', route);
 
-  let merged = false;
+  let merged = false, strict = false;
   const moved = [];   // [{ node, ph }]
+  const extras = [];  // phone-only sheet rows (data status, theme)
 
   function restoreMoved(){
     while (moved.length) {
@@ -289,6 +337,13 @@ export function mountOneBar(ws){
       m.node.removeAttribute('data-ob-vela');
       unlist(m.node);
     }
+    extras.forEach((b) => b.remove());
+    extras.length = 0;
+    // a panel button added later next to a sibling that sat in the list landed in the list with no home: back to the bar
+    [...morePop.children].forEach((c) => { if (!c.classList.contains('stkc-ob-gh')) barR.insertBefore(c, more); });
+    // chart-paper.js keeps the account strip right before the session clock; with the clock in ⋯ the strip may have followed it
+    const sa = byId('stkas'), mc = byId('mclock');
+    if (sa && morePop.contains(sa)) { if (mc && mc.parentNode && !morePop.contains(mc)) mc.parentNode.insertBefore(sa, mc); else barR.insertBefore(sa, more); }
     Object.values(heads).forEach((h) => { h.hidden = true; });
     morePop.classList.remove('stkc-ob-list');
   }
@@ -297,6 +352,7 @@ export function mountOneBar(ws){
     n.style.removeProperty('order');
     const t = n.__obTrig;
     if (t) { t.removeAttribute('data-ob-trig'); t.removeAttribute('data-ob-label'); t.style.removeProperty('--ob-ic'); n.__obTrig = null; }
+    if (n.__obSt) { n.__obSt.remove(); n.__obSt = null; n.__obState = null; }
   }
   // phone list: label + icon + group on every moved item
   function listify(){
@@ -304,22 +360,79 @@ export function mountOneBar(ws){
     morePop.classList.add('stkc-ob-list');
     const used = {};
     moved.forEach(({ node }) => {
-      for (const [match, g, ord, label, ic] of ROWS) {
+      for (const [match, g, ord, label, ic, state] of ROWS) {
         const t = match(node);
         if (!t) continue;
         node.setAttribute('data-ob-row', g);
-        node.style.order = String(ord);
+        node.style.order = String(ord2(ord));
         t.setAttribute('data-ob-trig', '1');
         t.setAttribute('data-ob-label', label(t));
         const icon = ic === 'fs' && document.documentElement.classList.contains('stk-chart-fs') ? 'fsOff' : ic;
         t.style.setProperty('--ob-ic', icUrl(icon));
         node.__obTrig = t;
+        if (state && strict) addState(node, t, state);
         used[g] = true;
         return;
       }
     });
-    moved.forEach(({ node }) => { if (!node.hasAttribute('data-ob-row') && !node.matches('#stkc-credits')) node.style.order = '30'; });
+    if (strict) EXTRA.forEach(([id, g, ord, label, ic, state, run]) => {
+      if (id === 'stkc-ob-data' && !dataStatus()) return;
+      const b = document.createElement('button');
+      b.type = 'button'; b.id = id; b.className = 'stkc-ob-x';
+      b.setAttribute('data-ob-row', g); b.setAttribute('data-ob-trig', '1'); b.setAttribute('data-ob-label', label());
+      b.style.order = String(ord2(ord)); b.style.setProperty('--ob-ic', icUrl(ic));
+      b.addEventListener('click', run);
+      morePop.appendChild(b); extras.push(b);
+      addState(b, b, state);
+      used[g] = true;
+    });
+    moved.forEach(({ node }) => { if (!node.hasAttribute('data-ob-row') && !node.matches('#stkc-credits')) node.style.order = '120'; });
     Object.keys(heads).forEach((g) => { heads[g].hidden = !used[g]; });
+  }
+  // the row's current state on its right ("Live data", "Paper", the balance); the data row's icon takes the data colour
+  function addState(node, t, fn){
+    const sp = document.createElement('span');
+    sp.className = 'stkc-ob-st';
+    sp.setAttribute('aria-hidden', 'true');
+    t.appendChild(sp);
+    node.__obSt = sp; node.__obState = () => fn(t);
+    paintState(node);
+  }
+  function paintState(node){
+    let v = ''; try { v = node.__obState() || ''; } catch (e) {}
+    if (node.__obSt.textContent !== v) node.__obSt.textContent = v;
+    if (node.id === 'stkc-ob-data') { const d = dataStatus(); node.style.setProperty('--ob-dc', d ? DOT[d.s] || 'currentColor' : 'currentColor'); }
+  }
+  function refreshStates(){
+    moved.forEach(({ node }) => {
+      if (node.__obSt) paintState(node);
+      const t = node.__obTrig, r = t && ROWS.find((x) => x[0](node));
+      if (r) t.setAttribute('data-ob-label', r[3](t));   // labels that follow state (Full screen / Exit full screen)
+    });
+    extras.forEach((b) => { if (b.__obSt) paintState(b); });
+  }
+  // PHONE TOP BAR (Owner bug 2026-11-23): left menu, symbol, interval; right Indicators, bell, ⋯ More.
+  // Everything else is a row of the ⋯ sheet, whatever the width (never squeezed, never overlapping).
+  const KEEP = '.stkcps-menu, .vela-mb-symbol, .vela-mb-tf, .vela-mb-indicators, .notif-bell-wrap, .stkc-ob-more, .stkc-ob-sp, .stkc-cells, .stkc-tv-div';
+  function strictItems(){
+    const out = [];
+    [barL, barR, mb].filter(Boolean).forEach((box) => {
+      for (const c of box.children) {
+        if (c === mb || c.matches(KEEP)) continue;
+        if (c.classList.contains('vela-mb-actions')) { out.push(...c.children); continue; }
+        out.push(c);
+      }
+    });
+    return out.filter((n) => !n.matches('.vela-mb-settings, .stkc-pop, .stkc-scrim'));
+  }
+  // the data-status dot on the symbol chip (green live / amber delayed / grey closed), named in its label
+  function paintSymDot(){
+    const sym = mb && mb.querySelector('.vela-mb-symbol'); if (!sym) return;
+    const d = strict ? dataStatus() : null, c = d ? DOT[d.s] : '';
+    if (!c) { if (sym.hasAttribute('data-dd')) { sym.removeAttribute('data-dd'); sym.style.removeProperty('--dd'); sym.setAttribute('aria-label', 'Symbol search'); } return; }
+    if (sym.getAttribute('data-dd') !== d.s) { sym.setAttribute('data-dd', d.s); sym.style.setProperty('--dd', c); }
+    const lab = 'Symbol search · ' + (d.s === 'rt' ? 'Live data' : d.s === 'delayed' ? 'Delayed data' : d.tag || '');
+    if (sym.getAttribute('aria-label') !== lab) sym.setAttribute('aria-label', lab);
   }
   function moveToMore(nodes){
     let any = false;
@@ -413,12 +526,17 @@ export function mountOneBar(ws){
       document.dispatchEvent(new CustomEvent('stkc:onebar-fit'));
       // phone: the session clock gives up its text (dot only) before any button leaves the bar
       if (clk && !merged && overflows()) clk.classList.add('mclock-dotonly');
+      // (not in the Android app: it hides this bar and draws its own native toolbar, chart-bridge.js html.tzapp)
+      strict = !merged && document.documentElement.classList.contains('stk-cps') && !document.documentElement.classList.contains('tzapp');
+      bar.classList.toggle('stkc-ob-strict', strict);
+      if (strict && moveToMore(strictItems())) more.hidden = false;
       for (const [kind, arg] of STEPS) {
         if (!overflows()) break;
         if (kind === 'cls') { bar.classList.add(arg); document.dispatchEvent(new CustomEvent('stkc:onebar-fit')); }
         else if (moveToMore(arg())) more.hidden = false;
       }
       listify();
+      paintSymDot();
       if (more.hidden) setMore(false); else if (wasOpen) { setMore(true, true); morePop.scrollTop = st; }
       tidyDividers();
     } finally {
@@ -494,7 +612,10 @@ export function mountOneBar(ws){
   window.addEventListener('resize', onResize, { passive: true });
   try { document.fonts && document.fonts.ready.then(queue); } catch (e) {}
 
-  const api = { fit, get merged(){ return merged; }, get moreCount(){ return moved.length; }, more: moreBtn, mobileBar: mb };
+  setInterval(() => { if (strict && !document.hidden) { paintSymDot(); if (!morePop.hidden) refreshStates(); } }, 3000);
+  document.addEventListener('stryker:theme', () => { if (!morePop.hidden) refreshStates(); });
+
+  const api = { fit, get strict(){ return strict; }, get merged(){ return merged; }, get moreCount(){ return moved.length; }, more: moreBtn, mobileBar: mb };
   window.__stkOneBar = api;
   return api;
 }

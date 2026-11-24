@@ -953,7 +953,8 @@ function buildStrip(){
   const el = h('div', { class: 'stkas', id: 'stkas', hidden: '' }, [btn, pop]);
   btn.addEventListener('click', (e) => {
     e.stopPropagation();
-    if (document.documentElement.classList.contains('stk-cps')) { pop.hidden = !pop.hidden; return; }   // phones: all three in a small popover
+    // phones: all three in a small popover (the phone ⋯ sheet's Account row too: chart-onebar.js)
+    if (document.documentElement.classList.contains('stk-cps')) { pop.hidden = !pop.hidden; return; }
     if (liveOn()) orderPanel(); else openPanel('positions');
   });
   document.addEventListener('click', (e) => { if (!pop.hidden && !el.contains(e.target)) pop.hidden = true; });

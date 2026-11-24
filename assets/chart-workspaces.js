@@ -418,6 +418,8 @@ export function mountWorkspaces(ws, o){
   const place = () => {
     const host = document.querySelector('.mobile-topnav .topnav-left');
     const top = tabsMode() && host && host.offsetParent !== null;   // site top bar missing or hidden (full screen): the strip starts the chart toolbar
+    // chart-onebar.js moved the pill into the phone ⋯ sheet: leave it there (pulling it back shifted every row under the finger)
+    if (wrap.closest('#stkc-more-pop') || strip.closest('#stkc-more-pop')) return;
     if (!tabsMode()) { if (strip.parentNode) strip.remove(); if (wrap.parentNode !== barL || barL.firstChild !== wrap) barL.insertBefore(wrap, barL.firstChild); }
     else {
       const parent = top ? host : barL;
@@ -427,6 +429,7 @@ export function mountWorkspaces(ws, o){
     strip.classList.toggle('in-bar', tabsMode() && !top);
   };
   place(); window.addEventListener('resize', place);
+  document.addEventListener('stkc:onebar-fit', place);   // chart-onebar.js just put the pill back from ⋯: re-place it for the current mode
   new MutationObserver(place).observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
   const setOpen = bindPopover(btn, pop, () => renderList());
 

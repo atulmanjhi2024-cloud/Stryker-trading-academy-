@@ -153,7 +153,7 @@ async function closeAll(p) {
   for (let i = 0; i < 2; i++) { await p.keyboard.press('Escape'); await sleep(150); }
   await p.evaluate(() => {
     const vis = (e) => e.getClientRects().length && getComputedStyle(e).visibility !== 'hidden';
-    for (const b of document.querySelectorAll('.stkc-sh-x, .stkms-x, .stklat-x, [aria-label="Close"], [aria-label="Close panel"], .vela-dialog-close')) if (vis(b)) { b.click(); }
+    for (const b of document.querySelectorAll('.stkc-sh-x, .stkms-x, .stklat-x, .sed-x, .stkw-close, [aria-label="Close"], [aria-label="Close panel"], .vela-dialog-close')) if (vis(b)) { b.click(); }
     for (const s of document.querySelectorAll('.stkc-scrim:not([hidden]), .stkms-scrim:not([hidden]), .stkw-scrim:not([hidden]), .vela-dialog-backdrop')) if (vis(s)) s.click();
   });
   await sleep(350);
@@ -173,8 +173,10 @@ const surfaces = () => {
   return out;
 };
 const state = () => ({ cls: document.documentElement.className, theme: document.documentElement.getAttribute('data-theme'), hp: (document.getElementById('stkc-hideprice-btn') || { getAttribute: () => '' }).getAttribute('aria-pressed'),
-  max: !!document.querySelector('.vela-mb-maximize.vela-mb-on'), url: location.href });
+  max: !!document.querySelector('.vela-mb-maximize.vela-mb-on'), url: location.href,
+  acct: !!document.querySelector('.stkas-pop:not([hidden])'), sub: !!document.querySelector('#stkc-more-pop.stkc-ob-sub') });   // small popovers (account, account picker) count too   // the account popover is small (under the surface size)
 
+const findRow = (l) => { const t = [...document.querySelectorAll('#stkc-more-pop [data-ob-trig]')].find((x) => x.getAttribute('data-ob-label') === l); if (!t) return null; t.scrollIntoView({ block: 'center' }); const r = t.getBoundingClientRect(); return { x: r.left + 60, y: r.top + r.height / 2 }; };
 async function rowChecks(p, tag, w, h) {
   let s = await openSheet(p);
   check(s.open, tag + ': ⋯ opens the sheet (tap)');
@@ -191,7 +193,10 @@ async function rowChecks(p, tag, w, h) {
   const gb = await p.evaluate(() => { const r = document.getElementById('stkc-more-pop').getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + 10 }; });
   await p.touchscreen.tap(gb.x, gb.y); await sleep(250);
   check((await p.evaluate(sheetInfo)).open, tag + ': tapping inside the sheet (heading, grabber) keeps it open');
-  await p.touchscreen.tap(w / 2, 70); await sleep(400);
+  // outside = on the chart beside / above the sheet (landscape: the sheet starts near the top, so not a fixed y)
+  const out = await p.evaluate(() => { const r = document.getElementById('stkc-more-pop').getBoundingClientRect(), b = document.getElementById('stkc-bar').getBoundingClientRect();
+    return r.left > 40 ? { x: r.left / 2, y: (r.top + r.bottom) / 2 } : { x: innerWidth / 2, y: (b.bottom + r.top) / 2 }; });
+  await p.touchscreen.tap(out.x, out.y); await sleep(400);
   check(!(await p.evaluate(sheetInfo)).open, tag + ': tapping outside closes it');
   check((await p.evaluate(stuckCover)).length === 0, tag + ': no dim layer left after closing', await p.evaluate(stuckCover));
 
@@ -203,14 +208,23 @@ async function rowChecks(p, tag, w, h) {
     s = await openSheet(p);
     if (!s.open) { bad.push(label + ': sheet did not open'); continue; }
     const before = await p.evaluate(surfaces), st0 = await p.evaluate(state);
-    const pos = await p.evaluate((l) => { const t = [...document.querySelectorAll('#stkc-more-pop [data-ob-trig]')].find((x) => x.getAttribute('data-ob-label') === l); if (!t) return null; t.scrollIntoView({ block: 'center' }); const r = t.getBoundingClientRect(); return { x: r.left + 60, y: r.top + r.height / 2 }; }, label);
+    let pos = await p.evaluate(findRow, label);
+    // a module may re-render its button while the sheet opens (refit pending): one retry before calling the row gone
+    if (!pos) { await closeAll(p); await sleep(1500); s = await openSheet(p); pos = await p.evaluate(findRow, label); if (pos) console.log('  info ' + tag + ': "' + label + '" found on retry'); }
     if (!pos) { bad.push(label + ': row gone'); continue; }
     await sleep(150);
     await p.touchscreen.tap(pos.x, pos.y); await sleep(1100);
     const after = await p.evaluate(surfaces), st1 = await p.evaluate(state);
     const opened = after.some((x) => !before.includes(x)) || JSON.stringify(st0) !== JSON.stringify(st1);
-    if (!opened) bad.push(label);
+    if (!opened) { bad.push(label); if (OUT) await p.screenshot({ path: OUT + '/' + tag + '-FAIL-' + label.replace(/\W+/g, '') + '.png' }); }
     if (OUT && /Account|Market data|Trade$/.test(label)) await p.screenshot({ path: OUT + '/' + tag + '-row-' + label.replace(/\W+/g, '') + '.png' });
+    // a row that leaves the page (signed out: sign-in) did its job: come back to the chart
+    if (st1.url !== st0.url && !p.url().includes('/charts')) {
+      console.log('  info ' + tag + ': "' + label + '" went to ' + p.url().replace(BASE, ''));
+      await p.goto(BASE + '/charts.html', { waitUntil: 'domcontentloaded' });
+      await p.waitForSelector('#stkc-more-btn', { timeout: 60000 }); await sleep(4000);
+      continue;
+    }
     // toggles back
     if (/^Theme$/.test(label)) { await p.evaluate(() => window.toggleStrykerTheme && window.toggleStrykerTheme()); await sleep(300); }
     if (/^Price candles$/.test(label)) { await p.evaluate(() => { const b = document.getElementById('stkc-hideprice-btn'); if (b && b.getAttribute('aria-pressed') === 'true') b.click(); }); }

@@ -220,7 +220,9 @@ const waitIdle = (p) => p.waitForFunction(() => !window.STRYKER_WORKSPACES.busy,
         const p = await open(P);
         t(w + ' ' + th + ': no tab strip on a phone', await W(p, () => { const e = document.getElementById('stkws-tabs'); return !e || e.getBoundingClientRect().width === 0; }));
         const reach = await W(p, () => { const b = document.getElementById('stkws-btn'); const r = b.getBoundingClientRect(); return r.width > 0 && r.right <= innerWidth ? 'bar' : (document.querySelector('#stkc-more-pop #stkws-btn') ? 'more' : 'none'); });
-        t(w + ' ' + th + ': compact pill shows the name (phone has no site bar: it starts the toolbar)', await W(p, () => { const b = document.getElementById('stkws-btn'), n = b.querySelector('.stkws-name'); return getComputedStyle(n).display !== 'none' && n.textContent.length > 0 && b.closest('#stkc-bar') && b.getBoundingClientRect().height >= 30; }));
+        // phone bar (Owner bug 2026-11-23): the workspace is a row of the ⋯ sheet, its name the row's state
+        t(w + ' ' + th + ': workspace name shown (bar pill or ⋯ row state)', await W(p, () => { const b = document.getElementById('stkws-btn'), n = b.querySelector('.stkws-name'), st = b.querySelector('.stkc-ob-st');
+          return b.closest('#stkc-more-pop') ? !!(st && st.textContent.length) : getComputedStyle(n).display !== 'none' && n.textContent.length > 0 && b.closest('#stkc-bar') && b.getBoundingClientRect().height >= 30; }));
         t(w + ' ' + th + ': workspace control reachable (' + reach + ')', reach !== 'none');
         await shot(p, 'ws-bar-' + w + '-' + th);
         if (reach === 'more') { await p.click('#stkc-more-btn'); await sleep(400); await shot(p, 'ws-more-' + w + '-' + th); }

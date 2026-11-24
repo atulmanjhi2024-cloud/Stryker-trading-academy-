@@ -6413,25 +6413,76 @@ body.charts-page .stkchart-credit{
 /* Narrow iPhones (<=400): the Indicators button duplicates the chart's own "Indicators (n)" row, so it goes; that room lets the
    workspace name shrink (ellipsis) instead of running into the symbol, and the P&L chip keeps its own space (Mr.P, 2026-11-21). */
 @media (max-width:400px){
-  #stkc-bar.stkc-ob-phone .vela-mb-indicators{ display:none; }
-  #stkc-bar.stkc-ob-phone > .stkc-bar-l{ overflow:hidden; }
-  #stkc-bar.stkc-ob-phone > .stkc-bar-l > .stkws-menu{ flex:0 1 auto; min-width:0; }
-  #stkc-bar.stkc-ob-phone > .stkc-bar-r{ flex:none; }
-  #stkc-bar.stkc-ob-phone #stkc-hideprice-btn{ display:none; }   /* lowest priority: also in the chart's own menu */
-  html.stk-cps .stkas-b{ padding:0 4px; }
+  #stkc-bar.stkc-ob-phone:not(.stkc-ob-strict) .vela-mb-indicators{ display:none; }
+  #stkc-bar.stkc-ob-phone:not(.stkc-ob-strict) > .stkc-bar-l{ overflow:hidden; }
+  #stkc-bar.stkc-ob-phone:not(.stkc-ob-strict) > .stkc-bar-l > .stkws-menu{ flex:0 1 auto; min-width:0; }
+  #stkc-bar.stkc-ob-phone:not(.stkc-ob-strict) > .stkc-bar-r{ flex:none; }
+  #stkc-bar.stkc-ob-phone:not(.stkc-ob-strict) #stkc-hideprice-btn{ display:none; }   /* lowest priority: also in the chart's own menu */
+  html.stk-cps #stkc-bar:not(.stkc-ob-strict) .stkas-b{ padding:0 4px; }
   html.stk-cps #stkc-bar .stkas, html.stk-cps #stkc-bar .mclock{ margin:0; }
-  #stkc-bar.stkc-ob-phone .vela-mb-item{ min-width:30px; padding:0 5px; }
-  #stkc-bar.stkc-ob-phone .vela-mb-symbol{ min-width:40px; }
-  #stkc-bar.stkc-ob-phone > .stkc-bar-r{ gap:0; }
-  #stkc-bar.stkc-ob-phone > .stkc-bar-l{ gap:2px; }
-  #stkc-bar.stkc-ob-phone > .stkc-bar-l > .stkws-menu{ max-width:72px; }
-  #stkc-bar.stkc-ob-phone .stkws-btn{ max-width:none; width:100%; box-sizing:border-box; }
-  #stkc-bar.stkc-ob-phone .vela-mb-symbol{ max-width:64px; }
+  #stkc-bar.stkc-ob-phone:not(.stkc-ob-strict) .vela-mb-item{ min-width:30px; padding:0 5px; }
+  #stkc-bar.stkc-ob-phone:not(.stkc-ob-strict) .vela-mb-symbol{ min-width:40px; }
+  #stkc-bar.stkc-ob-phone:not(.stkc-ob-strict) > .stkc-bar-r{ gap:0; }
+  #stkc-bar.stkc-ob-phone:not(.stkc-ob-strict) > .stkc-bar-l{ gap:2px; }
+  #stkc-bar.stkc-ob-phone:not(.stkc-ob-strict) > .stkc-bar-l > .stkws-menu{ max-width:72px; }
+  #stkc-bar.stkc-ob-phone:not(.stkc-ob-strict) .stkws-btn{ max-width:none; width:100%; box-sizing:border-box; }
+  #stkc-bar.stkc-ob-phone:not(.stkc-ob-strict) .vela-mb-symbol{ max-width:64px; }
 }
 @media (max-width:380px){
-  #stkc-bar.stkc-ob-phone > .stkc-bar-l > .stkws-menu{ max-width:52px; }
-  #stkc-bar.stkc-ob-phone .vela-mb-symbol{ min-width:34px; }
+  #stkc-bar.stkc-ob-phone:not(.stkc-ob-strict) > .stkc-bar-l > .stkws-menu{ max-width:52px; }
+  #stkc-bar.stkc-ob-phone:not(.stkc-ob-strict) .vela-mb-symbol{ min-width:34px; }
 }
+/* PHONE TOP BAR (Owner bug 2026-11-23; chart-onebar.js strict mode, phone browser only: the Android app hides this bar).
+   One row, 44 px touch targets, 8 px grid. Left: menu, symbol (ticker + data dot), interval.
+   Right: Indicators, bell, ⋯ More. Every other item is a row of the ⋯ sheet, grouped under headings. */
+html.stk-cps #stkc-bar.stkc-ob-strict{ min-height:48px; padding:2px 4px; gap:0; }
+html.stk-cps #stkc-bar.stkc-ob-strict > .stkc-bar-l{ flex:1 1 auto; min-width:0; gap:0; overflow:visible; }
+html.stk-cps #stkc-bar.stkc-ob-strict > .stkc-bar-r{ flex:none; gap:0; }
+html.stk-cps #stkc-bar.stkc-ob-strict .stkc-ob-sp{ display:none; }
+html.stk-cps #stkc-bar.stkc-ob-strict .vela-mobilebar{ flex:1 1 auto; min-width:0; gap:0; }
+html.stk-cps #stkc-bar.stkc-ob-strict .stkcps-menu, html.stk-cps #stkc-bar.stkc-ob-strict .vela-mb-item,
+html.stk-cps #stkc-bar.stkc-ob-strict .stkc-ob-more-btn, html.stk-cps #stkc-bar.stkc-ob-strict .notif-bell-wrap .icon-btn{
+  flex:none; position:relative; box-sizing:border-box; display:inline-flex; align-items:center; justify-content:center;
+  width:44px; height:44px; min-height:44px; min-width:44px; padding:0; margin:0; border:0; border-radius:8px; background:transparent; color:var(--ink-1);
+}
+html.stk-cps #stkc-bar.stkc-ob-strict .vela-mb-symbol, html.stk-cps #stkc-bar.stkc-ob-strict .vela-mb-tf{
+  width:auto; padding:0 8px; font:600 15px/44px inherit; font-family:inherit; color:var(--ink-0); letter-spacing:0; white-space:nowrap; font-variant-numeric:tabular-nums;
+}
+/* the ticker keeps its full width (no "MNQ M…"); ellipsis only if a symbol is longer than the phone */
+html.stk-cps #stkc-bar.stkc-ob-strict .vela-mb-symbol{ display:block; flex:0 1 auto; min-width:44px; max-width:none; overflow:hidden; text-overflow:ellipsis; text-align:left; }
+html.stk-cps #stkc-bar.stkc-ob-strict .vela-mb-symbol[data-dd]::after{ content:""; display:inline-block; width:8px; height:8px; margin:0 0 0 8px; vertical-align:2px; border-radius:50%; background:var(--dd); }
+html.stk-cps #stkc-bar.stkc-ob-strict .vela-mb-indicators{ margin-left:auto; }
+html.stk-cps #stkc-bar.stkc-ob-strict .vela-mobilebar .vela-mb-settings{ display:none; }   /* the Chart settings row in ⋯ does the same */
+html.stk-cps #stkc-bar.stkc-ob-strict .vela-mb-item .vela-icon, html.stk-cps #stkc-bar.stkc-ob-strict .stkcps-menu svg,
+html.stk-cps #stkc-bar.stkc-ob-strict .stkc-ob-more-btn svg, html.stk-cps #stkc-bar.stkc-ob-strict .notif-bell-wrap .icon-btn svg{ width:20px; height:20px; font-size:20px; }
+html.stk-cps #stkc-bar.stkc-ob-strict .vela-mb-item:active, html.stk-cps #stkc-bar.stkc-ob-strict .stkcps-menu:active, html.stk-cps #stkc-bar.stkc-ob-strict .stkc-ob-more-btn:active,
+html.stk-cps #stkc-bar.stkc-ob-strict .stkc-ob-more-btn[aria-expanded="true"], html.stk-cps #stkc-bar.stkc-ob-strict .notif-bell-wrap .icon-btn:active{ background:var(--bg-2); color:var(--ink-0); }
+html.stk-cps #stkc-bar.stkc-ob-strict .notif-bell-wrap{ order:40; display:flex; align-items:center; }
+html.stk-cps #stkc-bar.stkc-ob-strict .notif-bell-wrap .notif-badge{ top:4px; right:4px; }
+html.stk-cps #stkc-bar.stkc-ob-strict .stkc-ob-more{ order:50; display:flex; align-items:center; }
+/* the ⋯ sheet: section headings, 56 px rows, 16 px gutters, the current state on the right */
+.stkc-ob-scrim{ display:none; }
+html.stk-cps #stkc-bar.stkc-ob-strict.stkc-ob-up{ z-index:9058; }
+@media (max-width:599px), (max-height:500px){
+  html.stk-cps #stkc-bar.stkc-ob-strict .stkc-ob-scrim:not([hidden]){ display:block; position:fixed; inset:0; z-index:9059; background:rgba(0,0,0,.5); }
+  html.stk-cps #stkc-bar.stkc-ob-strict #stkc-more-pop.stkc-ob-list:not(.stkc-ob-sub){ position:fixed !important; left:0 !important; right:0 !important; top:auto !important; bottom:0 !important;
+    width:auto !important; max-width:600px; margin:0 auto; max-height:min(85dvh, calc(100dvh - 56px)); padding:24px 0 calc(8px + env(safe-area-inset-bottom));
+    border:0; border-top:1px solid var(--line); border-radius:20px 20px 0 0; background:var(--bg-2); box-shadow:0 -12px 32px rgba(0,0,0,.4); z-index:9060; }
+  html.stk-cps #stkc-bar.stkc-ob-strict #stkc-more-pop.stkc-ob-list:not(.stkc-ob-sub)::before{ content:""; position:absolute; top:8px; left:50%; width:36px; height:4px; margin-left:-18px; border-radius:2px; background:var(--line); }
+}
+html.stk-cps #stkc-bar.stkc-ob-strict #stkc-more-pop.stkc-ob-list [data-ob-trig][data-ob-trig]{ height:56px; min-height:56px; padding:0 16px; gap:16px; font-size:15px; color:var(--ink-0); }
+html.stk-cps #stkc-bar.stkc-ob-strict #stkc-more-pop.stkc-ob-list > .stkc-ob-gh{ margin:0; padding:16px 16px 8px; border-top:0; font-size:12px; line-height:16px; letter-spacing:.06em; color:var(--ink-2); }
+html.stk-cps #stkc-bar.stkc-ob-strict #stkc-more-pop.stkc-ob-list > .stkc-ob-gh:not([style*="order: -1"]){ border-top:1px solid var(--line-soft, var(--line)); margin-top:8px; }
+html.stk-cps #stkc-bar.stkc-ob-strict #stkc-more-pop.stkc-ob-list [data-ob-trig]::before{ width:24px; height:24px; padding:0; color:var(--ink-2);
+  -webkit-mask-size:22px 22px; mask-size:22px 22px; -webkit-mask-origin:border-box; mask-origin:border-box; background-clip:border-box; }
+html.stk-cps #stkc-bar.stkc-ob-strict #stkc-more-pop.stkc-ob-list [data-ob-trig] > .stkc-ob-st{ display:block !important; order:2; flex:none; max-width:45%; overflow:hidden; text-overflow:ellipsis;
+  font-size:14px; font-weight:500; color:var(--ink-2); font-variant-numeric:tabular-nums; text-align:right; white-space:nowrap; }
+html.stk-cps #stkc-bar.stkc-ob-strict #stkc-more-pop.stkc-ob-list > .stkas, html.stk-cps #stkc-bar.stkc-ob-strict #stkc-more-pop.stkc-ob-list > .mclock{ margin:0; }   /* the bar margins shifted these rows 2 px */
+html.stk-cps #stkc-bar.stkc-ob-strict #stkc-more-pop.stkc-ob-list #stkc-ob-data::before{ background:var(--ob-dc, currentColor); -webkit-mask-size:12px 12px; mask-size:12px 12px; }
+/* a sheet / popover opened from a ⋯ row shows on its own (the list steps back, see .stkc-ob-sub) */
+#stkc-more-pop.stkc-ob-list.stkc-ob-sub .mclock-pop:not([hidden]), #stkc-more-pop.stkc-ob-list.stkc-ob-sub .mclock-pop:not([hidden]) *,
+#stkc-more-pop.stkc-ob-list.stkc-ob-sub .stkms-scrim:not([hidden]),
+#stkc-more-pop.stkc-ob-list.stkc-ob-sub .stkas-pop:not([hidden]), #stkc-more-pop.stkc-ob-list.stkc-ob-sub .stkas-pop:not([hidden]) *{ visibility:visible !important; }
 #stkc-bar.stkc-ob-phone .stkc-btn{ border-color:transparent; }
 #stkc-bar.stkc-ob-phone .stkc-btn:hover{ background:var(--bg-2); }
 .stkc-ob-pop .vela-mb-item{ all:unset; display:inline-flex; align-items:center; justify-content:center; width:34px; height:34px; border-radius:7px; color:var(--ink-1); cursor:pointer; }

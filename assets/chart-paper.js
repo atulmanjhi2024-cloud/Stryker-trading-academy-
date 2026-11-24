@@ -1959,6 +1959,7 @@ function mountToolbar(bar){
     else if (a === 'reconnect' && L) (L.reconnect || L.connect)();
     else if (a === 'hl' && window.__stkHl) window.__stkHl.open();
     else if (a === 'ctrader' && window.__stkCt) window.__stkCt.open();   // admins + beta testers: chart-live.js sets __stkCt after its check
+    else if (a === 'b3' && window.__stkB3) window.__stkB3.open(it.dataset.b);   // BROKERS 3: admins + beta testers (chart-live.js sets __stkB3 after its check)
   });
   document.addEventListener('click', (e) => { if (!pop.hidden && !wrap.contains(e.target)) setOpen(false); });
   pop.addEventListener('keydown', (e) => TM.keys(pop, e));

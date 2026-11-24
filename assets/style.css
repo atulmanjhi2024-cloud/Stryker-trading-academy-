@@ -12569,7 +12569,6 @@ section.stkss-sec{ padding:0; margin:0; }
 .stkss-ic-crypto{ color:#f5a623; }
 .stkss-ic-forex{ color:#6e9bff; }
 .stkss-ic-indices, .stkss-ic-stocks{ color:var(--ss-mint); }
-.stkss-ic.stkss-ic-fx{ background:transparent; border:0; }
 .stkss-ic-formula{ color:var(--ss-mint); }
 :root[data-theme="light"] .stkss-ic-futures{ color:#0b7f87; }
 :root[data-theme="light"] .stkss-ic-crypto{ color:#a8650a; }
@@ -13136,6 +13135,7 @@ html.stklv-on .stkpt[hidden]{ display:none !important; }
 .stktm-logo{ flex:none; display:inline-flex; align-items:center; justify-content:center; border-radius:6px; overflow:hidden; line-height:0; }
 .stktm-s28{ width:28px; height:28px; border-radius:8px; } .stktm-s24{ width:24px; height:24px; } .stktm-s16{ width:16px; height:16px; border-radius:4px; }
 .stktm-logo img{ display:block; width:100%; height:100%; object-fit:cover; }
+.stktm-logo:not(.stktm-paper){ box-shadow:inset 0 0 0 1px rgba(255,255,255,.08); }
 .stktm-fb{ display:flex; align-items:center; justify-content:center; width:100%; height:100%; color:#fff; font:700 13px/1 var(--font-body, system-ui, sans-serif); }
 .stktm-s16 .stktm-fb{ font-size:10px; }
 .stktm-paper{ background:var(--bg-3); color:var(--ink-1); border:1px solid var(--line); box-sizing:border-box; }
@@ -13216,6 +13216,7 @@ html[data-device="phone"] .stktm-act, html[data-device="tablet"] .stktm-act{ opa
 :root[data-theme="light"] .stktm-row:has(.stktm-pick[aria-checked="true"]){ background:rgba(3,201,136,.12); }
 :root[data-theme="light"] .stktm-dot.ok{ background:#067a67; }
 :root[data-theme="light"] .stktm-bal .up{ color:#067a67; }
+:root[data-theme="light"] .stktm-logo:not(.stktm-paper){ box-shadow:inset 0 0 0 1px rgba(15,23,42,.10); }
 :root[data-theme="light"] .stktm-pri, :root[data-theme="light"] .stktm-pri:hover{ color:#fff; background:#03a872; border-color:#03a872; }
 :root[data-theme="light"] #stktm-dlg{ background:rgba(20,24,33,.4); }
 :root[data-theme="light"] .stktm-dlg-box{ background:#fff; box-shadow:0 24px 64px rgba(20,24,33,.18); }
@@ -13362,6 +13363,15 @@ html .vela-dsp-lab{ flex-basis:120px; }
 /* Owner 23 Nov: admin "Allow trading with cTrader" row + the cTrader mark on its broker tile (white tile so it reads on dark and light) */
 .stktm-ctadd{ width:100%; justify-content:center; margin-top:8px; }
 .stkpt-tmenu.stktm .stktm-ctadd{ margin-top:8px; }
+.stktm-b3{ display:grid; grid-template-columns:1fr; gap:8px; margin-top:8px; }
+.stktm-b3add{ width:100%; justify-content:flex-start; }
+.stktm-b3add .stktm-b3t{ flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; text-align:left; }
+.stktm-b3add[aria-disabled="true"]{ color:var(--ink-2); cursor:default; }
+.stktm-soon{ flex:0 0 auto; padding:0 8px; border-radius:999px; background:var(--surface-2); color:var(--ink-2); font:600 11px/20px var(--font-body, system-ui, sans-serif); }
+.stklv-b3 .stklv-f{ display:grid; gap:8px; margin:12px 0 0; }
+.stklv-b3 .stklv-f > span{ font:600 13px/16px var(--font-body, system-ui, sans-serif); color:var(--ink-1); }
+.stklv-b3 .stklv-seg{ margin:12px 0 0; }
+.stktm-logo.stktm-ct{ background:#fff; }
 .stktm-logo.stktm-ct img{ object-fit:contain; padding:12%; box-sizing:border-box; }
 /* Trade menu COMPACT (Owner 17 Nov "too big"): 360px popover, 48-52px account rows, 28px logos/actions. Scoped to the popover; the Manage sheet keeps its own sizes. */
 .stkpt-tmenu.stktm{ width:360px; max-width:min(360px, 92vw); padding:12px; border-radius:12px; }

@@ -194,7 +194,10 @@ const pageInfo = (r, txt) => {
   const id = r.headers.get('x-amzn-requestid') || r.headers.get('x-amz-apigw-id') || r.headers.get('x-request-id') || r.headers.get('cf-ray') || '';
   const by = r.headers.get('server') || r.headers.get('via') || '';
   // the request id is the broker link's own trace id (not ours, not a secret), so it is kept whole for their support
-  return clean(ct + (ti ? ' "' + ti.trim() + '"' : '') + (by ? ' from ' + String(by).slice(0, 30) : '') + (txt ? ', ' + txt.length + ' bytes' : ', empty')) + (id ? ', request id ' + String(id).replace(/[^A-Za-z0-9=._:-]/g, '').slice(0, 64) : '');
+  // x-process-time is set by the broker link's own app server on every reply (seen on its 401s): present = the error came from
+  // inside their app; absent next to "from cloudflare" = a Cloudflare-made page, which may be our own edge (AUTO-TDVAPI lead)
+  const app = r.headers.get('x-process-time') ? ', their app answered' : ', not their app';
+  return clean(ct + (ti ? ' "' + ti.trim() + '"' : '') + (by ? ' from ' + String(by).slice(0, 30) : '') + (txt ? ', ' + txt.length + ' bytes' : ', empty') + app) + (id ? ', request id ' + String(id).replace(/[^A-Za-z0-9=._:-]/g, '').slice(0, 64) : '');
 };
 const clean = (m) => String(m || '').replace(/fntc_[A-Za-z0-9_]+|eyJ[A-Za-z0-9._-]+|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi, '[x]').replace(/\s+/g, ' ').slice(0, 160);
 // Every page of a list (Owner bug 21 Nov, balance "updated 4 days ago"): the broker link's list routes take limit/offset (max 1000)
@@ -213,11 +216,12 @@ export async function listAll(call, path, { limit = 200, maxPages = 5 } = {}) {
 }
 
 // X-Finatic-Environment. A live key always wins: FINATIC_ENV=sandbox next to an fntc_live_ key is ignored (with a warning).
+// A live key sends 'live' explicitly, as the official SDK does on every call (AUTO-TDVAPI 23 Nov: we sent no header at all).
 export function finEnvHeader(env) {
-  const v = env.FINATIC_ENV;
-  if (v !== 'sandbox' && v !== 'live') return '';
-  if (v === 'sandbox' && String(env.FINATIC_API_KEY || '').startsWith('fntc_live_')) { console.warn('finatic: FINATIC_ENV=sandbox ignored, the key is a live key'); return ''; }
-  return v;
+  const v = env.FINATIC_ENV, liveKey = String(env.FINATIC_API_KEY || '').startsWith('fntc_live_');
+  if (v === 'sandbox' && liveKey) { console.warn('finatic: FINATIC_ENV=sandbox ignored, the key is a live key'); return 'live'; }
+  if (v === 'sandbox' || v === 'live') return v;
+  return liveKey ? 'live' : '';
 }
 
 const pick = (o, ...ks) => { for (const k of ks) if (o && o[k] !== undefined && o[k] !== null && o[k] !== '') return o[k]; return ''; };

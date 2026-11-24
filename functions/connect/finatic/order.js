@@ -69,6 +69,50 @@ export function cleanOrder(b, { partial, mt } = {}) {
   return { order: o };
 }
 
+// The broker link's opaque id for one exact futures contract, from a read's instrument descriptor (positions carry it, Tradovate
+// orders don't). Only an EXACT descriptor whose contract code is this symbol counts; never derived from a product root. -> id | ''
+const FIN_ID = /^[A-Za-z0-9._:\-]{1,128}$/;
+export function instrumentIdFor(rows, symbol) {
+  for (const r of Array.isArray(rows) ? rows : []) {
+    const i = r && r.instrument, f = i && i.future;
+    if (!i || !f || String(f.identityQuality || '').toUpperCase() !== 'EXACT' || !/^future$/i.test(String(i.assetType || ''))) continue;
+    if (String(f.contractCode || '').toUpperCase() !== symbol) continue;
+    const id = String(i.finaticInstrumentId || ''); if (FIN_ID.test(id)) return id;
+  }
+  return '';
+}
+
+// The account's place schema (GET order-schemas?action=place): the developer-facing orderSchema (properties, required,
+// additionalProperties) plus supportedOrderTypesByAssetClass. Cached SCHEMA_MS per account in this isolate; a failed read = null
+// (the order goes out as before: a schema outage must not stop trading). -> { props, required, closed, types } | null
+export const SCHEMA_MS = 600000;
+const schemaMemo = new Map();
+export const _resetSchemas = () => schemaMemo.clear();
+export async function placeSchema(call, A, accountId, deps = {}) {
+  const now = (deps.now || Date.now)(), h = schemaMemo.get(accountId);
+  if (h && now - h.at < SCHEMA_MS) return h.v;
+  let r; try { r = await call('GET', A + '/order-schemas', { query: { action: 'place' } }); } catch (e) { return null; }
+  const os = r && r.ok && r.data && r.data.orderSchema;
+  if (!os || typeof os.properties !== 'object' || !os.properties) return null;
+  const types = r.data.supportedOrderTypesByAssetClass && typeof r.data.supportedOrderTypesByAssetClass === 'object' ? r.data.supportedOrderTypesByAssetClass : {};
+  const v = { props: Object.keys(os.properties), required: Array.isArray(os.required) ? os.required : [], closed: os.additionalProperties === false, types, enums: Object.fromEntries(Object.entries(os.properties).filter(([, d]) => d && Array.isArray(d.enum)).map(([k, d]) => [k, d.enum])) };
+  schemaMemo.set(accountId, { at: now, v });
+  return v;
+}
+// Our order against the account's schema: a field the schema does not declare is dropped when the schema is closed
+// (additionalProperties false); a missing required field, a value outside a declared enum, or an order type the account does not list
+// for the asset class = refused here, nothing sent. An EMPTY supportedOrderTypesByAssetClass (Tradovate on 23 Nov) checks nothing.
+export function fitSchema(s, order) {
+  const o = {};
+  for (const [k, v] of Object.entries(order)) if (!s.closed || s.props.includes(k)) o[k] = v;
+  const miss = s.required.filter((k) => o[k] === undefined || o[k] === null || o[k] === '');
+  if (miss.length) return { error: 'The broker needs ' + miss.join(', ') + ' for this order. Nothing was sent.' };
+  for (const [k, list] of Object.entries(s.enums)) if (o[k] !== undefined && !list.includes(o[k])) return { error: 'The broker does not take ' + k + ' ' + o[k] + ' on this account. Nothing was sent.' };
+  const allowed = s.types[o.assetType];
+  if (Array.isArray(allowed) && allowed.length && !allowed.map((x) => String(x).toLowerCase()).includes(o.orderType)) return { error: 'This account takes only ' + allowed.join(', ') + ' orders for ' + o.assetType + '. Nothing was sent.' };
+  return { order: o };
+}
+
 async function run(request, env, deps) {
   if (request.method !== 'POST') return methodNotAllowed('POST');
   const g = await gate(request, env, deps, 'finatic-order');
@@ -212,11 +256,13 @@ export async function exec(request, env, deps, g, b) {
   const needRead = chart && (op === 'place' || op === 'flatten');
   // MetaTrader: the account record must say MT4 / MT5 (a futures account can never take the MT path and skip the contract list)
   const acctRead = mt && op !== 'schema' ? t.step('acct', call('GET', A)) : null;
+  // the account's own place schema (broker-link docs: "fetch order-schemas, do not hard-code"), cached per account, read in parallel
+  const schemaRead = op === 'place' && !mt ? t.step('schema', placeSchema(call, A, b.accountId, deps)) : null;
   // single flight per account in this isolate: a second place/flatten waits for the first to answer, so the pre-send read (used to
   // settle an unclear answer) never overlaps another send (advisor review 16 Nov). Costs nothing for one order at a time.
   const release = needRead ? await t.step('queue', acquire(b.accountId)) : () => {};
   try {
-  const [au, st0, ar] = await Promise.all([opened, needRead ? t.step('read', read()) : null, acctRead]);
+  const [au, st0, ar, sch] = await Promise.all([opened, needRead ? t.step('read', read()) : null, acctRead, schemaRead]);
   if (au.e) { if (au.e && au.e.duplicate) return json({ error: 'This order was already sent once. Nothing new was sent.', code: 'duplicate', duplicate: true }, 409); try { console.warn('finatic order: audit unavailable: ' + (au.e.reason || 'error')); } catch (e) {} return fail(503, 'Audit log unavailable' + (au.e.reason ? ' (' + String(au.e.reason).slice(0, 160) + ')' : '') + ', order not sent', 'audit_unavailable'); }
   const audit = { id: au.a.id, finish: (res) => defer(au.a.finish(res)) };   // the result row goes out after the reply, never skipped
   if (renewFail) { audit.finish({ result: 'rejected', message: 'session renew failed' }); return needsConnect(); }
@@ -231,6 +277,10 @@ export async function exec(request, env, deps, g, b) {
       if (old) { audit.finish({ result: 'rejected', message: 'bracket exists' }); return fail(409, 'A stop loss / take profit is already set on ' + order.symbol + '. Flatten or wait for it to finish first.', 'bracket_exists'); }
     }
   }
+  // EXACT FUTURES (broker-link docs + SDK README, AUTO-TDVAPI 23 Nov): when a read already carries this contract's opaque
+  // finaticInstrumentId, it goes into the order next to the symbol (the broker link resolves it to the broker's own contract)
+  if (order && op === 'place' && order.assetType === 'future' && st0) { const fid = instrumentIdFor(st0.positions, order.symbol); if (fid) order.finaticInstrumentId = fid; }
+  if (order && sch) { const c = fitSchema(sch, order); if (c.error) { audit.finish({ result: 'rejected', message: 'schema: ' + c.error }); return fail(400, c.error, 'schema'); } order = c.order; }
   const idem = chart ? b.idemKey : (deps.uuid || (() => crypto.randomUUID()))();
   const sandbox = envMode(env) === 'sandbox';
   const send = (method, path, key, body) => call(method, path, { headers: { 'Idempotency-Key': key }, ...(body ? { body } : { query: { paperTradeConfirmed: sandbox ? 'true' : undefined } }) });

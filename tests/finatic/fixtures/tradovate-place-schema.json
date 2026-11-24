@@ -1,0 +1,535 @@
+{
+ "_note": "Recorded 23 Nov 2026 (read-only GET /api/v1/accounts/{id}/order-schemas?action=place) for a Tradovate account through the broker link. Account ids removed. brokerWireSchema left out (15 broker defs, none for tradovate). Sample data for tests.",
+ "brokerId": "tradovate",
+ "action": "PLACE",
+ "supportedOrderTypesByAssetClass": {},
+ "orderSchema": {
+  "$defs": {
+   "OrderLeg": {
+    "additionalProperties": false,
+    "description": "One leg of a developer-facing place order (1..N).\n\nAttributes\n----------\nsymbol : str | None\n    Underlying or OCC symbol for this leg. Optional when the parent\n    envelope already carries the underlying (e.g. Robinhood spreads).\nexpiration_date, strike_price, option_type : optional\n    Option contract parts when not using OCC in ``symbol``. camelCase\n    aliases ``expirationDate`` / ``strikePrice`` / ``optionType``.\naction : str | None\n    ``buy`` / ``sell`` (or mapped open/close with ``positionEffect``).\norder_qty, ratio_quantity : float | int | None\n    Size for this leg. Alias ``orderQty`` / ``ratioQuantity``. Finatic does\n    not invent a missing size.\nposition_effect : {\"open\", \"close\"} | None\n    Option position effect. Alias ``positionEffect``.\nposition_intent : PositionIntent | None\n    Input-only combined option side/effect. Alias ``positionIntent``.",
+    "properties": {
+     "symbol": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Symbol"
+     },
+     "expirationDate": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Expirationdate"
+     },
+     "strikePrice": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Strikeprice"
+     },
+     "optionType": {
+      "anyOf": [
+       {
+        "enum": [
+         "call",
+         "put"
+        ],
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Optiontype"
+     },
+     "action": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Action"
+     },
+     "orderQty": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Orderqty"
+     },
+     "ratioQuantity": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Ratioquantity"
+     },
+     "positionEffect": {
+      "anyOf": [
+       {
+        "enum": [
+         "open",
+         "close"
+        ],
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Positioneffect"
+     },
+     "positionIntent": {
+      "anyOf": [
+       {
+        "enum": [
+         "BUY_TO_OPEN",
+         "BUY_TO_CLOSE",
+         "SELL_TO_OPEN",
+         "SELL_TO_CLOSE"
+        ],
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "description": "Combined option lifecycle intent. Normalized into action and positionEffect before broker adaptation.",
+      "title": "Positionintent"
+     }
+    },
+    "title": "OrderLeg",
+    "type": "object"
+   }
+  },
+  "additionalProperties": false,
+  "properties": {
+   "assetType": {
+    "enum": [
+     "equity",
+     "equity_option",
+     "crypto",
+     "future",
+     "forex",
+     "cfd",
+     "event_contract"
+    ],
+    "title": "Assettype",
+    "type": "string"
+   },
+   "orderType": {
+    "title": "Ordertype",
+    "type": "string"
+   },
+   "action": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Action"
+   },
+   "timeInForce": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Timeinforce"
+   },
+   "symbol": {
+    "title": "Symbol",
+    "type": "string"
+   },
+   "orderQty": {
+    "anyOf": [
+     {
+      "type": "number"
+     },
+     {
+      "type": "integer"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Orderqty"
+   },
+   "notional": {
+    "anyOf": [
+     {
+      "type": "number"
+     },
+     {
+      "type": "integer"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Notional"
+   },
+   "price": {
+    "anyOf": [
+     {
+      "type": "number"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Price"
+   },
+   "stopPrice": {
+    "anyOf": [
+     {
+      "type": "number"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Stopprice"
+   },
+   "limitPrice": {
+    "anyOf": [
+     {
+      "type": "number"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Limitprice"
+   },
+   "trailPercent": {
+    "anyOf": [
+     {
+      "type": "number"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Trailpercent"
+   },
+   "trailPrice": {
+    "anyOf": [
+     {
+      "type": "number"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Trailprice"
+   },
+   "clientOrderId": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Clientorderid"
+   },
+   "extendedHours": {
+    "anyOf": [
+     {
+      "type": "boolean"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Extendedhours"
+   },
+   "orderClass": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Orderclass"
+   },
+   "stopLoss": {
+    "default": null,
+    "title": "Stoploss"
+   },
+   "takeProfit": {
+    "default": null,
+    "title": "Takeprofit"
+   },
+   "clearStopLoss": {
+    "default": false,
+    "title": "Clearstoploss",
+    "type": "boolean"
+   },
+   "clearTakeProfit": {
+    "default": false,
+    "title": "Cleartakeprofit",
+    "type": "boolean"
+   },
+   "instrumentId": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Instrumentid"
+   },
+   "finaticInstrumentId": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Finaticinstrumentid"
+   },
+   "leverage": {
+    "anyOf": [
+     {
+      "type": "number"
+     },
+     {
+      "type": "integer"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Leverage"
+   },
+   "positionEffect": {
+    "anyOf": [
+     {
+      "enum": [
+       "open",
+       "close"
+      ],
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Positioneffect"
+   },
+   "positionIntent": {
+    "anyOf": [
+     {
+      "enum": [
+       "BUY_TO_OPEN",
+       "BUY_TO_CLOSE",
+       "SELL_TO_OPEN",
+       "SELL_TO_CLOSE"
+      ],
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "description": "Combined option lifecycle intent. Normalized into action and positionEffect before broker adaptation.",
+    "title": "Positionintent"
+   },
+   "creditOrDebit": {
+    "anyOf": [
+     {
+      "enum": [
+       "credit",
+       "debit"
+      ],
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Creditordebit"
+   },
+   "expirationDate": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Expirationdate"
+   },
+   "strikePrice": {
+    "anyOf": [
+     {
+      "type": "number"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Strikeprice"
+   },
+   "optionType": {
+    "anyOf": [
+     {
+      "enum": [
+       "call",
+       "put"
+      ],
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Optiontype"
+   },
+   "route": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Route"
+   },
+   "legs": {
+    "anyOf": [
+     {
+      "items": {
+       "$ref": "#/$defs/OrderLeg"
+      },
+      "type": "array"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Legs"
+   }
+  },
+  "required": [
+   "assetType",
+   "orderType",
+   "symbol"
+  ],
+  "title": "StandardAccountOrderPlace",
+  "type": "object",
+  "x-finatic-brokerId": "tradovate",
+  "x-finatic-action": "place",
+  "x-finatic-supportsNotional": false,
+  "x-finatic-supportsAttachedRisk": false,
+  "x-finatic-supportsExitOrderTypes": true,
+  "x-finatic-supportsPositionRiskModify": false,
+  "x-finatic-stopLossShape": "number",
+  "x-finatic-maxLegs": 1,
+  "x-finatic-resolvedFields": []
+ },
+ "positionInstrument": {
+  "version": "1.0",
+  "finaticInstrumentId": "sample-fininst-mnqz6",
+  "displaySymbol": "MNQZ6",
+  "assetType": "future",
+  "providerNativeId": null,
+  "providerSymbol": null,
+  "observedAt": null,
+  "provenance": {
+   "provider_id": "tradovate",
+   "resource": "position"
+  },
+  "future": {
+   "identityQuality": "EXACT",
+   "productRoot": null,
+   "contractCode": "MNQZ6",
+   "contractMonth": null,
+   "expirationDate": null,
+   "exchangeMic": null
+  },
+  "option": null,
+  "partialOption": null
+ }
+}

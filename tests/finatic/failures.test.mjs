@@ -132,7 +132,7 @@ r = await D.handle(new Request('https://tradezoro.com/connect/finatic/data'), en
 // 4. live key wins: FINATIC_ENV=sandbox is ignored with a live key; a sandbox key still sends it
 mode = 'stale'; envHdr.length = 0;
 await D.handle(req({ op: 'accounts', userId: ACC }), { ...env, FINATIC_ENV: 'sandbox' }, deps);
-assert.ok(envHdr.length > 0 && envHdr.every((h) => h === undefined), 'no sandbox header with a live key');
+assert.ok(envHdr.length > 0 && envHdr.every((h) => h === 'live'), 'a live key always says live (as the SDK does), never sandbox');
 assert.ok(logs.some((l) => /FINATIC_ENV=sandbox ignored/.test(l)), 'warning logged');
 envHdr.length = 0;
 await D.handle(req({ op: 'accounts', userId: ACC }), { ...env, FINATIC_API_KEY: 'fntc_sandbox_X', FINATIC_ENV: 'sandbox' }, deps);

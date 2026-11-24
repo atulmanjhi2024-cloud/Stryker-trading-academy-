@@ -85,7 +85,7 @@ import { VER } from '../../functions/connect/finatic/_ver.js';
   const html = () => new Response('<html><head><title>504 Gateway Time-out</title></head><body>secret-ish body fntc_live_x</body></html>', { status: 504, headers: { 'content-type': 'text/html', server: 'awselb/2.0', 'x-amzn-requestid': 'abc-123' } });
   n = 0; r = await F.fin(env, { finFetch: seq(html) }, 'POST', '/o', { body: {} });
   assert.equal(r.ok, false); assert.equal(r.status, 504); assert.equal(r.errCode, 'non_json');
-  assert.match(r.errMsg, /text\/html "504 Gateway Time-out" from awselb\/2.0, \d+ bytes, request id abc-123/); assert.ok(!/fntc_|body/.test(r.errMsg), r.errMsg);
+  assert.match(r.errMsg, /text\/html "504 Gateway Time-out" from awselb\/2.0, \d+ bytes, not their app, request id abc-123/); assert.ok(!/fntc_|body/.test(r.errMsg), r.errMsg);
   n = 0; r = await F.fin(env, { finFetch: seq(() => new Response('{not json', { status: 200 })) }, 'POST', '/o', { body: {} });
   assert.equal(r.ok, false); assert.equal(r.bad, true, 'a 200 with a broken body is unclear, not success');
   n = 0; r = await F.fin(env, { finFetch: seq(() => new Response('', { status: 504 })) }, 'POST', '/o', { body: {} });

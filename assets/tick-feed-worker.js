@@ -20,7 +20,7 @@ function handle(port, P, m) {
   if (m.token) token = String(m.token);
   if (m.url) url = String(m.url);
   if (m.op === 'hello') { P.lock = m.lock || ''; port.postMessage({ type: 'hello', stats: core.stats() }); }
-  else if (m.op === 'token') { if (core.retryH) { clearTimeout(core.retryH); core.retryH = null; } core.ensure(); }
+  else if (m.op === 'token') { if (core.retryH) { clearTimeout(core.retryH); core.retryH = null; } core.ensure(); if (token && token !== core.sentTok) core.auth(token); }
   else if (m.op === 'join') { const old = P.joins.get(m.id); if (old) old(); P.joins.set(m.id, core.join(m.sym, m.e, m.q, (f) => { try { port.postMessage({ id: m.id, f }); } catch (e) {} })); }
   else if (m.op === 'leave') { const l = P.joins.get(m.id); if (l) { l(); P.joins.delete(m.id); } }
   else if (m.op === 'bye') drop(port);

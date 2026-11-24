@@ -17,7 +17,7 @@
 // Wording: "updated Xs ago" only. Education only. Not financial advice.
 import { registerFeed, setPanel, setStats } from './chart-feeds.js?v=1248';
 import { isFree, tierKnown, onTier, LIVE_DATA_REASON } from './chart-pro-gate.js?v=1248';
-import { isRealtimeAdmin, isL2Member, rtToken, rtEnsureFresh, rtReady, rtHeaders, rtOnChange, rtState } from './rt-access.js?v=1248';
+import { isRealtimeAdmin, isL2Member, rtToken, rtEnsureFresh, rtReady, rtHeaders, rtOnChange, rtState, rtRecheck } from './rt-access.js?v=1248';
 import { hubLive, HUB_FUTURES, HUB_QUOTES } from './live-source.js?v=1248';
 import { hfLive } from './chart-heat-filter.js?v=1248';
 import { cmeOpenNow } from './chart-futures-provider.js?v=1248';
@@ -184,6 +184,7 @@ class Conn {
     this.openedAt = 0; this.want = new Map();
     this.onVis = () => { if (document.hidden) { clearTimeout(this.closeTm); this.closeTm = setTimeout(() => this.park(), 30000); } else { clearTimeout(this.closeTm); if (!this.ws && !this.stopped) this.connect(); else fillGap(this.root); } };
     document.addEventListener('visibilitychange', this.onVis);
+    this.offTok = rtOnChange(() => this.reauth(false));   // Firebase refreshed the ID token (~ every 55 min): the hub gets it too
     this.connect();
   }
   setLevels(id, n) { this.want.set(id, n); const m = Math.max(...this.want.values(), 20); const l = LEVELS.find((x) => x >= m) || 150; if (l !== this.levels) { this.levels = l; this.send({ op: 'sub', symbol: this.root, levels: l }); } }
@@ -197,7 +198,7 @@ class Conn {
     r.status = 'reconnecting'; tell(r);
     let token = '';
     if (!testOn()) {
-      await rtReady(); try { await rtEnsureFresh(120); } catch (e) {} token = rtToken() || '';
+      await Promise.race([rtReady(), new Promise((ok) => setTimeout(ok, 15000))]); try { await rtEnsureFresh(120); } catch (e) {} token = rtToken() || '';   // an access answer that stays unknown (server outage) must not keep the socket shut: the hub decides
       if (!token) { r.status = 'error'; r.err = 'sign in'; tell(r); this.later(); return; }   // used to stay dead for good: keep asking, the token can land after the first try
     }
     if (this.stopped || this.ws) return;
@@ -207,6 +208,7 @@ class Conn {
     let ws;
     try { ws = new WebSocket(wsBase(base) + '/ts-live?symbol=' + this.root + '&levels=' + this.levels, token ? ['tz-auth', token] : undefined); } catch (e) { this.later(); return; }
     this.ws = ws;
+    this.sentTok = token;
     ws.onopen = () => { r.err = ''; this.openedAt = Date.now(); liveGap(this.root); fillGap(this.root); this.send({ op: 'sub', symbol: this.root, levels: this.levels }); this.arm(); };
     ws.onmessage = (e) => { let m; try { m = JSON.parse(e.data); } catch (x) { return; } this.arm(); this.frame(m); };
     ws.onclose = (e) => {
@@ -214,9 +216,20 @@ class Conn {
       if (this.ws !== ws) return; this.ws = null; clearTimeout(this.dog);
       r.status = 'reconnecting'; tell(r);
       if (Date.now() - this.openedAt > 30000) this.retryN = 0;
-      if (!this.stopped && !document.hidden) this.later(e && e.code === 4401 ? 200 : 0);
+      // 4401 (token age) / 4003 (access ended): get a FRESH token and re-ask the access answer first, then reconnect at once. The hub only
+      // sends 4003 on a definite "no" for a valid token (LIVEFIX 24 Nov 2026); a stale token or our own outage must not leave a paying member
+      // on the delayed book, so the page re-decides with the server's new answer instead of guessing.
+      const auth = e && (e.code === 4401 || e.code === 4003);
+      if (auth && !testOn()) { Promise.resolve().then(() => rtEnsureFresh(3300)).catch(() => {}).then(() => (e.code === 4003 ? rtRecheck(true) : null)).catch(() => {}).then(() => { if (!this.stopped && !document.hidden && !this.ws) this.later(200); }); return; }
+      if (!this.stopped && !document.hidden) this.later(auth ? 200 : 0);
     };
     ws.onerror = () => { try { ws.close(); } catch (e) {} };
+  }
+  // LIVEFIX (24 Nov 2026): send the hub the page's current ID token on an open socket, so its periodic access re-check never runs on an
+  // expired one. force = the hub asked (auth_needed): refresh from Firebase first. Same uid only (the hub refuses another), newer only.
+  reauth(force) {
+    if (testOn() || !this.ws || this.ws.readyState !== 1) return;
+    Promise.resolve(force ? rtEnsureFresh(3300) : rtToken()).catch(() => rtToken()).then(() => { const t = rtToken(); if (t && t !== this.sentTok) { this.sentTok = t; this.send({ op: 'auth', token: t }); } });
   }
   arm() { clearTimeout(this.dog); this.dog = setTimeout(() => { if (this.ws) { try { this.ws.close(); } catch (e) {} } }, 20000); }
   later(ms) { clearTimeout(this.tm); const w = ms || Math.min(30000, 1500 * Math.pow(2, Math.min(this.retryN++, 5))) * (0.8 + Math.random() * 0.4); this.tm = setTimeout(() => this.connect(), w); }
@@ -236,6 +249,8 @@ class Conn {
       r.closed = m.state === 'idle'; r.status = m.state === 'live' ? 'live' : 'reconnecting'; tell(r); return; }
     if (m.event === 'ping') { const st = m.state === 'live' ? 'live' : 'reconnecting', cl = m.state === 'idle'; if ((r.status !== st && r.status !== 'error') || r.closed !== cl) { r.closed = cl; if (r.status !== 'error') r.status = st; tell(r); } return; }   // the hub's 5 s heartbeat carries its data state: no data for 10 s = reconnecting
     if (m.event === 'hub_full') { r.status = 'error'; r.err = 'busy'; tell(r); return; }
+    // the hub found this socket's token expired: hand it a fresh one ({op:'auth'}); the socket and its tier stay as they are meanwhile
+    if (m.event === 'auth_needed') { this.reauth(true); return; }
     if (m.event) return;
     const wasProven = m.type === 'snap' && l2Proven(this.root);
     r.lastFrame = Date.now(); r.closed = false;
@@ -249,7 +264,7 @@ class Conn {
     else if (m.type === 'ticks') { if (TE.has(r.root)) return; applyTicks(r, m.t); }   // the tick engine feeds this root's trades (teTicks): none twice
     r.listeners.forEach((f) => { try { f(m); } catch (e) {} });
   }
-  close() { this.stopped = true; clearTimeout(this.tm); clearTimeout(this.dog); clearTimeout(this.closeTm); document.removeEventListener('visibilitychange', this.onVis); if (this.ws) { try { this.ws.close(1000); } catch (e) {} this.ws = null; } }
+  close() { this.stopped = true; try { if (this.offTok) this.offTok(); } catch (e) {} clearTimeout(this.tm); clearTimeout(this.dog); clearTimeout(this.closeTm); document.removeEventListener('visibilitychange', this.onVis); if (this.ws) { try { this.ws.close(1000); } catch (e) {} this.ws = null; } }
 }
 // one batch of trades [[px, size, side +1/-1, ts_ms]..] into every tick consumer of root: the book tools' TickFeed and the live footprint
 function applyTicks(r, t) {

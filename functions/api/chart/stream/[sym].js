@@ -119,7 +119,7 @@ export async function onRequestGet(ctx) {
   const rtTimer = rtIsAdmin ? null : setInterval(async () => {
     if (closed) return;
     if (!(rtExp > Date.now() / 1000 + 5)) return close(4001, 'token expired');
-    try { if (!(await isRealtimeToken(rtTok))) close(4003, 'real-time access ended'); } catch (e) {}
+    try { const out = {}; if (!(await isRealtimeToken(rtTok, { out })) && !out.outage) close(4003, 'real-time access ended'); } catch (e) {}   // a Firestore outage is never 'access ended' (24 Nov 2026)
   }, 60000);
   const dec = decOf(SYMBOLS[sym][4]);
   // TICK MODE (ticks=1): a second leg subscribes InsightSentry's per-trade feed (bar_type 'tick') and

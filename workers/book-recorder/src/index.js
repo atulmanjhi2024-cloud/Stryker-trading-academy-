@@ -35,7 +35,7 @@ import { ISHub, isHubFetch, hubOpts } from './is-hub.js';
 import { TSHub, tsHubFetch, tsStore, tsOpts, cmeOpen } from './ts-hub.js';
 import { TickEngine, teStore, teOpts } from './tick-engine.js';
 import { histSql, histFetch } from './hist-store.js';   // DEEP HISTORY (1-minute bars a year+ back, src/hist-store.js)
-import { tsAllowed, tsAccess, tsTier, tsHistoryAccess } from './ts-access.js';
+import { tsAllowed, tsAccess, tsTier, tsTierWhy, tsHistoryAccess } from './ts-access.js';
 import { StockEngine, skStore, skSpec, skCut, codeOk } from './stock-engine.js';   // STOCKS ENGINE
 import { verifyIdToken } from './rt-auth.js';
 import { addNote, setBase, summary, sigOk, emptyUse } from './is-usage.js';
@@ -1048,7 +1048,11 @@ async function route(req, env, ctx) {
       // now - 11 min unless the caller holds the live level for that data (src/ts-access.js tsHistoryAccess: book/aux = the paid L2 feed,
       // trades = L1). The tier goes to the hub as a query param WE set (any client-sent one is dropped).
       const hist = ws ? null : await tsHistoryAccess(env, bearerOf(req), u.pathname);
-      const tier = ws ? await tsTier(env, wsTokenOf(req)) : (hist ? 'book' : null);
+      // /ts-live: a Firestore outage (429 quota, 5xx) is not a "no" (Owner bug 24 Nov 2026): a verified token whose plan could not be read
+      // goes to the hub as tier=vouch, and the hub gives it the tier this uid had in the last 6 h (else 403). Never more than it had.
+      let tier = null;
+      if (ws) { const a = await tsTierWhy(env, wsTokenOf(req)); tier = a.tier || (a.why === 'outage' ? 'vouch' : null); }
+      else tier = hist ? 'book' : null;
       if (!tier) return new Response('forbidden', { status: 403, headers: Object.assign({}, h, TS_NO_CACHE) });
       { const rl = await env.RL_OF.limit({ key: (ws ? 'tsws:' : 'ts:') + (req.headers.get('cf-connecting-ip') || 'x') }); if (!rl.success) return new Response('slow down', { status: 429, headers: h }); }   // sockets too (a reconnect storm / socket flood from one IP)
       // allow-listed params only (src/ts-route.js TS_PARAMS); then OUR tier, and for a delayed read to = min(to, cut) and fill = 0

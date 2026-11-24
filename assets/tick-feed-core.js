@@ -67,7 +67,7 @@ export class TickFeedCore {
     if (!tok) { if (this.o.needToken) this.o.needToken(); this.retry(); return; }
     let ws;
     try { ws = new this.WS(this.o.url(), ['tz-auth', tok]); } catch (e) { this.retry(); return; }
-    this.ws = ws; this.n.opens++; this.lastMsg = this.now();
+    this.ws = ws; this.n.opens++; this.lastMsg = this.now(); this.sentTok = tok;
     ws.onopen = () => { this.open = true; this.lastMsg = this.now(); for (const [sym, s] of this.S) this.tsub(sym, s.seq, s.e); this.state(); this.watch(); };
     ws.onmessage = (ev) => { this.lastMsg = this.now(); this.onFrame(ev.data); };
     ws.onclose = (ev) => {
@@ -90,12 +90,16 @@ export class TickFeedCore {
       this.watchH = null;
       if (!this.ws) return;
       if (this.now() - this.lastMsg > this.o.DEAD_MS) { this.kill('silent'); return; }
+      const t = this.o.token ? this.o.token() : ''; if (t && t !== this.sentTok) this.auth(t);   // a refreshed ID token reaches the hub on the open socket
       this.watchH = this.T(tick, 2500);
     };
     this.watchH = this.T(tick, 2500);
   }
   kill(why) { const ws = this.ws; if (!ws) return; this.ws = null; this.open = false; this.n.closes++; try { ws.close(4000, why); } catch (e) {} this.state(); if (this.joins.size) this.retry(); }
   close(why) { if (this.retryH) { this.CT(this.retryH); this.retryH = null; } const ws = this.ws; this.ws = null; this.open = false; if (ws) { this.n.closes++; try { ws.close(1000, why); } catch (e) {} } this.state(); }
+  // LIVEFIX (24 Nov 2026): the hub re-checks access on the socket's token; hand it each refreshed one ({op:'auth'}) so it never re-checks an
+  // expired token, and answer its {event:'auth_needed'} the same way. The hub accepts the same uid with a later expiry only.
+  auth(t) { if (!t || !this.ws || !this.open) return; this.sentTok = t; this.sendOp({ op: 'auth', token: t }); }
   tsub(sym, since, e) { this.sendOp(since != null && e != null ? { op: 'tsub', symbol: sym, since, e } : { op: 'tsub', symbol: sym }); }
   sendOp(m) { if (this.ws && this.open) { try { this.ws.send(JSON.stringify(m)); } catch (e) {} } }
   onFrame(data) {
@@ -103,6 +107,7 @@ export class TickFeedCore {
     if (!f) return;
     if (f.event === 'hub_attached') { this.tier = f.tier || null; this.fails = 0; if (f.te && f.te.e != null) this.attachedE = f.te.e; this.state(); return; }
     if (f.event === 'ping') return;
+    if (f.event === 'auth_needed') { const t = this.o.token ? this.o.token() : ''; if (t && t !== this.sentTok) this.auth(t); else if (this.o.needToken) this.o.needToken(); return; }
     if (f.type === 'resync') { const s = this.S.get(f.symbol); if (!s) return; this.n.resyncs++; this.resync(s, f.symbol, f.e); return; }
     if (f.type !== 'tt') return;
     const s = this.S.get(f.symbol); if (!s) return;

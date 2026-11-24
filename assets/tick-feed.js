@@ -93,7 +93,7 @@ function attach(id, j) {
 function sendToken(force) {
   const t = tokenFn();
   if (mode === 'shared' && worker) worker.port.postMessage({ op: 'token', token: t, url: urlFn() });
-  if (core && force && t) core.ensure();
+  if (core && force && t) { core.ensure(); if (t !== core.sentTok) core.auth(t); }
 }
 const statWait = new Map();
 

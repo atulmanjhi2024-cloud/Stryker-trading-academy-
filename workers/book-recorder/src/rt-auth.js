@@ -9,7 +9,7 @@
 // issuer, audience, expiry, then (2) reads admins/{uid} over the Firestore REST API USING THE
 // USER'S OWN TOKEN, so the live security rules decide (200 = exists = admin). No secret is
 // needed and a client "isAdmin" flag is never trusted. Everything fails CLOSED (not admin).
-// Result per uid is memoised 60 s in the isolate (admins); the students/{uid} answer (demo / liveFeed) 30 s,
+// Result per uid is memoised 5 min in the isolate (admins, a yes); the students/{uid} answer (demo / liveFeed) 30 s,
 // so an admin switching someone's live feed OFF takes effect within about a minute.
 export const RT_DELAY_S = 600;
 // Market Data Agreement version (Owner 2026-11-04: live futures L1 is free for every member who signed the CURRENT agreement).
@@ -18,7 +18,7 @@ export const MDA_VERSION = 'v1';          // non-admins see nothing newer than n
 export const RT_PROJECT = 'strykertrades-e0cd8';
 const JWKS_URL = 'https://www.googleapis.com/service_accounts/v1/jwk/securetoken@system.gserviceaccount.com';
 const ISSUER = 'https://securetoken.google.com/' + RT_PROJECT;
-const ADMIN_TTL_MS = 60000;
+const ADMIN_TTL_MS = 300000;   // a confirmed admin, 5 min (was 60 s; 24 Nov 2026: Firestore's daily read quota ran out). A "no" stays 5 s.
 const GRACE_MS = 3 * 24 * 3600 * 1000;   // same grace as functions-src/subscriptions.js: access continues 3 days past paidThroughMillis
 const STUDENT_TTL_MS = 30000;   // demo / liveFeed: switching a user off bites within ~1 min (memo + stream re-check)
 
@@ -26,6 +26,25 @@ const PLANS_TTL_MS = 300000;   // plans collection (public read) memo: which pla
 let jwks = null, jwksAt = 0, jwksTry = 0;
 const adminMemo = new Map();
 const demoMemo = new Map();
+// FIRESTORE OUTAGE != "NO" (Owner bug 24 Nov 2026: the project's daily Firestore quota ran out, every read answered 429, and the Owner,
+// an admin, was demoted to the 10-minute feed with the paid-feed upsell while the L2 hub revoked every open socket). A read is DEFINITE
+// only when Firestore answered 200 / 404, or 403 PERMISSION_DENIED (the rules said no). Anything else (429 quota, 5xx, network, other
+// 403s such as billing / API disabled) is an OUTAGE: a uid this isolate CONFIRMED in the last LASTYES_MS keeps that answer, anyone else
+// still fails closed. An outage is never memoised as a "no", and callers can see it (opts.out.outage = true) so they never revoke on it.
+const LASTYES_MS = { admin: 24 * 3600e3, rt: 6 * 3600e3, l2: 6 * 3600e3 };
+const lastYes = new Map();
+const yesKey = (kind, uid) => kind + ':' + uid;
+function noteYes(kind, uid, v) { if (lastYes.size > 2000) lastYes.clear(); if (v) lastYes.set(yesKey(kind, uid), Date.now()); else lastYes.delete(yesKey(kind, uid)); }
+const hadYes = (kind, uid) => { const t = lastYes.get(yesKey(kind, uid)); return !!t && Date.now() - t < LASTYES_MS[kind]; };
+const markOutage = (opts) => { if (opts && opts.out) opts.out.outage = true; };
+// -> 'ok' (200), 'no' (404 / rules said no), 'outage'
+async function definite(r) {
+  if (!r) return 'outage';
+  if (r.status === 200) return 'ok';
+  if (r.status === 404) return 'no';
+  if (r.status === 403) { let b = ''; try { b = await r.clone().text(); } catch (e) {} return /PERMISSION_DENIED/.test(b) ? 'no' : 'outage'; }
+  return 'outage';
+}
 let plansMemo = null;   // { at, paid:Set(lowercased plan names/ids with rank >= 1) }
 
 // Live Futures Data add-on (Owner order 2026-10-30, $7/month): students/{uid}.liveData = { active, paidThroughMillis,
@@ -125,7 +144,7 @@ export async function verifyIdToken(token, opts = {}) {
     if (p.firebase && p.firebase.sign_in_provider === 'anonymous') return null;   // anonymous sign-in is never a member (free L1 needs a real account)
     if (!(p.exp > now) || !(p.iat <= now + 300)) return null;
     const key = await keyFor(head.kid, opts.fetchImpl || fetch);
-    if (!key) return null;
+    if (!key) { markOutage(opts); return null; }   // Google's keys could not be read: unknown, not a bad token
     const ok = await crypto.subtle.verify('RSASSA-PKCS1-v1_5', key, b64uBytes(parts[2]), new TextEncoder().encode(parts[0] + '.' + parts[1]));
     return ok ? p.sub : null;
   } catch (e) { return null; }
@@ -136,24 +155,27 @@ export async function isAdminToken(token, opts = {}) {
   const uid = await verifyIdToken(token, opts);
   if (!uid) return false;
   const hit = adminMemo.get(uid);
-  if (hit && Date.now() - hit.at < hit.ttl) return hit.v;
-  let v = false, ttl = ADMIN_TTL_MS;
+  if (hit && Date.now() - hit.at < hit.ttl) { if (hit.o) markOutage(opts); return hit.v; }
+  let v = false, ttl = ADMIN_TTL_MS, out = false;
   try {
     const url = 'https://firestore.googleapis.com/v1/projects/' + RT_PROJECT + '/databases/(default)/documents/admins/' + encodeURIComponent(uid);
     // Frozen-candles fix 2026-10-20: a "no" must never stick. One retry on any non-definitive answer, and a
     // negative answer is remembered only 5 s (a positive 60 s), so a Firestore blip cannot hold an admin on
     // the delayed feed for a minute. 404 = no admins/{uid} doc = a definite "not admin".
-    let r = null;
+    let r = null, d = 'outage';
     for (let i = 0; i < 2; i++) {
       try { r = await (opts.fetchImpl || fetch)(url, { headers: { authorization: 'Bearer ' + token } }); } catch (e) { r = null; }
-      if (r && (r.status === 200 || r.status === 404)) break;
+      d = await definite(r);
+      if (d !== 'outage') break;
     }
-    if (r && r.status === 200) v = true;
-    else if (r && r.status === 404) ttl = 5000;
-    else ttl = 3000; // outage / 403 / 5xx: fail closed, ask again very soon
-  } catch (e) { ttl = 3000; }
+    if (d === 'ok') v = true;
+    else if (d === 'no') ttl = 5000;
+    else out = true;   // outage (429 quota / 5xx / network): never a "no" for an admin this isolate confirmed
+  } catch (e) { out = true; }
+  if (out) { markOutage(opts); v = hadYes('admin', uid); ttl = v ? 15000 : 0; }
+  else noteYes('admin', uid, v);
   if (adminMemo.size > 500) adminMemo.clear();
-  adminMemo.set(uid, { v, at: Date.now(), ttl });
+  if (ttl) adminMemo.set(uid, { v, at: Date.now(), ttl, o: out });
   return v;
 }
 
@@ -168,12 +190,13 @@ export async function isDemoToken(token, opts = {}) {
   const uid = await verifyIdToken(token, opts);
   if (!uid) return false;
   const hit = demoMemo.get(uid);
-  if (hit && Date.now() - hit.at < hit.ttl) return hit.v;
-  let v = false, ttl = STUDENT_TTL_MS;
+  if (hit && Date.now() - hit.at < hit.ttl) { if (hit.o) markOutage(opts); return hit.v; }
+  let v = false, ttl = STUDENT_TTL_MS, out = false;
   try {
     const url = 'https://firestore.googleapis.com/v1/projects/' + RT_PROJECT + '/databases/(default)/documents/students/' + encodeURIComponent(uid);
     const r = await (opts.fetchImpl || fetch)(url, { headers: { authorization: 'Bearer ' + token } });
-    if (r.status === 200) {
+    const d = await definite(r);
+    if (d === 'ok') {
       const f = ((await r.json()) || {}).fields || {};
       const nowMs = opts.nowMs || Date.now();
       const lf = !!(f.liveFeed && f.liveFeed.booleanValue === true), gf = !!(f.liveFeedGrandfathered && f.liveFeedGrandfathered.booleanValue === true);
@@ -183,10 +206,12 @@ export async function isDemoToken(token, opts = {}) {
       if (!v) v = isActiveLiveDataDoc(f, nowMs);
       if (!v) v = hasAgreementDoc(f);   // free live L1 for any member with the current agreement (Owner 2026-11-04). L2 never uses this gate (ts-access.js tsAllowed).
     }
-    else if (r.status !== 404 && r.status !== 403) ttl = 3000;   // a read blip is not a "no": ask again soon (was 10 s: a refresh in that window got the 10-minute lane)
-  } catch (e) { ttl = 3000; }
+    else if (d === 'outage') out = true;   // a read blip / quota is not a "no"
+  } catch (e) { out = true; }
+  if (out) { markOutage(opts); v = hadYes('rt', uid); ttl = v ? 15000 : 0; }
+  else noteYes('rt', uid, v);
   if (demoMemo.size > 500) demoMemo.clear();
-  demoMemo.set(uid, { v, at: Date.now(), ttl });
+  if (ttl) demoMemo.set(uid, { v, at: Date.now(), ttl, o: out });
   return v;
 }
 export async function isRealtimeToken(token, opts = {}) {
@@ -210,22 +235,26 @@ export async function isLiveDataToken(token, opts = {}) {
   const uid = await verifyIdToken(token, opts);
   if (!uid) return false;
   const hit = liveMemo.get(uid);
-  if (hit && Date.now() - hit.at < hit.ttl) return hit.v;
-  let v = false, ttl = 10000;
+  if (hit && Date.now() - hit.at < hit.ttl) { if (hit.o) markOutage(opts); return hit.v; }
+  let v = false, ttl = 10000, out = false;
+  const sub = { fetchImpl: opts.fetchImpl, nowSec: opts.nowSec, nowMs: opts.nowMs, out: {} };
   try {
-    if (await isAdminToken(token, opts)) { v = true; }
+    if (await isAdminToken(token, sub)) { v = true; }
     else {
       const f = opts.fetchImpl || fetch;
       const r = await f('https://firestore.googleapis.com/v1/projects/' + RT_PROJECT + '/databases/(default)/documents/students/' + encodeURIComponent(uid), { headers: { authorization: 'Bearer ' + token } });
-      if (r.status === 200) {
+      const d = await definite(r);
+      if (d === 'ok') {
         const fl = ((await r.json()) || {}).fields || {};
         v = !!(fl.demo && fl.demo.booleanValue === true) || isBetaDoc(fl) || isActiveProDoc(fl, await paidPlanNames(f), opts.nowMs || Date.now());
-      }
+      } else if (d === 'outage' || sub.out.outage) out = true;   // the admin read failed too, or the student read did: unknown, not "no"
     }
-    if (v) ttl = 60000;
-  } catch (e) { v = false; }
+    if (v) ttl = 300000;   // a confirmed live-book member, 5 min (was 60 s): fewer Firestore reads; a "no" stays 10 s
+  } catch (e) { v = false; out = true; }
+  if (out || sub.out.outage) { out = true; markOutage(opts); v = v || hadYes('l2', uid); ttl = v ? 15000 : 0; }   // v already true = an admin kept through the outage
+  else noteYes('l2', uid, v);
   if (liveMemo.size > 500) liveMemo.clear();
-  liveMemo.set(uid, { v, at: Date.now(), ttl });
+  if (ttl) liveMemo.set(uid, { v, at: Date.now(), ttl, o: out });
   return v;
 }
 
@@ -239,4 +268,6 @@ export function wsTokenOf(request) {
   const i = list.indexOf('tz-auth');
   return i >= 0 && list[i + 1] ? list[i + 1] : '';
 }
-export const _resetForTests = () => { jwks = null; jwksAt = 0; jwksTry = 0; plansMemo = null; adminMemo.clear(); demoMemo.clear(); liveMemo.clear(); };
+// JWT payload of a token WITHOUT verifying it (exp / sub of a token the caller already verified, or to tell an expired token from a bad one)
+export const tokClaims = (t) => { try { return JSON.parse(atob(String(t).split('.')[1].replace(/-/g, '+').replace(/_/g, '/'))) || {}; } catch (e) { return {}; } };
+export const _resetForTests = (keepYes) => { jwks = null; jwksAt = 0; jwksTry = 0; plansMemo = null; adminMemo.clear(); demoMemo.clear(); liveMemo.clear(); if (!keepYes) lastYes.clear(); };

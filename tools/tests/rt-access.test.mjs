@@ -42,7 +42,7 @@ globalThis.fetch = async (url, init) => {
     }
     const uid = decodeURIComponent(url.split('/admins/')[1]);
     assert.ok(/^Bearer /.test(init.headers.authorization));
-    return adminUids.has(uid) ? new Response('{}', { status: 200 }) : new Response('{}', { status: 403 });
+    return adminUids.has(uid) ? new Response('{}', { status: 200 }) : new Response(JSON.stringify({ error: { code: 403, message: 'Missing or insufficient permissions.', status: 'PERMISSION_DENIED' } }), { status: 403 });   // Firestore's real rules-denied body (a bare 403 is an outage since 24 Nov 2026)
   }
   throw new Error('unexpected fetch ' + url);
 };
@@ -278,4 +278,23 @@ for (const M of [A, B]) {
 // stream + bars for Free + agreement
 assert.equal((await streamGet({ request: wsReq({ 'sec-websocket-protocol': 'tz-auth, ' + await mint({ sub: 'uid-free' }) }), params: { sym: 'NQ' }, env })).status, 403, 'Free without agreement: stream 403');
 assert.equal((await streamGet({ request: wsReq({ 'sec-websocket-protocol': 'tz-auth, ' + await mint({ sub: 'uid-mda-old' }) }), params: { sym: 'NQ' }, env })).status, 403, 'old agreement: stream 403');
+// LIVEFIX (24 Nov 2026): Firestore 429 quota outage. /api/chart/rt never says a confirmed admin / Pro is "no"; an unconfirmed member gets 503
+// unknown (the page keeps waiting, no delayed label, no upsell); the outage is not remembered as a "no" once Firestore is back.
+{
+  const rtRaw = (tok) => rtGet({ request: new Request('https://x/api/chart/rt', { headers: { authorization: 'Bearer ' + tok } }) });
+  A._resetForTests();
+  assert.deepEqual(await rtRes(await mint()), { admin: true, l2: true }, 'admin confirmed (Firestore up)');
+  assert.deepEqual(await rtRes(await mint({ sub: 'uid-pro' })), { admin: false, l2: true }, 'Pro confirmed (Firestore up)');
+  A._resetForTests(true); fsDown = true;   // memo gone (new minute / isolate), last confirmed yes kept, Firestore down
+  let r = await rtRaw(await mint());
+  assert.equal(r.status, 200); assert.deepEqual(await r.json(), { admin: true, l2: true, kept: true }, 'outage: admin kept live (not the 10-min feed)');
+  r = await rtRaw(await mint({ sub: 'uid-pro' }));
+  assert.equal(r.status, 200); const pj = await r.json(); assert.equal(pj.l2, true, 'outage: Pro keeps the live book');
+  r = await rtRaw(await mint({ sub: 'uid-free' }));
+  assert.equal(r.status, 503, 'outage, never-confirmed member: 503 unknown, not a definite no'); assert.equal((await r.json()).unknown, true);
+  fsDown = false;
+  assert.deepEqual(await rtRes(await mint({ sub: 'uid-free' })), { admin: false, l2: false }, 'Firestore back: the free member is a plain no again');
+  A._resetForTests();
+  console.log('rt-access: outage keeps confirmed admin / Pro, unknown is 503');
+}
 console.log('rt-access: all ok');

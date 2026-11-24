@@ -27,8 +27,8 @@
 // viewer is watching.
 import { bucketSnapshot, encodeSamples, decodeSamples, nearNiceStep } from './bucket.js';
 import { TradeBook, tradeStore } from './ts-trades.js';
-import { tsTier } from './ts-access.js';
-import { wsTokenOf } from './rt-auth.js';
+import { tsTierWhy } from './ts-access.js';
+import { wsTokenOf, tokClaims } from './rt-auth.js';
 import { delayCut, tickN } from './tick-engine.js';   // TICK ENGINE block (src/tick-engine.js): every trade stored, one candle source, seq replay   // TS-TRADES block: big-trade candidates + per-minute delta (src/ts-trades.js)
 
 export const TS_WS = 'wss://stream.tick-stream.xyz/v1/stream';
@@ -63,7 +63,7 @@ export const coarseRule = (mid, sym) => {
 const DEF = {
   SYMBOLS: TS_SYMBOLS, TRADES: TS_TRADES, QUOTES: TS_QUOTES, RECORD: true, MODE: 'direct', MAX_CLIENTS: 40, KEEP_H: 48, MIN_GAP_MS: 250, FLUSH_MS: 250, COARSE_MS: 1000,
   SAMPLE_MS: 5000, FROZEN_MS: 60000, FAR_TICKS: 40, BACK_MIN_MS: 2000, BACK_MAX_MS: 60000, STABLE_MS: 30000, DEAD_SLOT_MS: 50000, AUTH_PAUSE_MS: 300000,
-  SILENT_MS: 50000, NODATA_MS: 120000, IDLE_MS: 60000, TOKEN_MS: 55 * 60000, RING: 3000, BARS_MIN: 20, FILL_MAX_MIN: 60, FILL_BUDGET_MS: 25000, FILL_SPAN_H: 6, FILL_STEP: 5, FILL_LAG_MS: 2 * 60000, FILL_PAUSE_MS: 60000, REST: 'https://api.tick-stream.xyz/v1', TICKS_PER_FRAME: 200, PRUNE_MS: 3600000, RECHECK_MS: 60000, TRADES_RESERVE: 5
+  SILENT_MS: 50000, NODATA_MS: 120000, IDLE_MS: 60000, TOKEN_MS: 55 * 60000, RING: 3000, BARS_MIN: 20, FILL_MAX_MIN: 60, FILL_BUDGET_MS: 25000, FILL_SPAN_H: 6, FILL_STEP: 5, FILL_LAG_MS: 2 * 60000, FILL_PAUSE_MS: 60000, REST: 'https://api.tick-stream.xyz/v1', TICKS_PER_FRAME: 200, PRUNE_MS: 3600000, RECHECK_MS: 5 * 60000, TRADES_RESERVE: 5, AUTH_GRACE_MS: 5 * 60000, AUTH_MIN_MS: 20000, VOUCH_MS: 6 * 3600000
 };
 export function tsOpts(env) {
   const n = (v, d, lo, hi) => { const x = Math.floor(Number(v)); return Number.isFinite(x) && x >= lo && x <= hi ? x : d; };
@@ -149,10 +149,10 @@ export class TSHub {
   constructor(store, key, opts = {}) {
     this.store = store; this.key = key; this.o = Object.assign({}, DEF, opts);
     this.WS = opts.WebSocket || globalThis.WebSocket; this.clock = opts.now || (() => Date.now());
-    this.ws = null; this.state = 'idle'; this.clients = new Set(); this.latest = new Map(); this.quotes = new Map(); this.rings = new Map(); this.bars1m = new Map(); this.seq = 0;
+    this.ws = null; this.state = 'idle'; this.clients = new Set(); this.yes = new Map(); this.latest = new Map(); this.quotes = new Map(); this.rings = new Map(); this.bars1m = new Map(); this.seq = 0;
     this.lastPx = new Map(); this.frz = new Map(); this.acc = new Map(); this.nextSample = new Map(); this.timers = {}; this.retryN = 0; this.openedAt = 0; this.lastMsgAt = 0; this.lastDataAt = 0;
     this.nextAt = 0; this.pauseUntil = 0; this.lastError = ''; this.minWait = 0; this.noViewerSince = 0; this.lastPrune = 0;
-    this.n = { connects: 0, frames: 0, ticks: 0, snaps: 0, coarse: 0, rows: 0, drops: 0, refused: 0, throttled: 0, uncrossed: 0, thin: 0, staleBid: 0, staleAsk: 0 };
+    this.n = { connects: 0, frames: 0, ticks: 0, snaps: 0, coarse: 0, rows: 0, drops: 0, refused: 0, throttled: 0, uncrossed: 0, thin: 0, staleBid: 0, staleAsk: 0, revoked: 0, revokedNo: 0, keptExpired: 0, keptOutage: 0, keptInvalid: 0, authOk: 0, authBad: 0, closedToken: 0, vouched: 0, vouchRefused: 0 };
     this.lastState = '';
     this.te = opts.te || null;   // TICK ENGINE
     this.tb = new TradeBook(store.tb || null, { KEEP_H: this.o.KEEP_H, now: this.clock, fetch: this.o.fetch, REST: this.o.REST });   // TS-TRADES
@@ -369,6 +369,7 @@ export class TSHub {
     // the last TRADES_RESERVE slots are for book-tier viewers, so a flood of trades-tier sockets cannot lock them out
     if (this.clients.size >= this.o.MAX_CLIENTS || (tier !== 'book' && this.clients.size >= this.o.MAX_CLIENTS - this.o.TRADES_RESERVE)) { this.n.refused++; return null; }
     const c = { sock, te: new Map(), book: tier === 'book', who: who || null, nextCheck: this.clock() + this.o.RECHECK_MS, sym: null, levels: 60, errors: 0, sentVer: -1, lastSend: 0, lastCoarse: 0, lastSeq: this.seq, lastPing: 0, bornAt: this.clock() };
+    if (c.who && c.who.uid && (tier === 'book' || tier === 'trades') && !c.who.vouched) this.noteYes(c.who.uid, tier);
     this.clients.add(c);
     this.setSub(c, sym, levels);
     this.startTimer();
@@ -380,19 +381,81 @@ export class TSHub {
         let m; try { m = JSON.parse(s); } catch (e) { return; }
         if (m && m.op === 'sub') this.setSub(c, m.symbol, m.levels);
         else if (m && (m.op === 'tsub' || m.op === 'tunsub')) this.teSub(c, m);
+        else if (m && m.op === 'auth') this.reauth(c, m.token);
       }
     };
   }
-  // Access can end while a socket is open (add-on cancelled, switched off, TS_ACCESS flipped): ask the gate again every RECHECK_MS. No answer
-  // (outage) keeps the current tier; a definite 'no' closes the socket with 4003, a lower tier downgrades it in place.
+  // Access can end while a socket is open (add-on cancelled, switched off, TS_ACCESS flipped): ask the gate again every RECHECK_MS.
+  // REVOKE ONLY ON A DEFINITE NO (Owner bug 24 Nov 2026: the Owner, an admin, and paying members were closed with 4003 'access ended'
+  // because (1) the re-check re-used the ID token captured at connect, which Firebase expires after 1 h, and (2) a Firestore quota outage
+  // answered every read with 429; both came back as null = 'revoke'). Now tierOf answers { tier, why } (src/ts-access.js tsTierWhy):
+  //   why 'no'      valid, unexpired token + a definite answer: close 4003 (n.revokedNo), or downgrade in place to 'trades'
+  //   why 'expired' keep the tier, ask the page for a fresh token ({event:'auth_needed'}, it answers {op:'auth', token}) (n.keptExpired)
+  //   why 'outage'  keep the tier (n.keptOutage); 'invalid' keep it too (the token passed the Worker's check at connect) (n.keptInvalid)
+  // A socket whose token stays expired past exp + AUTH_GRACE_MS is closed 4401 by tick() (the page reconnects with a fresh token).
+  // An old-style tierOf returning a bare tier string / null still works (null = 'no').
   recheck(c, now) {
     c.nextCheck = now + this.o.RECHECK_MS;
     const f = this.o.tierOf; if (!f) return;
-    Promise.resolve(f(c.who.env, c.who.tok)).then((t) => {
+    Promise.resolve(f(c.who.env, c.who.tok)).then((a) => this.applyTier(c, a, 'recheck')).catch(() => { this.n.keptOutage = (this.n.keptOutage || 0) + 1; });
+  }
+  applyTier(c, a, src) {
+    if (!this.clients.has(c)) return;
+    const r = a && typeof a === 'object' ? a : { tier: a || null, why: a ? 'ok' : 'no' };
+    const n = this.n;
+    if (r.why === 'expired') { n.keptExpired = (n.keptExpired || 0) + 1; this.send(c, JSON.stringify({ event: 'auth_needed' })); return; }
+    if (r.why === 'outage' && !r.tier) { n.keptOutage = (n.keptOutage || 0) + 1; return; }
+    if (r.why === 'invalid') { n.keptInvalid = (n.keptInvalid || 0) + 1; if (src === 'auth') this.send(c, JSON.stringify({ event: 'auth_needed' })); return; }
+    if (!r.tier) {   // definite no
+      try { c.sock.close(4003, 'access ended'); } catch (e) {}
+      this.clients.delete(c); n.revoked = (n.revoked || 0) + 1; n.revokedNo = (n.revokedNo || 0) + 1;
+      if (c.who && c.who.uid) this.forgetYes(c.who.uid);
+      return;
+    }
+    if (r.why === 'outage') n.keptOutage = (n.keptOutage || 0) + 1;
+    else if (c.who && c.who.uid) this.noteYes(c.who.uid, r.tier);
+    const was = c.book; c.book = r.tier === 'book';
+    if (was !== c.book || src === 'auth') this.send(c, JSON.stringify({ event: 'hub_attached', state: this.liveState(), tier: c.book ? 'book' : 'trades', symbols: this.o.SYMBOLS.concat(this.o.QUOTES), trades: this.o.TRADES }));   // tell the page, or its lock chip goes stale
+  }
+  // {op:'auth', token}: the page's refreshed ID token (sent on every Firebase refresh, ~ every 55 min, and on auth_needed). Same uid only, a
+  // later exp only, at most one check per AUTH_MIN_MS per socket, 3 bad tokens close the socket. Accepted = the socket's token, exp and age.
+  reauth(c, tok) {
+    const n = this.n, now = this.clock();
+    if (!c.who || typeof tok !== 'string' || tok.length > 4096) return;
+    const cl = tokClaims(tok);
+    if (c.who.uid && cl.sub !== c.who.uid) { n.authBad = (n.authBad || 0) + 1; try { c.sock.close(4401, 'token'); } catch (e) {} this.clients.delete(c); return; }   // never switch identity on an open socket
+    if (!(cl.exp > (c.who.exp || 0))) return;   // not newer than what we hold: nothing to do (no reset of the age timer by replay)
+    if (c.authAt && now - c.authAt < this.o.AUTH_MIN_MS) return;
+    c.authAt = now;
+    const f = this.o.tierOf; if (!f) return;
+    Promise.resolve(f(c.who.env, tok)).then((a) => {
       if (!this.clients.has(c)) return;
-      if (!t) { try { c.sock.close(4003, 'access ended'); } catch (e) {} this.clients.delete(c); this.n.revoked = (this.n.revoked || 0) + 1; }
-      else { const was = c.book; c.book = t === 'book'; if (was !== c.book) this.send(c, JSON.stringify({ event: 'hub_attached', state: this.liveState(), tier: c.book ? 'book' : 'trades', symbols: this.o.SYMBOLS.concat(this.o.QUOTES), trades: this.o.TRADES })); }   // tell the page, or its lock chip goes stale
+      const r = a && typeof a === 'object' ? a : { tier: a || null, why: a ? 'ok' : 'no' };
+      if (r.why === 'ok' || r.why === 'no' || r.why === 'outage') {
+        if (r.why !== 'outage' || r.tier) { c.who.tok = tok; c.who.exp = cl.exp; c.bornAt = now; c.badAuth = 0; n.authOk = (n.authOk || 0) + 1; }
+        this.applyTier(c, r, 'auth');
+      } else {   // expired / invalid token sent: count it; 3 in a row close the socket
+        n.authBad = (n.authBad || 0) + 1; c.badAuth = (c.badAuth || 0) + 1;
+        if (c.badAuth >= 3) { try { c.sock.close(4401, 'token'); } catch (e) {} this.clients.delete(c); }
+      }
     }).catch(() => {});
+  }
+  // last DEFINITE live tier per uid (this Durable Object), so a socket that connects during a Firestore outage (the Worker verified the token
+  // but could not read the plan) gets the tier this account had in the last VOUCH_MS, never more. Unknown uid = refused (fails closed).
+  // Kept in the Durable Object's storage too (store.putYes, written at most every 10 min per uid), so a deploy / restart DURING an outage
+  // does not demote everyone again (advisor review 24 Nov).
+  noteYes(uid, tier) {
+    const now = this.clock(), old = this.yes.get(uid);
+    if (this.yes.size > 5000) this.yes.clear();
+    this.yes.set(uid, { tier, at: now });
+    if (this.store.putYes && (!old || old.tier !== tier || now - (old.saved || 0) > 600000)) { try { this.store.putYes(uid, tier, now); this.yes.get(uid).saved = now; } catch (e) {} }
+  }
+  forgetYes(uid) { this.yes.delete(uid); if (this.store.dropYes) { try { this.store.dropYes(uid); } catch (e) {} } }
+  vouched(uid) {
+    if (!uid) return null;
+    let y = this.yes.get(uid);
+    if (!y && this.store.getYes) { try { const r = this.store.getYes(uid); if (r) { y = { tier: r.tier, at: r.at, saved: r.at }; this.yes.set(uid, y); } } catch (e) {} }
+    return y && this.clock() - y.at < this.o.VOUCH_MS && (y.tier === 'book' || y.tier === 'trades') ? y.tier : null;
   }
   // TICK ENGINE: {op:'tsub', symbol, since, e} streams every trade of symbol with seq > since as {type:'tt', symbol, e, q, t:[[px, size, side, ts_ms]..]}
   // (q = seq of t[0]; seqs are contiguous). since from another epoch or older than the replay window: {type:'resync', symbol, e}, and the
@@ -459,7 +522,9 @@ export class TSHub {
     for (const c of [...this.clients]) {
       if (c.errors > 5) { this.clients.delete(c); continue; }
       if (c.who && now >= c.nextCheck) this.recheck(c, now);
-      if (c.bornAt && now - c.bornAt >= Math.min(this.o.TOKEN_MS, c.who && c.who.exp ? c.who.exp * 1000 - c.bornAt : Infinity)) { try { c.sock.close(4401, 'token'); } catch (e) {} this.clients.delete(c); continue; }   // the browser reconnects with a fresh token
+      // token age: a socket whose token was not refreshed ({op:'auth'}) is closed 4401 at exp + AUTH_GRACE_MS (or TOKEN_MS after its last
+      // token without an exp); the browser reconnects with a fresh token. A page that refreshes its token keeps its socket for good.
+      if (c.bornAt && (c.who && c.who.exp ? now >= c.who.exp * 1000 + this.o.AUTH_GRACE_MS : now - c.bornAt >= this.o.TOKEN_MS)) { try { c.sock.close(4401, 'token'); } catch (e) {} this.clients.delete(c); this.n.closedToken = (this.n.closedToken || 0) + 1; continue; }
       if (now - c.lastPing >= 5000) { c.lastPing = now; this.send(c, JSON.stringify({ event: 'ping', up: this.lastDataAt ? now - this.lastDataAt : -1, state: this.liveState(now) })); }   // every socket, the tick-engine one too (its heartbeat)
       if (this.te && c.te.size) this.teFlush(c, fc);
       if (!c.sym) continue;
@@ -595,14 +660,19 @@ export class TSHub {
 // ---- Durable Object glue (src/index.js routes /ts-* here)
 export function tsStore(sql) {
   sql.exec('CREATE TABLE IF NOT EXISTS tsmin (sym TEXT NOT NULL, t INTEGER NOT NULL, book BLOB, imb TEXT, fp TEXT, PRIMARY KEY (sym, t)) WITHOUT ROWID');
+  sql.exec('CREATE TABLE IF NOT EXISTS tsyes (uid TEXT PRIMARY KEY, tier TEXT NOT NULL, at INTEGER NOT NULL) WITHOUT ROWID');
   return {
     tb: tradeStore(sql),   // TS-TRADES
     putMin(sym, t, book, imb, fp) { sql.exec('INSERT OR REPLACE INTO tsmin (sym, t, book, imb, fp) VALUES (?, ?, ?, ?, ?)', sym, t, book, imb, fp); },
-    prune(t) { sql.exec('DELETE FROM tsmin WHERE t < ?', t); },
+    prune(t) { sql.exec('DELETE FROM tsmin WHERE t < ?', t); try { sql.exec('DELETE FROM tsyes WHERE at < ?', t * 60000 - 86400000); } catch (e) {} },
+    // last definite live tier per uid (ts-hub.js vouched): survives a deploy during a Firestore outage. uid + tier + time only.
+    putYes(uid, tier, at) { sql.exec('INSERT OR REPLACE INTO tsyes (uid, tier, at) VALUES (?, ?, ?)', uid, tier, at); },
+    dropYes(uid) { sql.exec('DELETE FROM tsyes WHERE uid = ?', uid); },
+    getYes(uid) { return sql.exec('SELECT tier, at FROM tsyes WHERE uid = ?', uid).toArray()[0] || null; },
     range(sym, t0, t1) { return sql.exec('SELECT t, book, imb, fp FROM tsmin WHERE sym = ? AND t >= ? AND t <= ? ORDER BY t', sym, t0, t1).toArray(); }
   };
 }
-const SOCK_LIMIT = 256;
+const SOCK_LIMIT = 4600;   // {op:'auth', token} carries a whole ID token (<= 4096)
 // JWT exp (epoch s) of a token the Worker already verified; 0 when unreadable (then only TOKEN_MS applies)
 const tokExp = (t) => { try { return JSON.parse(atob(String(t).split('.')[1].replace(/-/g, '+').replace(/_/g, '/'))).exp || 0; } catch (e) { return 0; } };
 export async function tsHubFetch(hub, env, u, req) {
@@ -660,12 +730,15 @@ export async function tsHubFetch(hub, env, u, req) {
   }
   if (req.headers.get('upgrade') !== 'websocket') return new Response('websocket required', { status: 426 });
   if (hub.o.MODE === 'direct' && !hub.key) return new Response('feed not configured', { status: 503 });
+  if (!hub.o.tierOf) hub.o.tierOf = tsTierWhy;
+  const tok = wsTokenOf(req), uid = String(tokClaims(tok).sub || ''), who = { tok, env, exp: tokExp(tok), uid };
+  // tier=vouch: the Worker verified the token but Firestore could not answer (outage). Give the tier this uid had in the last VOUCH_MS, else refuse.
+  let tier = u.searchParams.get('tier');
+  if (tier === 'vouch') { tier = hub.vouched(uid); who.vouched = true; hub.n.vouched = (hub.n.vouched || 0) + 1; if (!tier) { hub.n.vouchRefused = (hub.n.vouchRefused || 0) + 1; return new Response('forbidden', { status: 403 }); } }
   const pair = new WebSocketPair(), client = pair[0], server = pair[1];
   server.accept();
   const sock = { send: (s) => server.send(s), close: (c, r) => { try { server.close(c, r); } catch (e) {} } };
-  if (!hub.o.tierOf) hub.o.tierOf = tsTier;
-  const tok = wsTokenOf(req), who = { tok, env, exp: tokExp(tok) };
-  const h = hub.attach(sock, u.searchParams.get('symbol'), u.searchParams.get('levels'), u.searchParams.get('tier') === 'book' ? 'book' : 'trades', who);
+  const h = hub.attach(sock, u.searchParams.get('symbol'), u.searchParams.get('levels'), tier === 'book' ? 'book' : 'trades', who);
   const proto = String(req.headers.get('sec-websocket-protocol') || '').includes('tz-auth') ? { 'sec-websocket-protocol': 'tz-auth' } : {};
   if (!h) { server.send(JSON.stringify({ event: 'hub_full' })); server.close(1013, 'hub full'); return new Response(null, { status: 101, webSocket: client, headers: proto }); }
   server.addEventListener('message', (ev) => { if (typeof ev.data === 'string' && ev.data.length <= SOCK_LIMIT) h.onMessage(ev.data); });

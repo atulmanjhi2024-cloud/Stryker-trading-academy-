@@ -5,8 +5,8 @@
 // Futures: ES/MES -> SPX, NQ/MNQ -> QQQ, GC/MGC -> GLD (assets/phantom-core.js phantomSource).
 // Data: the recorder's /phantom/summary + /phantom/board (signed-in members, member token from assets/rt-access.js).
 // COPY: estimated from options volume and quotes, per minute; "Updated X s ago"; Education only. Not financial advice.
-import { rtHeadersReady } from './rt-access.js?v=1236';
-import * as P from './phantom-core.js?v=1236';
+import { rtHeadersReady } from './rt-access.js?v=1237';
+import * as P from './phantom-core.js?v=1237';
 
 const REC = () => window.__STK_BOOK_RECORDER || 'https://book-recorder.theelitegrey.workers.dev';
 const PHONE_MAX = 700;

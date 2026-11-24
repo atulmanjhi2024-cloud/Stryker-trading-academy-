@@ -10,8 +10,9 @@ const W = { fs: {}, members: {}, calls: [], fsDown: false };
 const roles = [{ id: G, name: '@everyone', position: 0 }, { id: PRO, name: 'TradeZoro Pro', position: 3 }, { id: MEM, name: 'Member', position: 2 }, { id: OTHER, name: 'Self role', position: 1 }, { id: '6000000009', name: 'Bot', position: 9, managed: true }];
 const j = (o, s = 200) => new Response(s === 204 ? null : JSON.stringify(o), { status: s });
 const doc = (f) => ({ fields: f });
+let FSN = 0; const fetchCount = () => FSN;
 async function mockFetch(url, opt = {}) {
-  url = String(url); const m = opt.method || 'GET';
+  url = String(url); if (url.includes('firestore.googleapis.com')) FSN++; const m = opt.method || 'GET';
   if (url.startsWith('https://securetoken')) return j({ id_token: 'fb', refresh_token: 'r2', expires_in: '3600' });
   if (url.includes('firestore.googleapis.com')) {
     const path = url.split('/documents/')[1];
@@ -62,23 +63,23 @@ ok(!W.members['7000000001'].has(MEM), 'member role not given when SITE_MEMBER_RO
 W.members['7000000001'].add(OTHER);
 // lapsed
 W.fs['students/pro1'] = student('Pro', { paidThroughMillis: { integerValue: String(NOW - 10 * 86400000) } });
-let s = await c.sweep();
+let s = await c.sweep(150, 0);
 ok(!W.members['7000000001'].has(PRO) && W.members['7000000001'].has(OTHER), 'lapsed (past 3-day grace): Pro removed by the 15 min sweep, other role kept');
 // grace
 W.fs['students/pro1'] = student('Pro', { paidThroughMillis: { integerValue: String(NOW - 86400000) } });
-await c.sweep();
+await c.sweep(150, 0);
 ok(W.members['7000000001'].has(PRO), 'inside the 3-day grace: Pro role added back');
 // cancelled
 W.fs['students/pro1'] = student('Pro', { subscriptionStatus: { stringValue: 'cancelled' } });
-await c.sweep();
+await c.sweep(150, 0);
 ok(!W.members['7000000001'].has(PRO), 'cancelled: removed');
 // Firestore down: nothing changes
-W.fs['students/pro1'] = student('Pro'); await c.sweep(); ok(W.members['7000000001'].has(PRO), 'back to Pro: role added');
-W.fsDown = true; W.calls = []; c.tokCache.clear(); await c.sweep();
+W.fs['students/pro1'] = student('Pro'); await c.sweep(150, 0); ok(W.members['7000000001'].has(PRO), 'back to Pro: role added');
+W.fsDown = true; W.calls = []; c.tokCache.clear(); await c.sweep(150, 0);
 ok(W.members['7000000001'].has(PRO) && !W.calls.some((x) => x.startsWith('DELETE')), 'Firestore outage: role NOT stripped');
 W.fsDown = false;
 // free plan
-W.fs['students/pro1'] = student('Free'); await c.sweep();
+W.fs['students/pro1'] = student('Free'); await c.sweep(150, 0);
 ok(!W.members['7000000001'].has(PRO), 'plan Free: removed');
 
 // free member links: joins without the role
@@ -110,4 +111,11 @@ ok(last.status === 429, 'rate limit: 429 after 12 calls a minute');
 // unlink strips role
 r = await post('/unlink', 'up1', {}); await post('/site/sync', 'up1', {});
 ok(!W.members['7000000001'].has(PRO) && !c.one('SELECT 1 x FROM site WHERE uid=?', 'up1'), 'unlink removes Pro role + site row');
+// read budget (24 Nov 2026): the 15 min cron skips rows checked in the last 3 h
+{
+  const n0 = fetchCount();
+  await c.sweep();
+  const n1 = fetchCount();
+  if (n1 !== n0) { console.log('FAIL default sweep re-read fresh rows', n1 - n0); fails++; } else console.log('ok  default sweep skips rows checked < 3 h ago');
+}
 console.log(fails ? '\n' + fails + ' FAILED' : '\nALL PASSED'); process.exit(fails ? 1 : 0);

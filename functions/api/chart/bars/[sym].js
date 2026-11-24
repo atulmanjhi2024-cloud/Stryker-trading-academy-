@@ -125,7 +125,7 @@ export function delayRows(rows, nowSec) {
 export async function onRequestGet(ctx) {
   const sym = normSym(ctx.params.sym);
   if (!sym || isNonCme(sym)) return serve(ctx, true);
-  const admin = await isRealtimeToken(bearerOf(ctx.request));
+  const admin = await isRealtimeToken(bearerOf(ctx.request), { waitUntil: ctx.waitUntil ? (p) => ctx.waitUntil(p) : undefined });
   ctx.noTail = !admin;
   const res = await serve(ctx, admin);
   if (res.status !== 200) return res;

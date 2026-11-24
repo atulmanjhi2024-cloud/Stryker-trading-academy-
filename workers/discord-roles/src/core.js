@@ -10,6 +10,7 @@
 //  - Nothing here writes to Firestore.
 import { verifyIdToken, RT_PROJECT, isActiveProDoc, paidPlanNames } from './rt-auth.js';
 
+export const SWEEP_AGE_MS = 3 * 3600 * 1000;
 const D = 'https://discord.com/api/v10';
 const FS = 'https://firestore.googleapis.com/v1/projects/' + RT_PROJECT + '/databases/(default)/documents/';
 const SITE_GUILD = '1565740274116857887';   // the official TradeZoro server (vars SITE_GUILD_ID / SITE_PRO_ROLE_ID / SITE_MEMBER_ROLE_ID override)
@@ -440,9 +441,13 @@ export class Core {
   }
 
   // ---- cron: every 15 min -------------------------------------------------------------------------------
-  async sweep(limit = 150) {
+  // READ BUDGET (24 Nov 2026 Firestore quota incident): each re-check costs 1-2 Firestore reads per row and the sweep ran every
+  // 15 min over every row (~96 passes a day). A row is now re-checked by the sweep only when its last check is SWEEP_AGE_MS old
+  // (3 h); member actions (/sync, /site/sync) and a creator's "re-check everyone" still check at once. Pro has 3 days grace anyway.
+  async sweep(limit = 150, ageMs = SWEEP_AGE_MS) {
     if (!this.ready) return { skipped: 'not set up' };
-    const rows = this.q('SELECT cid, uid FROM enroll ORDER BY checked ASC LIMIT ?', limit);
+    const cut = this.now() - ageMs;
+    const rows = this.q('SELECT cid, uid FROM enroll WHERE checked <= ? ORDER BY checked ASC LIMIT ?', cut, limit);
     const out = { checked: 0, removed: 0, errors: 0 };
     for (const r of rows) {
       try {
@@ -451,7 +456,7 @@ export class Core {
         out.checked++; if (a.state === 'removed') out.removed++; if (a.state === 'error') out.errors++;
       } catch (e) { out.errors++; this.run('UPDATE enroll SET checked=? WHERE cid=? AND uid=?', this.now(), r.cid, r.uid); }
     }
-    for (const r of this.q('SELECT uid FROM site ORDER BY checked ASC LIMIT ?', limit)) {
+    for (const r of this.q('SELECT uid FROM site WHERE checked <= ? ORDER BY checked ASC LIMIT ?', cut, limit)) {
       try { const a = await this.applySite(r.uid, await this.fbToken(r.uid)); out.checked++; if (a.state === 'error') out.errors++; }
       catch (e) { out.errors++; this.run('UPDATE site SET checked=? WHERE uid=?', this.now(), r.uid); }
     }

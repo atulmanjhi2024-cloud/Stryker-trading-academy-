@@ -6,6 +6,147 @@
 // initialize upstream, calling firebase.firestore() here would throw
 // synchronously and silently kill every script that loads after this one
 // (chapters-store.js, reader.js, dashboard.js, etc. all depend on `db`).
+// ---- Firestore read budget (24 Nov 2026 incident: the project hit its daily read quota) ----
+// Every page used to re-read the same handful of documents on every page view: admins/{uid}, bannedUsers/{uid} and
+// moderators/{uid} (which do NOT exist for members, still one billed read each), settings/* (logo, favicon, site,
+// commerce, ...), the plans collection (twice), and students/{self} 5-7 times from different scripts. This layer
+// answers those from a short cache instead; what members see does not change. Rules:
+//  - students/{self}: concurrent and back-to-back reads on one page share ONE server read for 10 s (never across pages).
+//  - admins|bannedUsers|moderators/{self}: a "does not exist" answer is kept for 10 min in sessionStorage (an existing
+//    doc is never cached, so admins/moderators/bans are always read live; a new ban/admin bites within 10 min).
+//  - settings/<public docs> and the plans collection: kept 5 min in sessionStorage.
+//  - Any write from this page (set/update/delete, batch, transaction) drops the cache. Admin, checkout and plan-editing
+//    pages never use the cross-page cache. Kill switch: localStorage tz_fs_nocache = '1'.
+//  - Listeners (onSnapshot) keep working as before; with the IndexedDB cache on, a listener re-opened on the next page
+//    resumes from its resume token and is billed only for changed docs (Firestore pricing: within 30 min).
+(function installFsReadBudget(){
+  if (typeof firebase === 'undefined' || !firebase.firestore || !firebase.firestore.DocumentReference) return;
+  if (window.__tzFsBudget) return;
+  window.__tzFsBudget = { hits: 0, misses: 0 };
+  var ls = function(k){ try { return window.localStorage.getItem(k); } catch (e) { return null; } };
+  if (ls('tz_fs_nocache') === '1') return;
+  var FS = firebase.firestore, DR = FS.DocumentReference.prototype, Q = FS.Query.prototype;
+  var origDocGet = DR.get, origQGet = Q.get;
+  var PFX = 'tzfsc1:';
+  var NOCROSS = /admin|checkout|coupon|commerce|plans-|pricing-admin|students|moderat/i.test(location.pathname);
+  var SETTINGS = { commerce: 1, tradingview: 1, logo: 1, favicon: 1, site: 1, seo: 1, giveaways: 1, roadmap: 1, referralConfig: 1, pageAccess: 1, push: 1 };
+  var SELF_ABSENT = { admins: 1, bannedUsers: 1, moderators: 1 };
+  var mem = new Map();   // path -> { at, p } in-page promise share (students/{self})
+  var stat = window.__tzFsBudget;
+  var flying = new Map();   // key -> in-flight promise (two scripts asking at once share one read)
+  function share(key, mk){ var f = flying.get(key); if (f) { stat.hits++; return f; } stat.misses++; f = mk(); flying.set(key, f); var done = function(){ if (flying.get(key) === f) flying.delete(key); }; f.then(done, done); return f; }
+  var uidNow = function(){ try { var u = firebase.auth().currentUser; return u ? u.uid : ''; } catch (e) { return ''; } };
+  var plainOpts = function(o){ return !o || !o.source || o.source === 'default'; };
+
+  // JSON with Firestore Timestamps kept (any other special type: not cacheable)
+  function enc(v){
+    if (v === null || typeof v !== 'object') return v;
+    if (v instanceof FS.Timestamp) return { __ts: [v.seconds, v.nanoseconds] };
+    if (Array.isArray(v)) return v.map(enc);
+    var proto = Object.getPrototypeOf(v);
+    if (proto !== Object.prototype && proto !== null) throw new Error('nocache');
+    var o = {}; for (var k in v) if (Object.prototype.hasOwnProperty.call(v, k)) o[k] = enc(v[k]); return o;
+  }
+  function dec(v){
+    if (v === null || typeof v !== 'object') return v;
+    if (Array.isArray(v)) return v.map(dec);
+    if (v.__ts && Array.isArray(v.__ts) && Object.keys(v).length === 1) return new FS.Timestamp(v.__ts[0], v.__ts[1]);
+    var o = {}; for (var k in v) o[k] = dec(v[k]); return o;
+  }
+  function sget(key, ttl){
+    try { var o = JSON.parse(window.sessionStorage.getItem(PFX + key) || 'null'); return o && Date.now() - o.t < ttl ? o : null; } catch (e) { return null; }
+  }
+  function sput(key, o){ try { o.t = Date.now(); window.sessionStorage.setItem(PFX + key, JSON.stringify(o)); } catch (e) {} }
+  function dropAll(){
+    mem.clear(); flying.clear();
+    try { var s = window.sessionStorage, ks = []; for (var i = 0; i < s.length; i++) { var k = s.key(i); if (k && k.indexOf(PFX) === 0) ks.push(k); } ks.forEach(function(k){ s.removeItem(k); }); } catch (e) {}
+  }
+  window.tzFsCacheClear = dropAll;
+  function fakeDoc(ref, exists, data){
+    return {
+      exists: exists, id: ref.id, ref: ref, metadata: { fromCache: true, hasPendingWrites: false },
+      data: function(){ return exists ? dec(data) : undefined; },
+      get: function(f){ if (!exists) return undefined; var cur = dec(data); String(f).split('.').forEach(function(p){ cur = cur == null ? undefined : cur[p]; }); return cur; },
+      isEqual: function(o){ return !!o && o.ref && o.ref.path === ref.path; }
+    };
+  }
+
+  DR.get = function(opts){
+    var ref = this, path = ref.path || '', parts = path.split('/');
+    if (!plainOpts(opts) || parts.length !== 2) return origDocGet.apply(this, arguments);
+    var col = parts[0], id = parts[1], me = uidNow(), args = arguments;
+    // students/{self}: share one read per page for 10 s
+    if (col === 'students' && me && id === me) {
+      var h = mem.get(path);
+      if (h && Date.now() - h.at < 10000) { stat.hits++; return h.p; }
+      stat.misses++;
+      var p = origDocGet.apply(ref, args);
+      mem.set(path, { at: Date.now(), p: p });
+      p.catch(function(){ if (mem.get(path) && mem.get(path).p === p) mem.delete(path); });
+      return p;
+    }
+    if (NOCROSS) return origDocGet.apply(this, arguments);
+    // admins / bannedUsers / moderators of the signed-in user: only a "does not exist" is kept
+    if (SELF_ABSENT[col] && me && id === me) {
+      var key = path + '|' + me;
+      if (sget(key, 600000)) { stat.hits++; return Promise.resolve(fakeDoc(ref, false)); }
+      return share(key, function(){ return origDocGet.apply(ref, args).then(function(s){ if (s && !s.exists) sput(key, { x: 0 }); return s; }); });
+    }
+    if (col === 'settings' && SETTINGS[id]) {
+      var c = sget(path, 300000);
+      if (c) { stat.hits++; return Promise.resolve(fakeDoc(ref, !!c.e, c.d)); }
+      return share(path, function(){ return origDocGet.apply(ref, args).then(function(s){
+        try { if (s) sput(path, s.exists ? { e: 1, d: enc(s.data()) } : { e: 0 }); } catch (e) {}
+        return s;
+      }); });
+    }
+    return origDocGet.apply(this, arguments);
+  };
+
+  // the whole plans collection (pricing, role access): 5 min
+  Q.get = function(opts){
+    var q = this;
+    if (NOCROSS || !plainOpts(opts) || !(q instanceof FS.CollectionReference) || q.path !== 'plans') return origQGet.apply(this, arguments);
+    var c = sget('plans', 300000);
+    if (c && Array.isArray(c.docs)) {
+      stat.hits++;
+      var docs = c.docs.map(function(d){ return fakeDoc(q.doc(d.id), true, d.d); });
+      return Promise.resolve({ docs: docs, size: docs.length, empty: !docs.length, query: q, metadata: { fromCache: true, hasPendingWrites: false },
+        forEach: function(cb, th){ docs.forEach(function(d){ cb.call(th, d); }); }, docChanges: function(){ return []; } });
+    }
+    var qa = arguments;
+    return share('plans', function(){ return origQGet.apply(q, qa).then(function(snap){
+      try { sput('plans', { docs: snap.docs.map(function(d){ return { id: d.id, d: enc(d.data()) }; }) }); } catch (e) {}
+      return snap;
+    }); });
+  };
+
+  // any write from this page drops the cache (so a page never re-reads its own stale copy)
+  ['set', 'update', 'delete'].forEach(function(m){
+    var o = DR[m]; if (typeof o !== 'function') return;
+    DR[m] = function(){ dropAll(); var r = o.apply(this, arguments); if (r && r.then) r.then(dropAll, function(){}); return r; };
+  });
+  if (FS.WriteBatch && FS.WriteBatch.prototype.commit) {
+    var oc = FS.WriteBatch.prototype.commit;
+    FS.WriteBatch.prototype.commit = function(){ dropAll(); var r = oc.apply(this, arguments); if (r && r.then) r.then(dropAll, function(){}); return r; };
+  }
+  if (FS.Firestore && FS.Firestore.prototype.runTransaction) {
+    var ot = FS.Firestore.prototype.runTransaction;
+    FS.Firestore.prototype.runTransaction = function(){ dropAll(); var r = ot.apply(this, arguments); if (r && r.then) r.then(function(v){ dropAll(); return v; }, function(){}); return r; };
+  }
+  if (FS.CollectionReference && FS.CollectionReference.prototype.add) {
+    var oa = FS.CollectionReference.prototype.add;
+    FS.CollectionReference.prototype.add = function(){ if (this.path === 'plans') dropAll(); return oa.apply(this, arguments); };
+  }
+  // sign-in / sign-out / account switch: the per-user entries are keyed by uid; drop everything on a change anyway
+  try { var lastU = null; firebase.auth().onAuthStateChanged(function(u){ var n = u ? u.uid : ''; if (lastU !== null && lastU !== n) dropAll(); lastU = n; }); } catch (e) {}
+
+  // IndexedDB cache: listeners resume instead of re-reading every doc on each page view. Must run before any other use.
+  if (ls('tz_fs_nopersist') !== '1') {
+    try { firebase.firestore().enablePersistence({ synchronizeTabs: true }).catch(function(){}); } catch (e) {}
+  }
+})();
+
 let db = null;
 try {
   db = firebase.firestore();

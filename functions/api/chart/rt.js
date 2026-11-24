@@ -7,10 +7,12 @@ import { isRealtimeToken, isLiveDataToken, bearerOf } from './_rt.js';
 export async function onRequestGet(ctx) {
   const tok = bearerOf(ctx.request);
   const out = {};
-  const admin = await isRealtimeToken(tok, { out });
+  // fresh: the page asks here once per load / after signing the agreement or paying, so never answer it from a cached "no"
+  const fo = { out, fresh: true, waitUntil: ctx.waitUntil ? (p) => ctx.waitUntil(p) : undefined };
+  const admin = await isRealtimeToken(tok, fo);
   // l2 (2026-11-13, all tools free): this member also has the LIVE futures order book (the paid data feed). UI hint only; the
   // recorder's /ts-live, /ts-book-history and /ts-aux enforce it themselves (src/ts-access.js).
-  const l2 = !!tok && (await isLiveDataToken(tok, { out }));
+  const l2 = !!tok && (await isLiveDataToken(tok, fo));
   const h = { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', 'vary': 'Authorization' };
   // FIRESTORE OUTAGE (Owner bug 24 Nov 2026, quota 429): an answer we could not get is NOT a "no". Unless this isolate confirmed the
   // member recently (then admin / l2 are that yes), answer 503 unknown: the page (assets/rt-access.js askServer) keeps the answer

@@ -241,6 +241,7 @@ section{ padding:96px 0; }
 }
 .chapter:hover{ border-color:var(--gold-dim); background:var(--bg-3); }
 @media (max-width:640px){.chapter{ grid-template-columns:1fr; }}
+#pricing{ scroll-margin-top:40px; }
 footer{ border-top:1px solid var(--line-soft); padding:56px 0 32px; background:var(--bg-0); }
 .footer-grid{ display:grid; grid-template-columns:1.4fr repeat(3,1fr); gap:40px; margin-bottom:48px; }
 @media (max-width:800px){.footer-grid{ grid-template-columns:1fr 1fr; }}

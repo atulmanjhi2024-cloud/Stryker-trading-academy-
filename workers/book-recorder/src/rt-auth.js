@@ -21,6 +21,28 @@ const ISSUER = 'https://securetoken.google.com/' + RT_PROJECT;
 const ADMIN_TTL_MS = 300000;   // a confirmed admin, 5 min (was 60 s; 24 Nov 2026: Firestore's daily read quota ran out). A "no" stays 5 s.
 const GRACE_MS = 3 * 24 * 3600 * 1000;   // same grace as functions-src/subscriptions.js: access continues 3 days past paidThroughMillis
 const STUDENT_TTL_MS = 30000;   // demo / liveFeed: switching a user off bites within ~1 min (memo + stream re-check)
+// READ BUDGET (24 Nov 2026: the Firestore daily read quota ran out). Every chart bars request re-read admins/{uid} (a 404 for
+// every member, memo 5 s) and students/{uid} (memo 30 s) per isolate, ~160k billed reads a day. Now a DEFINITE answer is also
+// shared across isolates through the Cloudflare Cache API (key = an internal URL per uid, never served to anyone; no-op where
+// the Cache API is missing, e.g. tests and *.workers.dev), and the isolate memo keeps a "no admin" 10 min (students/{uid}: isolate 30 s; shared yes 5 min, shared no 45 s, so a switch-OFF by an admin bites within ~5 min, a switch-ON at once via fresh).
+// A students/{uid} answer stays short, and /api/chart/rt asks with opts.fresh (no cached "no"),
+// so a member who just signed the agreement / paid goes live as fast as before. Outages are never stored.
+const ADMIN_NO_TTL_MS = 600000;
+const STUDENT_YES_TTL_MS = STUDENT_TTL_MS;   // a yes stays 30 s: switching a member off must still bite within ~1 min
+const SHARED_TTL_S = { admin1: 300, admin0: 600, rt1: 300, rt0: 45, l21: 300, l20: 60 };
+const SHARED_BASE = 'https://rt-memo.tradezoro.internal/v1/';
+const sharedCache = () => { try { return (globalThis.caches && globalThis.caches.default) || null; } catch (e) { return null; } };
+async function sharedGet(kind, uid) {
+  const c = sharedCache(); if (!c) return null;
+  try { const r = await c.match(SHARED_BASE + kind + '/' + encodeURIComponent(uid)); if (!r) return null; const j = await r.json(); return typeof j.v === 'boolean' ? j.v : null; } catch (e) { return null; }
+}
+function sharedPut(kind, uid, v, opts) {
+  const c = sharedCache(); if (!c) return;
+  const ttl = SHARED_TTL_S[kind + (v ? '1' : '0')];
+  const p = c.put(SHARED_BASE + kind + '/' + encodeURIComponent(uid), new Response(JSON.stringify({ v }), { headers: { 'content-type': 'application/json', 'cache-control': 'max-age=' + ttl } })).catch(() => {});
+  try { if (opts && opts.waitUntil) opts.waitUntil(p); } catch (e) {}
+}
+export const _sharedForTests = { get: sharedGet, put: sharedPut, TTL: SHARED_TTL_S };
 
 const PLANS_TTL_MS = 300000;   // plans collection (public read) memo: which plan names are paid (rank >= 1)
 let jwks = null, jwksAt = 0, jwksTry = 0;
@@ -155,7 +177,11 @@ export async function isAdminToken(token, opts = {}) {
   const uid = await verifyIdToken(token, opts);
   if (!uid) return false;
   const hit = adminMemo.get(uid);
-  if (hit && Date.now() - hit.at < hit.ttl) { if (hit.o) markOutage(opts); return hit.v; }
+  if (hit && Date.now() - hit.at < hit.ttl && !(opts.fresh && !hit.v)) { if (hit.o) markOutage(opts); return hit.v; }
+  if (!opts.fresh) {
+    const sv = await sharedGet('admin', uid);
+    if (sv !== null) { noteYes('admin', uid, sv); adminMemo.set(uid, { v: sv, at: Date.now(), ttl: sv ? ADMIN_TTL_MS : ADMIN_NO_TTL_MS, o: false }); return sv; }
+  }
   let v = false, ttl = ADMIN_TTL_MS, out = false;
   try {
     const url = 'https://firestore.googleapis.com/v1/projects/' + RT_PROJECT + '/databases/(default)/documents/admins/' + encodeURIComponent(uid);
@@ -169,11 +195,11 @@ export async function isAdminToken(token, opts = {}) {
       if (d !== 'outage') break;
     }
     if (d === 'ok') v = true;
-    else if (d === 'no') ttl = 5000;
+    else if (d === 'no') ttl = ADMIN_NO_TTL_MS;   // was 5 s: a member is not an admin; new admins wait up to 10 min (read budget)
     else out = true;   // outage (429 quota / 5xx / network): never a "no" for an admin this isolate confirmed
   } catch (e) { out = true; }
   if (out) { markOutage(opts); v = hadYes('admin', uid); ttl = v ? 15000 : 0; }
-  else noteYes('admin', uid, v);
+  else { noteYes('admin', uid, v); sharedPut('admin', uid, v, opts); }
   if (adminMemo.size > 500) adminMemo.clear();
   if (ttl) adminMemo.set(uid, { v, at: Date.now(), ttl, o: out });
   return v;
@@ -190,7 +216,11 @@ export async function isDemoToken(token, opts = {}) {
   const uid = await verifyIdToken(token, opts);
   if (!uid) return false;
   const hit = demoMemo.get(uid);
-  if (hit && Date.now() - hit.at < hit.ttl) { if (hit.o) markOutage(opts); return hit.v; }
+  if (hit && Date.now() - hit.at < hit.ttl && !(opts.fresh && !hit.v)) { if (hit.o) markOutage(opts); return hit.v; }
+  if (!opts.fresh) {
+    const sv = await sharedGet('rt', uid);
+    if (sv !== null) { noteYes('rt', uid, sv); demoMemo.set(uid, { v: sv, at: Date.now(), ttl: sv ? STUDENT_YES_TTL_MS : STUDENT_TTL_MS, o: false }); return sv; }
+  }
   let v = false, ttl = STUDENT_TTL_MS, out = false;
   try {
     const url = 'https://firestore.googleapis.com/v1/projects/' + RT_PROJECT + '/databases/(default)/documents/students/' + encodeURIComponent(uid);
@@ -209,7 +239,7 @@ export async function isDemoToken(token, opts = {}) {
     else if (d === 'outage') out = true;   // a read blip / quota is not a "no"
   } catch (e) { out = true; }
   if (out) { markOutage(opts); v = hadYes('rt', uid); ttl = v ? 15000 : 0; }
-  else noteYes('rt', uid, v);
+  else { noteYes('rt', uid, v); if (v) ttl = STUDENT_YES_TTL_MS; sharedPut('rt', uid, v, opts); }
   if (demoMemo.size > 500) demoMemo.clear();
   if (ttl) demoMemo.set(uid, { v, at: Date.now(), ttl, o: out });
   return v;
@@ -235,9 +265,13 @@ export async function isLiveDataToken(token, opts = {}) {
   const uid = await verifyIdToken(token, opts);
   if (!uid) return false;
   const hit = liveMemo.get(uid);
-  if (hit && Date.now() - hit.at < hit.ttl) { if (hit.o) markOutage(opts); return hit.v; }
+  if (hit && Date.now() - hit.at < hit.ttl && !(opts.fresh && !hit.v)) { if (hit.o) markOutage(opts); return hit.v; }
+  if (!opts.fresh) {
+    const sv = await sharedGet('l2', uid);
+    if (sv !== null) { noteYes('l2', uid, sv); liveMemo.set(uid, { v: sv, at: Date.now(), ttl: sv ? 300000 : 10000, o: false }); return sv; }
+  }
   let v = false, ttl = 10000, out = false;
-  const sub = { fetchImpl: opts.fetchImpl, nowSec: opts.nowSec, nowMs: opts.nowMs, out: {} };
+  const sub = { fetchImpl: opts.fetchImpl, nowSec: opts.nowSec, nowMs: opts.nowMs, fresh: opts.fresh, waitUntil: opts.waitUntil, out: {} };
   try {
     if (await isAdminToken(token, sub)) { v = true; }
     else {
@@ -252,7 +286,7 @@ export async function isLiveDataToken(token, opts = {}) {
     if (v) ttl = 300000;   // a confirmed live-book member, 5 min (was 60 s): fewer Firestore reads; a "no" stays 10 s
   } catch (e) { v = false; out = true; }
   if (out || sub.out.outage) { out = true; markOutage(opts); v = v || hadYes('l2', uid); ttl = v ? 15000 : 0; }   // v already true = an admin kept through the outage
-  else noteYes('l2', uid, v);
+  else { noteYes('l2', uid, v); sharedPut('l2', uid, v, opts); }
   if (liveMemo.size > 500) liveMemo.clear();
   if (ttl) liveMemo.set(uid, { v, at: Date.now(), ttl, o: out });
   return v;

@@ -9,8 +9,8 @@
 // Rules here (the relay checks everything again): one write at a time, every write carries the chart's idempotency key as its
 // clientMsgId, an unclear answer is 'unknown' (never re-sent), a socket that closes mid-order = 'unknown'.
 // Tests: tools/tests/ctrader-trade.test.mjs (mocked frames), tools/tests/ctrader-trade-browser.js. Education only. Not financial advice.
-import { CT, probeCtrader, ctraderTokenCall, ctraderCreds } from './byo-ctrader.js?v=1251';
-import { saveKeys, loadKeys, forgetKeys } from './byo-core.js?v=1251';
+import { CT, probeCtrader, ctraderTokenCall, ctraderCreds } from './byo-ctrader.js?v=1252';
+import { saveKeys, loadKeys, forgetKeys } from './byo-core.js?v=1252';
 
 export const TT = { WS: '/connect/ctrader/trade', STATE_KEY: 'tz-ctrader-trade-state', VAULT: 'ctrader-trade', SCOPE: 'trading', HB_MS: 20000, CALL_MS: 15000 };
 const MIN = 60000;

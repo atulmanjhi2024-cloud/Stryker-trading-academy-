@@ -1,6 +1,6 @@
 // TradeZoro MQL5 engine: runtime core. Arrays, runtime errors, number/time/colour formatting, the op budget.
 // Pure. One Runtime object per running indicator (the compiler's closures capture it).
-import { EMPTY_VALUE, CLR_NONE, COLOR_NAMES } from './consts.js?v=1253';
+import { EMPTY_VALUE, CLR_NONE, COLOR_NAMES } from './consts.js?v=1254';
 
 export class MqRuntimeError extends Error {
   constructor(message, line, code) { super(message); this.line = line || 0; this.code = code || 'E400'; this.mqRuntime = true; }

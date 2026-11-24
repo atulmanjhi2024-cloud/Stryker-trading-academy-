@@ -44,6 +44,9 @@ https://www.tradezoro.com/* https://tradezoro.com/:splat 301!
 # Alpaca + tastytrade sign-in return page (read-only scopes). Token swap: functions/connect/<id>/token.js.
 /connect/alpaca/callback /oauth-callback 200
 /connect/tastytrade/callback /oauth-callback 200
+# BROKERS 3 trading sign-ins (admins + beta testers): tastytrade (read + trade) and TradeStation. Swap: functions/connect/brokers/token.js.
+/connect/tastytrade/trade-callback /broker-trade-callback 200
+/connect/tradestation/callback /broker-trade-callback 200
 /connect/upstox/callback /oauth-callback 200
 /connect/fyers/callback /oauth-callback 200
 /connect/dhan/callback /oauth-callback 200

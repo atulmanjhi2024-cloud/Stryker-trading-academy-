@@ -81,14 +81,18 @@ async function call(url, body, timing, fresh) {
 // MetaTrader accounts (AUTO-MTHELP 21 Nov) send venue 'mt': the server then checks the account record is MT4 / MT5 and uses lots
 // cTrader accounts (ids 'ct-…', admins and beta testers only) answer the same ops over their own trade socket (ctOps in assets/ctrader-trade.js)
 const CT = { mod: null, link: null, ops: null, creds: null, acct: null };
-const isCt = (id) => !!(CT.acct && id === CT.acct.id);
-const data = (op, extra) => (isCt(extra && extra.accountId) ? CT.ops.data(op, extra) : call('/connect/finatic/data', Object.assign({ op, userId: S.userId }, extra || {})));
+// BROKERS 3 (Owner 24 Nov 2026, admins + beta testers): tastytrade, TradeStation, OANDA accounts (ids 'b3-<broker>-<account>') answer
+// the same ops through assets/broker-trade.js -> /connect/brokers/trade. Same order panel, Enable step, kill switch and order log.
+const B3S = { mod: null, list: [], ops: new Map(), creds: {}, feed: null, cfg: {} };
+const isOwn = (a) => !!(a && (a.ct || a.b3));   // our own broker link (cTrader or BROKERS 3), not the broker-link company
+const ownOps = (id) => (CT.acct && id === CT.acct.id ? CT.ops : B3S.ops.get(id) || null);
+const data = (op, extra) => { const o = ownOps(extra && extra.accountId); return o ? o.data(op, extra) : call('/connect/finatic/data', Object.assign({ op, userId: S.userId }, extra || {})); };
 // COPY TRADING (assets/chart-copy.js sets window.__stkCopy): while this account is the member's copy leader, a write goes to the
 // copy route, which runs the leader order first and, only once it is accepted, one order per follower account (functions/connect/
 // finatic/copy.js). The reply is the leader's own reply plus copy.results.
 const COPY_OPS = ['place', 'modify', 'cancel', 'flatten'];
 const order = (b, timing) => {
-  if (S.acct && S.acct.ct) return CT.ops.order(b);   // never copy-traded: copy trading stays on the broker-link accounts
+  if (isOwn(S.acct)) return ownOps(S.acct.id).order(b);   // never copy-traded: copy trading stays on the broker-link accounts
   const lead = Object.assign({ src: 'chart', userId: S.userId, accountId: S.acct.id }, S.acct.mt && b.op !== 'env' && b.op !== 'schema' ? { venue: 'mt' } : {}, b), cp = window.__stkCopy;
   if (cp && COPY_OPS.includes(b.op) && cp.active(S.acct.id)) return call('/connect/finatic/copy', { op: 'fan', lead }, timing).then((r) => { try { cp.after(lead, r); } catch (e) {} return r; });
   return call('/connect/finatic/order', lead, timing);
@@ -131,6 +135,7 @@ async function loadAccounts() {
     S.accounts = (Array.isArray(r.data) ? r.data : []).map((x) => { const a = L.acctInfo(x); a.name = a.number; return withShow(a); }).filter((a) => a.id);
   } catch (e) { S.accounts = []; if (!e.needsConnect) S.loadErr = e.message; }
   if (CT.acct) S.accounts.push(CT.acct);
+  for (const a of B3S.list) S.accounts.push(a);
   if (S.acct) { const still = S.accounts.find((a) => a.id === S.acct.id); if (still) S.acct = still; else leave(true); }
   S.loaded = true; render(); menuEvent('accounts');
 }
@@ -280,6 +285,14 @@ async function saveMeta(id, m) {
 // ---- Disconnect one account: revoke ITS grant (functions/connect/finatic/data.js op 'revoke'), back to Paper if it was active.
 async function disconnect(id) {
   const a = S.accounts.find((x) => x.id === id); if (!a) return { ok: false, error: 'Account not found.' };
+  if (a.b3) {   // BROKERS 3: forget this broker's trading sign-in on this device (any view-only data sign-in is not touched)
+    if (S.acct && S.acct.id === id) await leave(true);
+    try { await B3S.mod.forgetCreds(a.b3); } catch (e) { return { ok: false, error: 'Could not forget the ' + a.broker + ' sign-in.' }; }
+    delete B3S.creds[a.b3]; B3S.list = B3S.list.filter((x) => x.b3 !== a.b3); [...B3S.ops.keys()].forEach((k) => { if (k.startsWith('b3-' + a.b3 + '-')) B3S.ops.delete(k); });
+    delete S.bal[id]; await loadAccounts();
+    toast(a.broker + ' trading disconnected on this device.' + (a.b3 === 'oanda' ? ' To stop the token fully, revoke it in OANDA (Manage API Access).' : ' To remove TradeZoro’s access fully, revoke it in your ' + a.broker + ' account settings.'), 'success');
+    return { ok: true, wasActive: false };
+  }
   if (a.ct) {   // cTrader: forget the trading sign-in on this device (the view-only data sign-in is not touched)
     if (S.acct && S.acct.id === id) await leave(true);
     try { if (CT.link) CT.link.shut(); await CT.mod.forgetTradeCreds(); } catch (e) { return { ok: false, error: 'Could not forget the cTrader sign-in.' }; }
@@ -329,7 +342,7 @@ async function pick(id) {
   S.env = null; S.envAt = 0; S.envErr = ''; S.group = null; S.groupCode = ''; S.alarmSeen = '';
   S.day = { at: 0, busy: false, key: '', fills: [], truncated: false, sig: '' }; balance(id, true);
   // 'env' also pre-warms the server (Finatic session + kill switch cached) and the browser's connection; reads start in parallel
-  read(); readKill(); loadFronts();
+  read(); readKill(); loadFronts(); b3Feed(a);
   await envCheck();
   schemaCheck();
   render();
@@ -357,7 +370,7 @@ function envCheck() {
     }
     if (S.acct && S.acct.id === id) {
       if (last && last.status === 403 && /live orders are off/i.test(last.message || '')) { S.env = { env: S.env ? S.env.env : '', enabled: false }; S.envAt = now(); S.envErr = ''; }
-      else S.envErr = S.acct.ct && last && last.message ? last.message : last && last.status === 401 ? 'Your sign-in expired. Reload the page to sign in again.' : 'Couldn’t reach the broker link.';
+      else S.envErr = isOwn(S.acct) && last && last.message ? last.message : last && last.status === 401 ? 'Your sign-in expired. Reload the page to sign in again.' : 'Couldn’t reach the broker link.';
     }
     return null;
   })().finally(() => { S.envBusy = null; render(); });
@@ -367,6 +380,7 @@ export function retryEnv() { if (!S.acct) return; S.envErr = ''; envCheck().then
 async function leave(quiet) {
   const had = !!S.acct;
   S.acct = null; S.data = { positions: [], orders: [] }; S.lastOkStart = 0; S.env = null; S.envErr = ''; S.group = null;
+  if (B3S.feed) { B3S.feed.stop(); B3S.feed = null; }
   if (S.lock) { try { S.lock(); } catch (e) {} S.lock = null; }
   closeConfirm();
   if (had && !quiet) toast('Back on Paper. No live orders from this tab.', 'info');
@@ -459,8 +473,8 @@ function infoMt(sym) {
   if (!Number.isFinite(last) && TEST && TEST.last) last = TEST.last(sym);
   // the chart's last price is only the broker's price when the chart IS the instrument (forex / spot pairs); a futures chart is not the CFD
   const lp = m.same && Number.isFinite(last) ? last : undefined;
-  const lots = S.acct.ct ? ctLots(code) : L.mtLots(S.placeSchema);
-  return { mt: S.acct.mt, ct: !!S.acct.ct, map: m, code, root: m.key, front: code, held: false, tick: S.acct.ct ? ctTick(code, m.key) : L.mtTick(m.key), pv: null, pos, working, last: lp, chartLast: last, pnl: pos.qty ? pos.upl : null, lots };
+  const lots = S.acct.ct ? ctLots(code) : S.acct.b3 ? b3Lots(code) : L.mtLots(S.placeSchema);
+  return { mt: S.acct.mt, ct: isOwn(S.acct), map: m, code, root: m.key, front: code, held: false, tick: S.acct.ct ? ctTick(code, m.key) : S.acct.b3 ? b3Tick(code, m.key) : L.mtTick(m.key), pv: null, pos, working, last: lp, chartLast: last, pnl: pos.qty ? pos.upl : null, lots };
 }
 export function badgeFor(sym) {
   if (!S.acct) return '';
@@ -624,8 +638,9 @@ async function place(sym, o, src) {
   // no confirm (Owner order 19 Nov): the order goes out on the click, like paper; every guard above and on the server still applies
   // double-click guard: the identical order again within 500 ms is dropped (not an order limit: a different order goes straight out)
   { const sig = JSON.stringify(b.body), t = now(); if (S.lastSend && S.lastSend.sig === sig && t - S.lastSend.at < L.DUP_MS) return null; S.lastSend = { sig, at: t }; }
-  const body = Object.assign(b.body, { idemKey: uuid() });
+  const body = Object.assign(b.body, { idemKey: uuid() }, S.acct.b3 ? { tick: i.tick, ref: i.last } : {});
   const r = await write(body, desc + (src ? ' (' + src + ')' : ''), L.pendingLine(body, i.last));
+  if (r && br && r.nativeBracket) { toast('Stop loss and take profit are held at ' + S.acct.broker + ' and go live when the entry fills.', 'info'); return r; }
   if (r && br) { setGroup(r.bracket || null, i.code); if (r.bracket && r.bracket.state === 'unrecorded') toast(r.bracket.why, 'error'); else toast('Stop loss and take profit go to your broker after the entry fills. Keep this tab open until they are placed.', 'info'); }
   return r;
 }
@@ -633,7 +648,7 @@ async function place(sym, o, src) {
 // every server guard of the futures path applies (kill switch, audit, read gate)
 async function placeMt(sym, o, src) {
   if (!S.envBusy && (!S.env || now() - S.envAt > ENV_MAX_AGE)) await envCheck();
-  if (S.acct && S.acct.ct && S.env && S.env.consent === false && S.env.blocked !== true) { enableLive(); return null; }   // one-time step; nothing sent
+  if (isOwn(S.acct) && S.env && S.env.consent === false && S.env.blocked !== true) { enableLive(); return null; }   // one-time step; nothing sent
   const why = blockReason(); if (why) { toast(why, 'error'); return null; }
   const i = infoMt(sym); if (!i) { toast('This chart has no ' + S.acct.mt + ' symbol. Open an index, gold, oil or forex chart.', 'error'); return null; }
   if (!i.code) { toast('Pick the ' + S.acct.mt + ' symbol for ' + i.map.label + ' first.', 'error'); return null; }
@@ -649,7 +664,7 @@ async function placeMt(sym, o, src) {
   return write(body, desc + (src ? ' (' + src + ')' : ''), i.map.same ? L.pendingLine(body, i.last) : null);
 }
 const MT_NO_SLTP = 'Stop loss and take profit for MetaTrader: set them in MetaTrader for now.';
-const CT_NO_SLTP = 'This chart’s prices are not your cTrader prices for this symbol, so stop loss and take profit can’t be set from here.';
+const CT_NO_SLTP = 'This chart’s prices are not your broker’s prices for this symbol, so stop loss and take profit can’t be set from here.';
 // ---- stop loss / take profit: after every positions read, ask the server to move the group on (place the children after the fill,
 // one-cancels-other when one fills). The server decides and acts from its own record and a fresh read; this only triggers it.
 const groupOpen = (code) => !!(S.group && S.group.state !== 'closed' && (!code || S.group.code === code));
@@ -679,7 +694,7 @@ export async function cancel(oid) {
 }
 export async function flatten(sym) {
   if (!S.acct || S.busy) return null;
-  if (S.acct.ct) return flattenCt(sym);
+  if (isOwn(S.acct) && S.acct.mt) return flattenCt(sym);
   if (S.acct.mt) { toast('Close ' + S.acct.mt + ' positions in MetaTrader for now. Working orders can be cancelled here.', 'info'); return null; }
   if (S.env && S.env.enabled === false) { toast('Live orders are off on the server.', 'error'); return null; }
   if (!S.lastOkStart) { toast('Positions are still loading.', 'error'); return null; }
@@ -698,11 +713,11 @@ async function flattenCt(symOrCode) {
   if (S.env && S.env.enabled === false) { toast('Live orders are off on the server.', 'error'); return null; }
   if (!S.lastOkStart) { toast('Positions are still loading.', 'error'); return null; }
   const i = symOrCode && P && P.activeSymbol && symOrCode === P.activeSymbol() ? infoMt(symOrCode) : null;
-  const code = i ? i.code : String(symOrCode || ''); if (!code) { toast('Pick the cTrader symbol for this chart first.', 'error'); return null; }
+  const code = i ? i.code : String(symOrCode || ''); if (!code) { toast('Pick the ' + S.acct.mt + ' symbol for this chart first.', 'error'); return null; }
   const pos = L.netPosition(S.data.positions, code), working = L.workingOrders(S.data.orders, code);
   if (!pos.qty && !working.length) { toast('Nothing to flatten on ' + code + '.', 'info'); return null; }
   const ok = await confirmSheet({ title: 'Flatten ' + code, code, side: pos.qty > 0 ? 'sell' : 'buy', go: 'Flatten ' + code,
-    lines: ['Symbol <b>' + esc(code) + '</b> (cTrader)', 'Cancels ' + working.length + ' working order' + (working.length === 1 ? '' : 's') + ', then closes ' + (pos.qty ? (pos.qty > 0 ? 'the long ' : 'the short ') + lotTxt(Math.abs(pos.qty)) : 'nothing more') + ' at market.'] });
+    lines: ['Symbol <b>' + esc(code) + '</b> (' + esc(S.acct.broker || S.acct.mt) + ')', 'Cancels ' + working.length + ' working order' + (working.length === 1 ? '' : 's') + ', then closes ' + (pos.qty ? (pos.qty > 0 ? 'the long ' : 'the short ') + lotTxt(Math.abs(pos.qty)) : 'nothing more') + ' at market.'] });
   if (!ok) return null;
   return write({ op: 'flatten', symbol: code, idemKey: L.flattenKey(S.acct.id, code, pos.qty, String(S.lastOkStart)) }, 'Flatten ' + code);
 }
@@ -727,7 +742,7 @@ export function dock() {
   const pos = [], ord = [];
   for (const code of codes) {
     const n = L.netPosition(S.data.positions, code), root = L.rootOfCode(code), pv = L.pvOfCode(code);
-    if (n.qty && S.acct.mt) { pos.push({ sym: code, side: n.qty > 0 ? 'Long' : 'Short', buy: n.qty > 0, qty: Math.abs(n.qty).toFixed(2), avg: px(n.avg), last: '—', pnl: n.upl, close: () => (S.acct.ct ? flattenCt(code) : flatten()) }); }
+    if (n.qty && S.acct.mt) { pos.push({ sym: code, side: n.qty > 0 ? 'Long' : 'Short', buy: n.qty > 0, qty: Math.abs(n.qty).toFixed(2), avg: px(n.avg), last: '—', pnl: n.upl, close: () => (isOwn(S.acct) ? flattenCt(code) : flatten()) }); }
     else if (n.qty) { const last = P.lastPrice && root ? P.lastPrice(root + '1!') : undefined; pos.push({ sym: code, side: n.qty > 0 ? 'Long' : 'Short', buy: n.qty > 0, qty: Math.abs(n.qty), avg: px(n.avg), last: px(last), pnl: pv ? L.openPnl(n.qty, n.avg, Number.isFinite(last) ? last : null, pv, n.upl) : n.upl, close: () => flatten(L.chartSymOf(code)) }); }
     for (const o of L.workingOrders(S.data.orders, code)) ord.push({ sym: code, side: o.side === 'buy' ? 'Buy' : 'Sell', buy: o.side === 'buy', type: (o.type || '').replace(/^./, (c) => c.toUpperCase()), qty: o.qty, price: o.price ? px(o.price) : '—', status: o.cancelling ? 'Cancelling' : 'Working', cancel: o.cancelling ? null : () => cancel(o.id) });
   }
@@ -814,7 +829,7 @@ export function caps() {
   if (S.acct && S.acct.mt) {
     const i = P && P.activeSymbol ? infoMt(P.activeSymbol()) : null, same = !!(i && i.map.same);
     const st = !!S.placeSchema && same && L.stopsSupported(S.placeSchema);
-    if (S.acct.ct) return { stop: same, bracket: same, limit: same, mt: true, why: same ? '' : CT_NO_SLTP, marketOnly: '' };
+    if (isOwn(S.acct)) return { stop: same, bracket: same, limit: same, mt: true, why: same ? '' : CT_NO_SLTP, marketOnly: '' };
     return { stop: st, bracket: false, limit: same, mt: true, why: !same ? 'This chart’s prices are not your broker’s prices for this symbol, so only market orders go from here.' : MT_NO_SLTP, marketOnly: MT_NO_SLTP };
   }
   if (!S.placeSchema) return { stop: false, bracket: false, why: S.placeErr ? 'The broker’s order types could not be read.' : 'Loading the broker’s order types…' };
@@ -825,7 +840,7 @@ export function opInfo(sym) {
   if (!S.acct) return null;
   const i = info(sym); if (!i) return null;
   const g = S.group && S.group.code === i.code ? S.group : null;
-  if (i.mt) return { mt: i.mt, map: i.map, lots: i.lots, code: i.code, root: i.root, tick: i.tick, pv: null, last: i.last, chartLast: i.chartLast, pos: i.pos, working: i.working, pnl: i.pnl, held: false, env: envWord(), killed: !!S.killed, block: blockReason(), busy: S.busy, rtt: L.rttText(S.rtt), retry: !S.env && !!S.envErr && !S.envBusy, group: null, alarm: '', admin: isAdmin, needsEnable: !!(S.acct.ct && S.env && S.env.consent === false && S.env.blocked !== true) };
+  if (i.mt) return { mt: i.mt, map: i.map, lots: i.lots, code: i.code, root: i.root, tick: i.tick, pv: null, last: i.last, chartLast: i.chartLast, pos: i.pos, working: i.working, pnl: i.pnl, held: false, env: envWord(), killed: !!S.killed, block: blockReason(), busy: S.busy, rtt: L.rttText(S.rtt), retry: !S.env && !!S.envErr && !S.envBusy, group: null, alarm: '', admin: isAdmin, needsEnable: !!(isOwn(S.acct) && S.env && S.env.consent === false && S.env.blocked !== true) };
   return { code: i.code, root: i.root, tick: i.tick || 0.01, pv: i.pv, asset: i.asset, last: i.last, pos: i.pos, working: i.working, pnl: i.pnl, held: i.held, env: envWord(), killed: !!S.killed, block: blockReason(), busy: S.busy, rtt: L.rttText(S.rtt),
     retry: !S.env && !!S.envErr && !S.envBusy, admin: isAdmin, needsEnable: !!(S.env && S.env.consent === false && S.env.blocked !== true), group: g, alarm: g && g.state === 'unprotected' ? g.why : '' };
 }
@@ -1017,6 +1032,74 @@ async function loadCt() {
     CT.acct = withShow(a);
   } catch (e) { CT.acct = null; }
 }
+// ---- BROKERS 3 (admins and beta testers): tastytrade / TradeStation / OANDA trading sign-ins become live accounts
+function b3Lots(code) { const r = S.placeSchema && S.placeSchema.rules && S.placeSchema.rules[String(code || '').toUpperCase()]; return r ? { min: r.min, step: r.step, max: r.max, fromSchema: true } : { min: 0.01, step: 0.01, max: 10, fromSchema: false }; }
+function b3Tick(code, key) { const r = S.placeSchema && S.placeSchema.rules && S.placeSchema.rules[String(code || '').toUpperCase()]; return r && Number.isInteger(r.priceDp) ? Math.pow(10, -r.priceDp) : L.mtTick(key); }
+function b3Feed(a) {
+  if (B3S.feed) { B3S.feed.stop(); B3S.feed = null; }
+  if (!a || !a.b3 || !B3S.mod || !B3S.creds[a.b3]) return;
+  B3S.feed = new B3S.mod.StatusFeed(a.b3, B3S.creds[a.b3], [a.acctNo], (ev) => { if (S.acct && S.acct.id === a.id) { fastReads(); if (ev.type === 'fill') toast(a.broker + ': order ' + ev.id + ' filled.', 'info'); } }, TEST && TEST.b3Deps ? TEST.b3Deps : undefined);
+  B3S.feed.start().catch(() => {});
+}
+async function loadB3() {
+  try {
+    B3S.mod = B3S.mod || await import('./broker-trade.js?v=1251');
+    const d = TEST && TEST.b3Deps ? TEST.b3Deps : undefined, list = [];
+    await Promise.all(Object.keys(B3S.mod.BROKERS).map(async (k) => {
+      B3S.cfg[k] = await B3S.mod.probe(k, d);
+      const c = TEST && TEST.b3Creds ? TEST.b3Creds[k] : await B3S.mod.loadCreds(k);   // test: localhost fixture creds + mocked routes
+      if (!c || !(c.access || c.token)) { delete B3S.creds[k]; return; }
+      B3S.creds[k] = c;
+      try {
+        for (const x of await B3S.mod.accountsFor(k, c, d)) {
+          const a = L.acctInfo({ accountId: x.id, accountNumber: x.number });
+          const B = B3S.mod.BROKERS[k], demo = c.env !== 'live';
+          a.broker = B.label + (demo ? (k === 'oanda' ? ' practice' : k === 'tradestation' ? ' SIM' : ' sandbox') : ''); a.b3 = k; a.acctNo = x.accountId; a.name = a.number; a.demo = demo; a.text = B.label + ' ' + a.number;   // the badge adds SANDBOX; the menu row's broker line says which test env
+          if (B.fx) a.mt = 'OANDA';   // OANDA: lots and its own instrument names, like the MetaTrader accounts
+          B3S.ops.set(a.id, B3S.mod.brokerOps(k, c, x.accountId, d)); list.push(withShow(a));
+        }
+      } catch (e) { if (e && (e.reconnect || e.status === 401)) toast(e.message, 'error'); }
+    }));
+    B3S.list = list;
+    window.__stkB3 = {
+      brokers: () => Object.keys(B3S.mod.BROKERS).map((k) => ({ id: k, label: B3S.mod.BROKERS[k].label, configured: !!(B3S.cfg[k] && B3S.cfg[k].configured), connected: !!B3S.creds[k], help: B3S.mod.BROKERS[k].help })),
+      open: (k) => { const cf = B3S.cfg[k]; if (!cf || !cf.configured) { toast(B3S.mod.BROKERS[k].label + ' trading is coming soon.', 'info'); return; } if (k === 'oanda') b3OandaSheet(); else B3S.mod.startSignIn(k, uid, TEST && TEST.b3Deps ? TEST.b3Deps : undefined).catch((e) => toast(e.message || 'Could not open ' + B3S.mod.BROKERS[k].label + '.', 'error')); }
+    };
+  } catch (e) { B3S.list = []; }
+}
+// OANDA: paste the personal access token once (practice; live only when the server says OANDA live is on). Checked by our server
+// against OANDA before it is kept; kept only in this device's encrypted vault.
+function b3OandaSheet() {
+  if (document.getElementById('stklv-cf')) return;
+  const liveOk = !!(B3S.cfg.oanda && B3S.cfg.oanda.live), prev = document.activeElement;
+  const el = document.createElement('div'); el.id = 'stklv-cf'; el.className = 'stklv-en stklv-b3';
+  el.innerHTML = '<div class="stklv-cf-box" role="dialog" aria-modal="true" aria-labelledby="stklv-b3-h">' +
+    '<div class="stklv-grab" aria-hidden="true"></div>' +
+    '<div class="stklv-cf-head"><span class="stklv-badge">' + (liveOk ? 'OANDA' : 'OANDA PRACTICE') + '</span><button type="button" class="stklv-x" data-k="no" aria-label="Close">×</button></div>' +
+    '<h2 id="stklv-b3-h">Connect OANDA</h2>' +
+    '<div class="stklv-cf-lines"><p>In OANDA, open <b>Manage API Access</b>, generate a personal access token and paste it here once. TradeZoro keeps it encrypted on this device and only our server uses it to talk to OANDA. <a href="/help/trade-with-oanda" target="_blank" rel="noopener">Step by step</a></p></div>' +
+    (liveOk ? '<div class="stklv-seg" role="radiogroup" aria-label="Account type"><button type="button" role="radio" aria-checked="true" data-env="sandbox" class="on">Practice</button><button type="button" role="radio" aria-checked="false" data-env="live">Live</button></div>' : '') +
+    '<label class="stklv-f"><span>Personal access token</span><input type="password" data-k="tok" autocomplete="off" autocapitalize="off" spellcheck="false" inputmode="text" aria-describedby="stklv-b3-e"></label>' +
+    '<p class="stklv-en-err" id="stklv-b3-e" role="alert" hidden></p>' +
+    '<div class="stklv-cf-btns"><button type="button" class="stklv-btn" data-k="no">Cancel</button><button type="button" class="stklv-btn stklv-go buy" data-k="yes" disabled>Connect</button></div>' +
+    '<p class="stklv-fine">' + (liveOk ? '' : 'Practice accounts only for now. ') + DISCLAIMER + '</p></div>';
+  document.body.appendChild(el);
+  let envName = 'sandbox';
+  const tok = el.querySelector('[data-k=tok]'), yes = el.querySelector('[data-k=yes]'), er = el.querySelector('.stklv-en-err');
+  const done = () => { el.remove(); document.removeEventListener('keydown', k, true); try { prev && prev.focus && prev.focus(); } catch (e) {} render(); };
+  const k = (e) => { if (e.key === 'Escape') { e.stopPropagation(); done(); } else e.stopPropagation(); };
+  document.addEventListener('keydown', k, true);
+  el.addEventListener('mousedown', (e) => { if (e.target === el) done(); });
+  el.querySelectorAll('[data-k=no]').forEach((b) => b.addEventListener('click', done));
+  el.querySelectorAll('[data-env]').forEach((b) => b.addEventListener('click', () => { envName = b.dataset.env; el.querySelectorAll('[data-env]').forEach((x) => { x.classList.toggle('on', x === b); x.setAttribute('aria-checked', String(x === b)); }); }));
+  tok.addEventListener('input', () => { yes.disabled = tok.value.trim().length < 20; });
+  yes.addEventListener('click', async () => {
+    yes.disabled = true; yes.textContent = 'Checking…'; er.hidden = true;
+    try { await B3S.mod.connectOanda(tok.value, envName, TEST && TEST.b3Deps ? TEST.b3Deps : undefined); tok.value = ''; done(); toast('OANDA connected. Pick the account in the Trade menu.', 'success'); await loadB3(); await loadAccounts(); }
+    catch (e) { er.textContent = e.message || 'Could not connect.'; er.hidden = false; yes.disabled = false; yes.textContent = 'Connect'; }
+  });
+  setTimeout(() => tok.focus(), 30);
+}
 function mountCopyTrading() {
   import('./chart-copy.js?v=1252').then((m) => m.mountCopy({ live: window.__stkLive, paper: P, toast })).catch((e) => console.warn('TradeZoro: copy trading', e));   // Trade menu > Copy trading
 }
@@ -1030,7 +1113,7 @@ export function mountLive(paperApi, opts) {
   if (!document.getElementById('stklv-css')) { const st = document.createElement('style'); st.id = 'stklv-css'; st.textContent = CSS; document.head.appendChild(st); }
   P.setLiveHook({ mtFor, mtSetSymbol, active, noLiveWhy, lines, chipText, badgeFor, tickOf, chipX, drag, flattenActive, openTicket, renderHead, renderSummary, renderView, foot, dock, dockTrades, ladder, domState, cancel, flatten, caps, opInfo, placeTicket, kill, killOn, retryEnv, enableLive });
   loadMeta(); loadAccounts();
-  ctAllowed().then((ok) => { if (ok) loadCt().then(loadAccounts); });   // cTrader trading: admins and beta testers (the relay re-checks)
+  ctAllowed().then((ok) => { if (ok) Promise.all([loadCt(), loadB3()]).then(loadAccounts); });   // cTrader + BROKERS 3 trading: admins and beta testers (the servers re-check)
   // Copy trading: admins + beta testers (Owner 23 Nov). The server (functions/connect/finatic/copy.js) re-checks every call.
   if (isAdmin) mountCopyTrading(); else betaReady().then((b) => { if (b) mountCopyTrading(); });
   window.addEventListener('storage', (e) => { if (e.key === lsUserKey()) loadAccounts(); });

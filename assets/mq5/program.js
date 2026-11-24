@@ -7,11 +7,11 @@
 //                                             mode 'full' (history changed), 'tick' (same bars, last one changed), 'append' (new bars at the end)
 // ind.timer()  ind.event(id, lparam, dparam, sparam)  ind.objectState(name, props)  ind.deinit(reason)
 // output = { ok, plots: [...], levels, props, objects?, comment, prints[], alerts[], notices[], ms } or { ok:false, error }.
-import { compileProgram, Ref } from './compiler.js?v=1247';
-import { MArr, rtErr, LIMITS, MqRuntimeError, hexOf } from './runtime.js?v=1247';
-import { MqError } from './lexer.js?v=1247';
-import { EMPTY_VALUE, ENUMS } from './consts.js?v=1247';
-import { tfEnumOf, handleData } from './builtins.js?v=1247';
+import { compileProgram, Ref } from './compiler.js?v=1248';
+import { MArr, rtErr, LIMITS, MqRuntimeError, hexOf } from './runtime.js?v=1248';
+import { MqError } from './lexer.js?v=1248';
+import { EMPTY_VALUE, ENUMS } from './consts.js?v=1248';
+import { tfEnumOf, handleData } from './builtins.js?v=1248';
 
 const DRAW_BUFS = { 0: 1, 1: 1, 2: 1, 3: 1, 4: 2, 5: 1, 6: 2, 7: 2, 8: 2, 9: 2, 10: 2, 11: 3, 12: 2, 13: 3, 14: 4, 15: 4, 16: 5, 17: 5 };
 const COLOR_TYPES = new Set([8, 9, 10, 11, 12, 13, 16, 17]);

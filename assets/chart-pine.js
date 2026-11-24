@@ -47,10 +47,10 @@
 // Pine indicators (name, source, inputs) into the workspace document. That puts them in
 // the persist:true session AND in saved templates, and restores them on load.
 
-import { pineFetchSym } from './chart-sym.js?v=1247';
-import { builtinSource, builtinIdOf, builtinOfText, builtinIdByName } from './chart-pine-builtins.js?v=1247';
-import { current as verCurrent, baseOf as verBase, verOf as verPinned } from './indicator-versions.js?v=1247';
-import { createShell, el, ib, ICONS, libRow, emptyState, renderDocs, descOf, ago, download, pickFile, fileName } from './chart-script-editor.js?v=1247';
+import { pineFetchSym } from './chart-sym.js?v=1248';
+import { builtinSource, builtinIdOf, builtinOfText, builtinIdByName } from './chart-pine-builtins.js?v=1248';
+import { current as verCurrent, baseOf as verBase, verOf as verPinned } from './indicator-versions.js?v=1248';
+import { createShell, el, ib, ICONS, libRow, emptyState, renderDocs, descOf, ago, download, pickFile, fileName } from './chart-script-editor.js?v=1248';
 
 const PINE_PKG = '/assets/vendor/vela-pinets-0.2.11/index.js';
 const CALC_AFTER_MS = 3000;   // a run longer than this shows "Calculating… NN%" (editor) and the legend chip
@@ -82,14 +82,14 @@ const nextEngines = new WeakMap(); // chart -> PineNextEngine (newer pinets in a
 const onNext = new WeakSet();      // handles running on the next engine
 let NextMod = null;
 function loadNext(){
-  if (!NextMod) NextMod = import('./chart-pine-next.js?v=1247').catch((e) => { NextMod = null; throw e; });
+  if (!NextMod) NextMod = import('./chart-pine-next.js?v=1248').catch((e) => { NextMod = null; throw e; });
   return NextMod;
 }
 // TradingView-style painting of Pine drawings (assets/chart-pine-tv-style.js); once per chart.
 let TvStyle = null;
 async function tvStyle(chart){
   try {
-    if (!TvStyle) TvStyle = import('./chart-pine-tv-style.js?v=1247');
+    if (!TvStyle) TvStyle = import('./chart-pine-tv-style.js?v=1248');
     (await TvStyle).installTvStyle(chart);
   } catch (e) { TvStyle = null; }
 }
@@ -228,7 +228,7 @@ function classicLanes(m){
 function loadPine(){
   if (!enginePromise) {
     // The in-process engine (LANG_MAIN) runs the page's pinets (import map): give it the same empty-live-stream guard as the worker (Owner bug 22 Nov, 'openTime' toasts).
-    import('pinets').then((pt) => import('./chart-pine-next-patches.js?v=1247').then((p) => p.patchEmptyLive(pt.PineTS))).catch(() => {});
+    import('pinets').then((pt) => import('./chart-pine-next-patches.js?v=1248').then((p) => p.patchEmptyLive(pt.PineTS))).catch(() => {});
     enginePromise = import(PINE_PKG).then((m) => {
       if (!m || !m.PineWorkerEngine) throw new Error('Pine engine did not load');
       // Cells created from now on (layout widened) get an engine automatically.
@@ -757,7 +757,7 @@ function prefetchEngine(){
   try { if (navigator.connection && navigator.connection.saveData) return; } catch (e) {}
   const pinets = '/assets/vendor/pinets-0.11.0/pinets.min.browser.es.js';   // = PINETS in chart-pine-next-worker.js
   [PINE_PKG, pinets].forEach((href) => { const l = document.createElement('link'); l.rel = 'prefetch'; l.as = 'script'; l.crossOrigin = 'anonymous'; l.href = href; document.head.appendChild(l); });
-  ['./chart-pine-next.js?v=1247', './chart-pine-series-cache.js?v=1247', './chart-pine-tv-style.js?v=1247'].forEach((u) => {
+  ['./chart-pine-next.js?v=1248', './chart-pine-series-cache.js?v=1248', './chart-pine-tv-style.js?v=1248'].forEach((u) => {
     const l = document.createElement('link'); l.rel = 'modulepreload'; l.href = new URL(u, import.meta.url).href; document.head.appendChild(l);
   });
 }
@@ -890,7 +890,7 @@ export function mountPine(ws, barL, opts){
 
   function ensureEditor(){
     if (!edP) {
-      edP = import('./zs-editor/editor.js?v=1247').then((m) => {
+      edP = import('./zs-editor/editor.js?v=1248').then((m) => {
         edHost.innerHTML = '';
         ed = m.createZsEditor(edHost, { doc: pending || '', lang: 'pine', builtins: [], wrap: Sh.wrap(), onRun: () => addToChart(), onSave: () => save(), onChange: () => { if (hasErr) { hasErr = false; showErr(''); } renderStatus(); } });
         pending = null;

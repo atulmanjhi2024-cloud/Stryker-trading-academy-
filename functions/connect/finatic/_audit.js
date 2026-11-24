@@ -97,7 +97,7 @@ export async function liveSwitchOn(env, deps) {
       const reason = (e2 && e2.reason) || (e1 && e1.reason) || 'unknown error';
       const fresh = killMemo.v !== null && now - killMemo.at < LAST_GOOD_MS;
       try { console.warn('finatic: live switch read failed twice: ' + reason + (fresh ? ' (using the value read ' + Math.round((now - killMemo.at) / 1000) + ' s ago)' : ' (no recent value, refusing)')); } catch (e) {}
-      if (fresh) return killMemo.v;
+      if (fresh) { if (deps.onStale) deps.onStale(); return killMemo.v; }   // the caller may use it once but must not keep it
       throw why(reason);
     }
   }

@@ -102,6 +102,17 @@ export async function betaFor(env, claims, deps = {}) {
   if (await isAdminUid(fs, claims.uid)) return { uid: claims.uid, admin: true, beta: true, fs };
   return { uid: claims.uid, admin: false, beta: inList(await getList(fs), claims.email, claims.verified), fs };
 }
+// STRICT variant for trading gates (owner bug 24 Nov: a failed admins/{uid} read was swallowed by isAdminUid as "not admin", so a
+// Firestore blip refused a real admin with "admins and beta testers only"). -> { admin, beta } only from REAL answers (200 / 404);
+// any failed read (token mint, 5xx, 429, network, Workers subrequest cap) is asked once more, then THROWS (caller: "couldn't confirm").
+export async function accessFor(env, claims, deps = {}) {
+  const fs = fsClient(env, deps.fetchImpl || fetch);
+  const once = async () => {
+    if (await fs.get('admins/' + claims.uid)) return { admin: true, beta: true };
+    return { admin: false, beta: inList(await getList(fs), claims.email, claims.verified) };
+  };
+  try { return await once(); } catch (e) { return once(); }
+}
 export async function isBetaToken(env, request, deps = {}) {
   const c = await authClaims(request, deps); if (!c) return null;
   try { const b = await betaFor(env, c, deps); return { uid: b.uid, admin: b.admin, beta: b.beta }; } catch (e) { return { uid: c.uid, admin: false, beta: false }; }

@@ -27,7 +27,7 @@ import { exec } from './order.js';
 import { getBracket } from './_audit.js';
 import { groupId } from '../../../assets/chart-live-core.js';
 import * as C from '../../../assets/copy-trade-core.js';
-import { isBetaToken } from '../../api/beta/_lib.js';
+import { accessFor, authClaims } from '../../api/beta/_lib.js';
 
 const LEAD_OPS = ['place', 'modify', 'cancel', 'flatten'];
 const parse = (s, d) => { try { const v = JSON.parse(s); return v == null ? d : v; } catch (e) { return d; } };
@@ -46,8 +46,11 @@ const unpack = async (r) => { let j = {}; try { j = await r.clone().json(); } ca
 const betaMemo = new Map();
 async function betaUid(env, request, deps, uid) {
   const hit = betaMemo.get(uid); if (hit && Date.now() - hit < 60000) return true;
-  const b = await isBetaToken(env, request, { verifyFetch: deps.verifyFetch, fetchImpl: deps.betaFetch });
-  if (!(b && b.beta && b.uid === uid)) return false;
+  // STRICT (owner bug 24 Nov): a failed read THROWS (caller: 503 gate_unreadable), never "not available"
+  const c = await authClaims(request, { verifyFetch: deps.verifyFetch });
+  if (!c || c.uid !== uid) return false;
+  const b = await accessFor(env, c, { fetchImpl: deps.betaFetch });
+  if (!(b.admin || b.beta)) return false;
   if (betaMemo.size > 500) betaMemo.clear();
   betaMemo.set(uid, Date.now()); return true;
 }
@@ -57,7 +60,10 @@ async function run(request, env, deps) {
   if (g instanceof Response) return g;
   // ADMIN OR BETA TESTER (Owner 21 Nov: admin only while he tests; Owner 23 Nov: "release it for beta testers as well").
   // Beta = verified sign-in email on settings/betaTesters (functions/api/beta/_lib.js). Unreadable list = refused. Code kept for old clients.
-  if (!g.admin && !(await betaUid(env, request, deps, g.uid))) return fail(403, 'Copy trading is not available yet.', 'copy_admin_only');
+  if (!g.admin) {
+    let ok; try { ok = await betaUid(env, request, deps, g.uid); } catch (e) { return fail(503, 'Couldn’t confirm your trading access just now. Nothing was sent. Try again.', 'gate_unreadable'); }
+    if (!ok) return fail(403, 'Copy trading is not available yet.', 'copy_admin_only');
+  }
   const b = await readBody(request);
   if (!b || typeof b !== 'object') return fail(400, 'Bad request');
   const op = b.op;

@@ -133,6 +133,35 @@ await t('the browser link refuses a write on a closed socket without sending; a 
   const r = await k.ops.order({ op: 'place', symbol: 'US100', side: 'buy', qty: 0.1, type: 'market', idemKey: KEY(17) });   // open() reconnects first
   assert.equal(r.status, 'FILLED'); k.L.shut();
 });
+await t('owner bug 24 Nov: an admin-check ERROR = "couldn’t confirm, nothing sent" (not "admins only"); the link reopens once by itself; the order is never resent', async () => {
+  const M = mockState(); const k = mkLink(M); await k.ops.order({ op: 'env' }); assert.equal(M.sockets, 1);
+  M.gate.adminFail = 1;   // the server's admin / beta read fails once (Firestore 503, or the platform's subrequest cap)
+  await assert.rejects(k.ops.order({ op: 'place', symbol: 'US100', side: 'buy', qty: 0.1, type: 'market', idemKey: KEY(30) }), (e) => {
+    assert.equal(e.code, 'gate_unreadable'); assert.match(e.message, /Couldn’t confirm your trading access just now\. Nothing was sent\. Try again\./); assert.doesNotMatch(e.message, /admins and beta testers/); return true; });
+  assert.equal(M.sent.filter((m) => m.payloadType === 2106).length, 0, 'nothing reached cTrader');
+  for (let i = 0; i < 100 && !(M.sockets === 2 && k.L.ready); i++) await sleep(10);
+  await k.L.ready; assert.equal(M.sockets, 2, 'reconnected exactly once, by itself');
+  await sleep(100); assert.equal(M.sent.filter((m) => m.payloadType === 2106).length, 0, 'and nothing was resent automatically');
+  // the member taps again: it goes through on the fresh link, once
+  const r = await k.ops.order({ op: 'place', symbol: 'US100', side: 'buy', qty: 0.1, type: 'market', idemKey: KEY(31) });
+  assert.equal(r.status, 'FILLED'); assert.equal(M.sent.filter((m) => m.payloadType === 2106).length, 1);
+  // a REAL "no" (not an admin, not a beta tester) still says so, and does not loop reconnects
+  M.gate.admin = false; const s0 = M.sockets;
+  await assert.rejects(k.ops.order({ op: 'place', symbol: 'US100', side: 'buy', qty: 0.1, type: 'market', idemKey: KEY(32) }), (e) => e.code === 'not_admin' && /admins and beta testers/.test(e.message));
+  await sleep(80); assert.equal(M.sockets, s0, 'no reconnect on a real no');
+  k.L.shut();
+});
+await t('two failed checks in a row: one reconnect only (no loop); the next tap is refused the same honest way', async () => {
+  const M = mockState(); const k = mkLink(M); await k.ops.order({ op: 'env' });
+  M.gate.adminFail = 2;
+  await assert.rejects(k.ops.order({ op: 'place', symbol: 'US100', side: 'buy', qty: 0.1, type: 'market', idemKey: KEY(40) }), (e) => e.code === 'gate_unreadable');
+  for (let i = 0; i < 100 && !(M.sockets === 2 && k.L.ready); i++) await sleep(10); await k.L.ready;
+  await assert.rejects(k.ops.order({ op: 'place', symbol: 'US100', side: 'buy', qty: 0.1, type: 'market', idemKey: KEY(41) }), (e) => e.code === 'gate_unreadable');
+  await sleep(120); assert.equal(M.sockets, 2, 'no second automatic reconnect');
+  assert.equal(M.sent.filter((m) => m.payloadType === 2106).length, 0, 'nothing sent');
+  const r = await k.ops.order({ op: 'place', symbol: 'US100', side: 'buy', qty: 0.1, type: 'market', idemKey: KEY(42) });   // Firestore back
+  assert.equal(r.status, 'FILLED'); k.L.shut();
+});
 
 console.log(n + ' cTrader trading link tests passed');
 process.exit(0);

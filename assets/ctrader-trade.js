@@ -124,6 +124,7 @@ const CT_ERR = { NOT_ENOUGH_MONEY: 'Not enough money in the account for this ord
   ALREADY_SUBSCRIBED: 'Already subscribed.', CH_ACCESS_TOKEN_INVALID: 'Your cTrader sign-in expired. Tap Allow trading again.', ACCOUNT_NOT_AUTHORIZED: 'This cTrader account is not authorised. Tap Allow trading again.',
   NO_QUOTES: 'No price from the broker right now.', BAD_STOPS: 'The broker does not accept that stop loss / take profit.' };
 export const errText = (code, desc) => CT_ERR[String(code || '')] || ('The broker refused it' + (code ? ' (' + String(code).replace(/[^A-Z0-9_]/gi, '').slice(0, 40) + ')' : '') + '.');
+const RENEW = new Set(['gate_unreadable', 'renew']);
 export function answerOf(m) {
   if (m.relay === 'refused') throw fail(m.error || 'Not sent.', { code: m.code === 'unresolved' ? 'unresolved' : m.code || 'refused', status: 409 });
   if (m.relay === 'unknown') throw fail('No clear answer from cTrader for this order. It may or may not have gone through. Checking your orders; nothing will be sent again.', { code: 'unknown' });
@@ -148,6 +149,7 @@ export class TradeLink {
     if (this.ready && !this.dead) return this.ready;
     this.dead = false;
     const WS = this.d.WS || globalThis.WebSocket;
+    this.onSock = new Set();
     this.ready = (async () => {
       const at = await freshTrade(this.c, this.d);
       const idt = await (this.d.idToken ? this.d.idToken() : globalThis.firebase.auth().currentUser.getIdToken()).catch(() => { throw fail('Sign in again.', { status: 401 }); });
@@ -155,9 +157,12 @@ export class TradeLink {
         let ws; try { ws = new WS(this.url(), ['tz-auth', idt]); } catch (e) { return rej(fail('Couldn’t open the cTrader trading link.', { status: 0 })); }
         this.ws = ws;
         ws.onmessage = (ev) => this.onMsg(ev.data, res);
-        ws.onclose = (ev) => { const why = ev && ev.code === 1008 ? 'The cTrader trading link was refused.' : 'The cTrader trading link closed.'; this.shut(why); rej(fail(why + (ev && ev.code === 1006 ? ' (admins and beta testers only; or another tab has it open)' : ''), { status: 0 })); };
+        ws.onclose = (ev) => { if (ev && ev.code === 4001) { this.shut(); return rej(fail('The trading link was refreshing. Nothing was sent. Try again.', { status: 0, code: 'renew' })); } const why = ev && ev.code === 1008 ? 'The cTrader trading link was refused.' : 'The cTrader trading link closed.'; this.shut(why); rej(fail(why + (ev && ev.code === 1006 ? ' It may be open in another tab, or your trading access could not be confirmed. Try again.' : ''), { status: 0 })); };
         ws.onerror = () => { try { ws.close(); } catch (e) { /* closed */ } };
       });
+      // the relay renews a socket that used up its server budget (close 4001, nothing in flight): reopen it in the background so the
+      // next order finds a ready link. At most once a minute (no reconnect loop); nothing is ever resent.
+      const sock = this.ws; if (sock) sock.onclose = (ev) => { const code = ev && ev.code; this.shut(code === 1008 ? 'The cTrader trading link was refused.' : 'The cTrader trading link closed.'); if (code === 4001) this.reopenSoon(); };
       // heartbeats only while chart-live keeps the account picked; otherwise the relay's 60 s idle close frees the one trade socket
       this.ka = setInterval(() => { if (this.keep && !this.keep()) return; try { this.raw({ payloadType: 51, payload: {} }); } catch (e) { /* closed */ } }, TT.HB_MS);
       const list = await this.send(2149, { accessToken: at });
@@ -193,9 +198,12 @@ export class TradeLink {
     });
   }
   async call(type, payload) { await this.open(); const m = await this.send(type, { ctidTraderAccountId: n(this.c.accountId), ...payload }); if (m.payloadType === 2142 || m.payloadType === 50) throw fail(errText(m.payload && m.payload.errorCode), { status: 0 }); return m; }
+  // the relay checks sizes against what ITS socket learned (SymbolByIdRes), so a reopened link asks again (the copy kept here is
+  // only for the size picker); this.onSock = the symbol ids loaded on the current socket
   async detail(symbolId) {
-    if (this.details.has(symbolId)) return this.details.get(symbolId);
+    if (this.details.has(symbolId) && this.onSock && this.onSock.has(symbolId)) return this.details.get(symbolId);
     const m = await this.call(2116, { symbolId: [symbolId] });
+    for (const s of (m.payload && m.payload.symbol) || []) this.onSock.add(n(s.symbolId));
     for (const s of (m.payload && m.payload.symbol) || []) this.details.set(n(s.symbolId), { lotSize: n(s.lotSize), minVolume: n(s.minVolume), maxVolume: n(s.maxVolume), stepVolume: n(s.stepVolume), digits: n(s.digits) });
     return this.details.get(symbolId);
   }
@@ -207,8 +215,20 @@ export class TradeLink {
     try {
       await this.open();
       const gap = this.lastWrite + 550 - Date.now(); if (gap > 0) await new Promise((r) => setTimeout(r, gap));   // the relay takes 2 a second
-      this.lastWrite = Date.now(); return answerOf(await this.send(type, { ctidTraderAccountId: n(this.c.accountId), ...payload }, key)); }
+      this.lastWrite = Date.now();
+      const m = await this.send(type, { ctidTraderAccountId: n(this.c.accountId), ...payload }, key);
+      // the relay could not confirm the trading access ('gate_unreadable') or is renewing its link ('renew'): NOTHING was sent.
+      // Reopen the link once in the background (a fresh server request) so the member's own retry finds it ready. Never resent here.
+      if (m.relay === 'refused' && RENEW.has(m.code)) this.renew();
+      else this.renewed = false;
+      return answerOf(m); }
     finally { this.writing = null; }
+  }
+  renew() { if (this.renewed) return; this.renewed = true; this.shut(); this.reopenSoon(true); }
+  reopenSoon(force) {
+    const t = Date.now(); if (!force && t - (this.reopenAt || 0) < 60000) return; this.reopenAt = t;
+    if (this.keep && !this.keep()) return;   // the account is no longer picked: let it rest
+    setTimeout(() => { if (!this.ready) this.open().catch(() => {}); }, 0);
   }
   shut(why) {
     if (this.dead) return; this.dead = true; clearInterval(this.ka);

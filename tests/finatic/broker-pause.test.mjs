@@ -62,8 +62,11 @@ for (const [h, path, body] of ROUTES) {
 }
 // an unverified email that matches the list is NOT beta
 P._resetPause(); { const r = await go(S, 'session', { mode: 'dark' }, 'beta', false); assert.equal(r.status, 403); assert.equal(r.j.code, 'brokers_paused'); }
-// list unreadable = refused (fails closed)
-P._resetPause(); listDown = true; { const r = await go(D, 'data', { op: 'accounts' }, 'beta'); assert.equal(r.j.code, 'brokers_paused'); } listDown = false; P._resetPause();
+// list unreadable = refused (fails closed), but said as "couldn't confirm your access, nothing sent" (503 gate_unreadable), never "paused"
+// (owner bug 24 Nov: a failed read was reported as a real "no"); no broker call is made
+P._resetPause(); listDown = true; { const c0 = B.calls.length, r = await go(D, 'data', { op: 'accounts' }, 'beta'); assert.equal(r.status, 503); assert.equal(r.j.code, 'gate_unreadable'); assert.match(r.j.error, /Couldn’t confirm your trading access/); assert.equal(B.calls.length, c0, 'nothing sent'); } listDown = false; P._resetPause();
+// a real "no" (readable list, not on it) still says paused
+P._resetPause(); { const r = await go(D, 'data', { op: 'accounts' }, 'member'); assert.equal(r.status, 403); assert.equal(r.j.code, 'brokers_paused'); }
 
 // 2. admin and beta tester: not paused (session starts, data reads, env answers, the order passes the pause and reaches the broker stub)
 for (const who of ['admin', 'beta']) {

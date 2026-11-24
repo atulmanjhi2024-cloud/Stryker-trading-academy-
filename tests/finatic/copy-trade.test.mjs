@@ -178,7 +178,9 @@ assert.equal(r.status, 200); assert.equal(r.j.copy.results.length, 3); assert.eq
 console.log('copy-trade tests: all passed');
 
 // ADMIN ONLY gate: a signed-in non-admin member gets 403 copy_admin_only
-{ const r = await go({ op: 'get' }, 'outsider'); assert.equal(r.status, 403); assert.equal(r.j.code || r.j.reason || r.j.error && 'x', r.j.code || r.j.reason || 'x'); assert.ok(JSON.stringify(r.j).includes('copy_admin_only'), 'non-admin refused'); console.log('ok admin-only gate'); }
+// (this env has no service account, so the beta list can't be read: refused as 503 gate_unreadable since 24 Nov, never let in;
+// the real "not admin, not beta" answer = 403 copy_admin_only is checked with a readable list below)
+{ const r = await go({ op: 'get' }, 'outsider'); assert.equal(r.status, 503); assert.equal(r.j.code, 'gate_unreadable'); console.log('ok admin-only gate (unreadable list = refused)'); }
 
 // ADMIN OR BETA TESTER gate (Owner 23 Nov). Beta = verified email on settings/betaTesters, read with the same helper as /api/beta
 // (functions/api/beta/_lib.js isBetaToken). Mocked service account + Firestore; nothing leaves this process.
@@ -201,5 +203,6 @@ console.log('copy-trade tests: all passed');
   r = await goE('memberD', 'someone@example.com'); assert.equal(r.status, 403); assert.equal(r.j.code, 'copy_admin_only', 'normal member blocked'); console.log('ok gate: normal member blocked');
   r = await goE('memberE', 'unverified@example.com'); assert.equal(r.status, 403, 'listed but unverified email blocked'); console.log('ok gate: unverified email blocked');
   r = await goE('memberF'); assert.equal(r.status, 403, 'no email blocked');
-  listDown = true; r = await goE('memberG', 'tester@example.com'); assert.equal(r.status, 403, 'list unreadable = blocked (fail closed)'); console.log('ok gate: fail closed');
+  // list unreadable = still refused (fail closed), but said as "couldn't confirm" (owner bug 24 Nov), not "not available"
+  listDown = true; r = await goE('memberG', 'tester@example.com'); assert.equal(r.status, 503, 'list unreadable = blocked (fail closed)'); assert.equal(r.j.code, 'gate_unreadable'); assert.match(r.j.error, /Couldn’t confirm your trading access/); console.log('ok gate: fail closed, gate_unreadable');
 }

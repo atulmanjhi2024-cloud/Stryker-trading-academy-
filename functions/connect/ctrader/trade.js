@@ -7,10 +7,10 @@
 // the account lock and the audit row before anything is sent). Secrets: CTRADER_CLIENT_ID / CTRADER_CLIENT_SECRET (added here, never
 // sent to the browser), FIREBASE_SA_KEY (audit, lock, switches). Logs nothing but fixed words.
 import { verifyIdToken, wsTokenOf } from '../../api/chart/_rt.js';
-import { betaFor } from '../../api/beta/_lib.js';
+import { accessFor } from '../../api/beta/_lib.js';
 import { normEmail } from '../../../assets/beta-config.mjs';
 import { createRelay, LIMITS } from './_relay.js';
-import { tradeHooks, TLIMITS } from './_trade.js';
+import { tradeHooks, TLIMITS, gateCache, WRITE_COST } from './_trade.js';
 import { openAudit, liveSwitchOn, DOCS, fields, fsCall } from '../finatic/_audit.js';
 import { hasConsent, memberBlocked, store } from '../finatic/_owner.js';
 
@@ -51,14 +51,26 @@ async function patchAudit(env, deps, id, res) {
 }
 
 // Who may trade (Owner 23 Nov): an admin (admins/{uid}) OR a beta tester (VERIFIED sign-in email on settings/betaTesters), the
-// same decision as /api/beta/status (functions/api/beta/_lib.js betaFor). Uses the signature-checked token's own claims; fails CLOSED.
+// same decision as /api/beta/status (functions/api/beta/_lib.js betaFor). Uses the signature-checked token's own claims (email +
+// email_verified only: the token's expiry plays no part here, the service account reads Firestore). STRICT (accessFor): true / false only
+// from real Firestore answers; a failed read THROWS, so the caller says "couldn't confirm" and never "not an admin" (owner bug 24 Nov).
 const claimsOf = (tok) => { try { return JSON.parse(atob(tok.split('.')[1].replace(/-/g, '+').replace(/_/g, '/'))); } catch (e) { return {}; } };
 export async function mayTrade(env, tok, uid, deps = {}) {
   const p = claimsOf(tok);
-  const b = await betaFor(env, { uid, email: normEmail(p.email), verified: p.email_verified === true }, { fetchImpl: deps.betaFetch });
+  const b = await accessFor(env, { uid, email: normEmail(p.email), verified: p.email_verified === true }, { fetchImpl: deps.betaFetch });
   return !!(b.admin || b.beta);
 }
 
+// Subrequest budget per socket (owner bug 24 Nov). A WebSocket is ONE Cloudflare request for its whole life, and every fetch it makes
+// (Firestore, Google token, cTrader connect, KV) counts against that request's subrequest cap (Workers Free 50, Paid 10,000 by
+// default). Past the cap every fetch throws. We count our own fetches and renew the socket (close 4001) well before the cap; the
+// browser reopens it = a fresh request with a fresh budget. CTRADER_SUBREQ_BUDGET (Pages env) raises it on a paid plan; default 40.
+export const SUBREQ_BUDGET = 40, CONNECT_COST = 4;   // connect: rate-limit KV get + put, the cTrader upstream, the Google certs
+export function counter(base, max) {
+  let used = CONNECT_COST, cap = false;
+  const f = (url, init) => { used++; return Promise.resolve().then(() => base(url, init)).catch((e) => { if (/too many subrequests/i.test(String(e && e.message))) cap = true; throw e; }); };
+  return { f, left: () => max - used, capHit: () => cap || used >= max, used: () => used };
+}
 // deps (tests): connect(envName), verify(token) / verifyFetch, pair(), isAdmin(), liveSwitch(), store, lock, audit, patchAudit, defer
 export async function handle(request, env, deps = {}, ctx = null) {
   const configured = !!(env.CTRADER_CLIENT_ID && env.CTRADER_CLIENT_SECRET);
@@ -73,9 +85,13 @@ export async function handle(request, env, deps = {}, ctx = null) {
   const tok = wsTokenOf(request);
   const uid = deps.verify ? await deps.verify(tok) : await verifyIdToken(tok, { fetchImpl: deps.verifyFetch });
   if (!uid) return err(401, 'Sign in first');
-  // isAdmin = "admin or beta tester" (name kept: _trade.js re-asks it before every write)
+  // every Firestore / Google read of this socket goes through one counting fetch (betaFetch + auditFetch = the same counter)
+  const budget = counter(deps.auditFetch || deps.betaFetch || ((u, i) => fetch(u, i)), Math.min(9000, Math.max(WRITE_COST + 8, Number(env.CTRADER_SUBREQ_BUDGET) || SUBREQ_BUDGET)));
+  deps = { ...deps, betaFetch: budget.f, auditFetch: budget.f };
+  // isAdmin = "admin or beta tester" (name kept: _trade.js re-asks it before every write, through the per-socket cache)
   const isAdmin = () => (deps.isAdmin ? deps.isAdmin() : mayTrade(env, tok, uid, deps));
-  if (!(await isAdmin().catch(() => false))) return err(403, 'Live cTrader trading is for admins and beta testers only right now.', 'not_admin');
+  let first; try { first = await isAdmin(); } catch (e) { return err(503, 'Couldn’t confirm your trading access just now. Nothing was sent. Try again.', 'gate_unreadable'); }
+  if (!first) return err(403, 'Live cTrader trading is for admins and beta testers only right now.', 'not_admin');
   if ((open.get(uid) || 0) >= TLIMITS.perUid) return err(429, 'cTrader trading is already open in another tab. Use that tab, or close it first.', 'other_tab');
   let expMs = Date.now() + LIMITS.session;
   try { expMs = Math.min(expMs, JSON.parse(atob(tok.split('.')[1].replace(/-/g, '+').replace(/_/g, '/'))).exp * 1000); } catch (e) { /* default */ }
@@ -87,11 +103,19 @@ export async function handle(request, env, deps = {}, ctx = null) {
   } catch (e) { return err(502, 'cTrader did not answer'); }
 
   const defer = deps.defer || ((p) => { if (ctx && ctx.waitUntil) ctx.waitUntil(p); else p.catch(() => {}); });
+  // gate answers cached per socket (admin/beta 5 min, switch / consent / block 30 s; a "no" or an error is never kept)
+  // the switch reader flags liveSwitchOn's last-good fallback (Firestore failed twice) so that value is used once, never kept
+  const switchRead = () => { let stale = false; return liveSwitchOn(env, { ...deps, onStale: () => { stale = true; } }).then((v) => (stale ? { v, keep: false } : v)); };
+  const cache = gateCache({ isAdmin, switchOn: switchRead, consent: () => hasConsent(env, deps, uid), blocked: () => memberBlocked(env, deps, uid) });
+  cache.seed('isAdmin', true);
   const g = {
-    isAdmin,
-    switchOn: () => liveSwitchOn(env, deps),
-    consent: () => hasConsent(env, deps, uid),
-    blocked: () => memberBlocked(env, deps, uid),
+    isAdmin: () => cache.get('isAdmin'),
+    switchOn: () => cache.get('switchOn'),
+    consent: () => cache.get('consent'),
+    blocked: () => cache.get('blocked'),
+    warm: () => { defer(cache.warm()); },
+    budget,
+    ended: () => done(),   // a relay-side close (renew, not allowed) frees this uid's socket slot at once, so the reopen isn't 'other_tab'
     audit: (entry, id) => openAudit(env, deps, entry, id),
     patchAudit: (id, res) => patchAudit(env, deps, id, res),
     lock: accountLock(env, deps, uid, account),
@@ -105,23 +129,26 @@ export async function handle(request, env, deps = {}, ctx = null) {
   let timer = null;
   const relay = createRelay({ client: server, up: upstream, clientId: env.CTRADER_CLIENT_ID, clientSecret: env.CTRADER_CLIENT_SECRET, hooks });
   hooks.bind(relay);
-  const done = () => { clearInterval(timer); if (!done.d) { done.d = true; const n = (open.get(uid) || 1) - 1; if (n <= 0) open.delete(uid); else open.set(uid, n); } };
+  function done() { clearInterval(timer); if (!done.d) { done.d = true; const n = (open.get(uid) || 1) - 1; if (n <= 0) open.delete(uid); else open.set(uid, n); } }
   server.addEventListener('message', (e) => { relay.onClient(e.data); if (relay.closed) done(); });
   upstream.addEventListener('message', (e) => { relay.onUp(typeof e.data === 'string' ? e.data : ''); if (relay.closed) done(); });
   server.addEventListener('close', () => { relay.onClientClose(); done(); });
   server.addEventListener('error', () => { relay.onClientClose(); done(); });
   upstream.addEventListener('close', () => { relay.onUpClose(); done(); });
   upstream.addEventListener('error', () => { relay.onUpClose(); done(); });
-  // every minute: still an admin / beta tester? (a removed admin's socket closes); the token's own expiry ends the socket too
+  // every minute: still an admin / beta tester? A REAL read while the budget has room (a removed admin's socket closes within a
+  // minute, as before), else the cached yes (at most 5 min old).
+  // A failed read does NOT close the socket (the next write re-checks and fails closed with gate_unreadable). The token's own
+  // expiry ends the socket too.
   let lastAdmin = Date.now();
   timer = setInterval(() => {
     relay.tick();
     if (Date.now() > expMs) { try { server.close(1001, 'session'); } catch (e) { /* closed */ } relay.onClientClose(); }
-    if (Date.now() - lastAdmin > 60000) { lastAdmin = Date.now(); isAdmin().then((a) => { if (!a) relay.end(1008, 'not allowed'); }, () => relay.end(1008, 'not allowed')); }
+    if (Date.now() - lastAdmin > 60000) { lastAdmin = Date.now(); (budget.left() >= 2 * WRITE_COST ? cache.refresh('isAdmin') : cache.get('isAdmin')).then((a) => { if (!a) relay.end(1008, 'not allowed'); }, () => {}); }
     if (relay.closed) done();
   }, deps.tickMs || 5000);
   relay.start();
   const res = { status: 101, webSocket: client, headers: { 'sec-websocket-protocol': 'tz-auth' } };
-  return deps.pair ? Object.assign(res, { relay, hooks }) : new Response(null, res);   // tests: Node's Response can't carry a 101
+  return deps.pair ? Object.assign(res, { relay, hooks, budget, cache }) : new Response(null, res);   // tests: Node's Response can't carry a 101
 }
 export const onRequest = (ctx) => handle(ctx.request, ctx.env, {}, ctx);

@@ -107,7 +107,7 @@ await t('market order: gates, lock and audit BEFORE the send; label + clientOrde
   assert.ok(m.hooks._state().positions.has(9001), 'the new position is learned');
 });
 await t('every gate refuses (fails closed) and nothing is sent', async () => {
-  const cases = [['isAdmin', async () => false, 'not_admin'], ['isAdmin', async () => { throw new Error('x'); }, 'not_admin'], ['switchOn', async () => false, 'switched_off'], ['switchOn', async () => { throw new Error('x'); }, 'switch_unreadable'],
+  const cases = [['isAdmin', async () => false, 'not_admin'], ['isAdmin', async () => { throw new Error('x'); }, 'gate_unreadable'], ['switchOn', async () => false, 'switched_off'], ['switchOn', async () => { throw new Error('x'); }, 'switch_unreadable'],
     ['consent', async () => false, 'consent_needed'], ['consent', async () => { throw new Error('x'); }, 'consent_unreadable'], ['blocked', async () => true, 'member_blocked'], ['blocked', async () => { throw new Error('x'); }, 'switch_unreadable']];
   for (const [k, fn, code] of cases) {
     const m = mk({ over: { [k]: fn } }); m.login(); m.r.onClient(order()); await flush();
@@ -261,7 +261,7 @@ await t('who may trade: admin or beta tester (verified email on settings/betaTes
   await assert.rejects(mayTrade(env, tokOf({ email: 'tester@example.com', email_verified: true }), 'u1', { betaFetch: mk(list, true) }), 'Firestore down = throws (caller refuses)');
   const sock = () => ({ accept() {}, send() {}, close() {}, addEventListener() {} });
   const r = await tradeHandle(WS_REQ('https://tradezoro.com/connect/ctrader/trade?account=77&env=demo'), ENV, { verify: async () => 'u9', isAdmin: async () => { throw new Error('down'); }, connect: async () => sock(), pair: () => [sock(), sock()] });
-  assert.equal(r.status, 403, 'an unreadable check refuses the socket'); assert.match((await r.json()).error, /admins and beta testers/);
+  assert.equal(r.status, 503, 'an unreadable check refuses the socket'); const rj = await r.json(); assert.equal(rj.code, 'gate_unreadable'); assert.doesNotMatch(rj.error, /admins and beta testers/);
 });
 
 console.log(n + ' cTrader trading tests passed');

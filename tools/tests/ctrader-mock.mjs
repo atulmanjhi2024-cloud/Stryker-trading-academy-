@@ -18,7 +18,7 @@ export function makeWS(M, { now = () => Date.now() } = {}) {
     constructor(url) {
       this.readyState = 0; this.url = url; const self = this;
       const g = {
-        isAdmin: async () => M.gate.admin !== false, switchOn: async () => M.gate.switchOn !== false, consent: async () => M.gate.consent !== false, blocked: async () => !!M.gate.blocked,
+        isAdmin: async () => { M.gate.adminReads = (M.gate.adminReads || 0) + 1; if (M.gate.adminFail > 0) { M.gate.adminFail--; throw new Error('Firestore error (503)'); } return M.gate.admin !== false; }, switchOn: async () => M.gate.switchOn !== false, consent: async () => M.gate.consent !== false, blocked: async () => !!M.gate.blocked,
         audit: async (entry, id) => { if (M.audits[id]) { const e = new Error('duplicate'); e.duplicate = true; throw e; } M.audits[id] = { ...entry, result: 'attempt' }; return { id, finish: async (r) => Object.assign(M.audits[id], r) }; },
         patchAudit: async (id, r) => Object.assign(M.audits[id] || {}, r),
         lock: { take: async (k) => { if (M.lock) return { ...M.lock }; M.lock = { key: k, at: now() }; return true; }, peek: async () => M.lock, release: async (k) => { if (M.lock && M.lock.key === k) M.lock = null; } },
@@ -31,7 +31,7 @@ export function makeWS(M, { now = () => Date.now() } = {}) {
       this.hooks.bind(this.relay);
       this.timer = setInterval(() => this.relay.tick(), 200);
       later(() => { this.readyState = 1; this.relay.start(); });
-      M.socket = this;
+      M.socket = this; M.sockets = (M.sockets || 0) + 1;
     }
     send(x) { if (this.readyState !== 1) throw new Error('closed'); this.relay.onClient(x); }
     close() { this.relay.onClientClose(); }

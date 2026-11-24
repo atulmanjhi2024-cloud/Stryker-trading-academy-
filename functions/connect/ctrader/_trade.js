@@ -52,6 +52,8 @@ export const MSG = {
   key: 'This order has no valid key, nothing sent.',
   duplicate: 'This order was already sent once. It was not sent again.',
   not_admin: 'Live cTrader trading is for admins and beta testers only right now.',
+  gate_unreadable: 'Couldn’t confirm your trading access just now. Nothing was sent. Try again.',
+  renew: 'The trading link was refreshing. Nothing was sent. Try again.',
   switched_off: 'Live trading is switched off.',
   switch_unreadable: 'The live trading switch could not be read, order not sent.',
   consent_needed: 'Enable live trading first: read and accept the notice in the Trade menu.',
@@ -99,12 +101,49 @@ export function volumeErr(v, sym, capLots) {
   return '';
 }
 
+// ---- per-socket gate cache (owner bug 24 Nov) ------------------------------------------------------------------------------
+// Every write used to re-read admin/beta + switch + consent + block from Firestore, on the order's path, on ONE long-lived socket
+// request. On Cloudflare every fetch counts against that request's subrequest cap, so after a few orders the reads failed and the
+// failure was shown as "admins and beta testers only". Now: a GOOD answer (admin/beta yes, switch on, consent yes, not blocked) is
+// kept per socket for GATE_TTL[name]; a NO is never kept (re-read on the next write); an ERROR is never kept (thrown = fail closed).
+// warm(names) refreshes entries in the background (after a write, at app auth) so the next order finds them fresh.
+export const GATE_TTL = { isAdmin: 5 * 60000, switchOn: 30000, consent: 30000, blocked: 30000 };
+const GOOD = { isAdmin: (v) => v === true, switchOn: (v) => v === true, consent: (v) => v === true, blocked: (v) => v === false };
+export function gateCache(read, { now = () => Date.now(), ttl = GATE_TTL } = {}) {
+  const e = new Map(), pend = new Map();
+  const load = (k) => {
+    if (pend.has(k)) return pend.get(k);
+    // a reader may answer { v, keep: false } (a fallback value, e.g. the switch's last-good read): used for this write, never kept
+    const p = Promise.resolve().then(() => read[k]()).then((r) => { const keep = !(r && typeof r === 'object' && r.keep === false); const v = !!(r && typeof r === 'object' ? r.v : r); if (keep && GOOD[k](v)) e.set(k, { v, at: now() }); else e.delete(k); return v; })
+      .finally(() => pend.delete(k));
+    pend.set(k, p); return p;
+  };
+  const fresh = (k, f = 1) => { const x = e.get(k); return !!x && now() - x.at < ttl[k] * f; };
+  return {
+    get(k) { return fresh(k) ? Promise.resolve(e.get(k).v) : load(k); },
+    refresh: (k) => load(k),   // always a real read (the minute admin re-check)
+    seed(k, v) { if (GOOD[k](v)) e.set(k, { v, at: now() }); },
+    // background: entries past `frac` of their life are re-read; errors are swallowed (the entry just ages out)
+    warm(keys = Object.keys(ttl), frac = 0.6) { return Promise.all(keys.filter((k) => !fresh(k, frac) && !pend.has(k)).map((k) => load(k).catch(() => null))); },
+    age: (k) => (e.has(k) ? now() - e.get(k).at : Infinity)
+  };
+}
+// Subrequest budget per socket: count = every fetch this socket's request made. WRITE_COST = the most one write can spend (all gates
+// stale + one retry each, lock, audit, finish, release). Below that, a write is refused ('renew', nothing sent) and the socket ends
+// cleanly (close 4001) so the browser opens a fresh request = a fresh budget. Nothing is ever resent by the server or the browser.
+export const WRITE_COST = 16;
+export const RENEW_CODE = 4001;
+
 // Per-socket trading state + the hooks for createRelay. g = gates: { isAdmin(), switchOn(), consent(), blocked(), audit(entry, id) ->
 // { finish(res) } (throws e.duplicate), patchAudit(id, res), lock: { take(key) -> true | { key, at } (held), peek() -> { key, at } | null,
 // release(key) }, defer(promise) }. account = the ONE ctid account pinned at connect; envName 'live' | 'demo'.
 export const RESOLVE_AFTER_MS = 30000;   // an order id still absent from cTrader's order list this long after the send = it never arrived
 export function tradeHooks({ uid, account, envName, g, now = () => Date.now(), capLots = TLIMITS.capLots }) {
-  let relay = null, inflight = null, releasing = Promise.resolve(), held = null, asked = 0, askId = '', scope = null, n = 0;
+  let relay = null, inflight = null, releasing = Promise.resolve(), held = null, asked = 0, askId = '', scope = null, n = 0, lastWrite = 0, settling = false;
+  const B = g.budget || null;   // { left() -> subrequests still free, capHit() -> a fetch hit the platform cap }
+  // the renew close waits until nothing is in flight, unresolved or releasing its lock (tick() closes it then)
+  let renewDue = false;
+  const renew = () => { renewDue = true; if (relay && !relay.closed && !inflight && !held && !settling) relay.end(RENEW_CODE, 'renew'); };
   const syms = new Map(), names = new Map(), orders = new Map(), positions = new Map();
   let ws = [];   // write times (rate)
   const refuse = (key, code, extra) => relay && relay.toClient({ relay: 'refused', clientMsgId: key || '', code, error: (extra && extra.error) || MSG[code] || 'Not sent.' });
@@ -112,7 +151,7 @@ export function tradeHooks({ uid, account, envName, g, now = () => Date.now(), c
     const f = inflight; inflight = null; if (!f) return f;
     g.defer(f.audit.finish(res).catch(() => {}));
     // the next write on this socket waits for this release (else it would find its own finished lock and call it unresolved)
-    if (res.result === 'unknown') held = { key: f.key, at: f.at }; else { releasing = Promise.resolve().then(() => g.lock.release(f.key)).catch(() => {}); g.defer(releasing); }
+    if (res.result === 'unknown') held = { key: f.key, at: f.at }; else { settling = true; releasing = Promise.resolve().then(() => g.lock.release(f.key)).catch(() => {}).finally(() => { settling = false; }); g.defer(releasing); }
     return f;
   };
   // ask cTrader for the account's orders around a held lock's send time (at most every 5 s); observe() settles it
@@ -190,13 +229,22 @@ export function tradeHooks({ uid, account, envName, g, now = () => Date.now(), c
         side: c.type === 2106 ? (p.tradeSide === 1 ? 'buy' : 'sell') : '', qty: Number(p.volume) || 0, type: c.type === 2106 ? TYPE[p.orderType] : OP[c.type],
         orderRef: String(p.orderId || p.positionId || '') };
       if (held) { ask(); refuse(key, 'unresolved'); return 'drop'; }
+      // not enough subrequests left on this socket for one whole write: nothing sent, the socket renews (the browser reopens it)
+      if (B && (B.capHit() || B.left() < WRITE_COST)) { refuse(key, 'renew'); renew(); return 'drop'; }
+      lastWrite = t;
       inflight = { key, at: t, type: c.type, audit: null, sent: false };
       const mine = inflight;
       return (async () => {
         const v = await Promise.all([g.isAdmin(), g.switchOn(), g.consent(), g.blocked()].map((x) => Promise.resolve(x).then((y) => ({ y }), () => ({ err: true }))));
         const [ad, sw, cs, bl] = v;
-        const no = !ad.y || ad.err ? 'not_admin' : sw.err ? 'switch_unreadable' : !sw.y ? 'switched_off' : bl.err ? 'switch_unreadable' : bl.y ? 'member_blocked' : cs.err ? 'consent_unreadable' : !cs.y ? 'consent_needed' : '';
-        if (no) { if (inflight === mine) inflight = null; refuse(key, no); if (no !== 'not_admin') g.defer(g.audit({ ...entry }, 'ct-' + key + '-r').then((a) => a.finish({ result: 'rejected', message: no })).catch(() => {})); return; }
+        // an ERROR reading admin / beta is "couldn't confirm" (gate_unreadable), never "not an admin"; only a real NO says not_admin
+        const no = ad.err ? 'gate_unreadable' : !ad.y ? 'not_admin' : sw.err ? 'switch_unreadable' : !sw.y ? 'switched_off' : bl.err ? 'switch_unreadable' : bl.y ? 'member_blocked' : cs.err ? 'consent_unreadable' : !cs.y ? 'consent_needed' : '';
+        if (no) {
+          if (inflight === mine) inflight = null; refuse(key, no);
+          if (B && B.capHit()) { renew(); return; }   // the platform cap was hit: this socket can't read anything any more
+          if (no !== 'not_admin') g.defer(g.audit({ ...entry }, 'ct-' + key + '-r').then((a) => a.finish({ result: 'rejected', message: no })).catch(() => {}));
+          return;
+        }
         await releasing;
         let lk;
         try { lk = await g.lock.take(key); } catch (e) { lk = null; }
@@ -232,10 +280,14 @@ export function tradeHooks({ uid, account, envName, g, now = () => Date.now(), c
       }
     },
     tick(t) {
+      // a socket that ran low on subrequests renews while nothing is in flight or unresolved (the browser reopens it quietly)
+      if (!inflight && !held && !settling && (renewDue || (B && (B.capHit() || B.left() < WRITE_COST)))) { renew(); return; }
+      // keep the gates fresh during active trading, off the order path; only while the budget has room for it (never at the cost of a write)
+      if (g.warm && !inflight && t - lastWrite < 60000 && (!B || B.left() >= 2 * WRITE_COST)) g.warm();
       if (inflight && inflight.sent && t - inflight.at > TLIMITS.answerMs) { const f = finish({ result: 'unknown', message: 'no answer in ' + TLIMITS.answerMs / 1000 + ' s' }); relay.toClient({ relay: 'unknown', clientMsgId: f.key }); }
       if (held && t - held.at > 5000) ask();
     },
-    closed() { if (inflight && inflight.sent) finish({ result: 'unknown', message: 'socket closed before the answer' }); else inflight = null; },
+    closed() { if (inflight && inflight.sent) finish({ result: 'unknown', message: 'socket closed before the answer' }); else inflight = null; if (g.ended) g.ended(); },
     _state: () => ({ syms, orders, positions, inflight, held })
   };
   return hooks;

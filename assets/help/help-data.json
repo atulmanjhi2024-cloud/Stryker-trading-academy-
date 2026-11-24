@@ -3194,6 +3194,11 @@
        ]
       },
       {
+       "id": "paper-symbols",
+       "q": "Which symbols can I paper trade, and how are sizes and fees counted?",
+       "a": "<p>Every symbol with live prices on the chart: futures, crypto (spot and perpetuals, any quote currency), forex, metals, stocks, ETFs and indices.</p><ul><li><strong>Futures</strong>: contracts, with each contract's point value. Commission from the Account tab applies.</li><li><strong>Crypto</strong>: coin units. Commission applies.</li><li><strong>Forex</strong>: lots of 100,000 of the base currency, from 0.01 lot. P&amp;L also shows pips. No commission (the spread is in the price).</li><li><strong>Metals</strong>: lots (gold 100 oz, silver 5,000 oz). No commission.</li><li><strong>Stocks and ETFs</strong>: shares. No commission.</li><li><strong>Indices</strong>: contracts of 1 per index point. No commission.</li></ul><p>The account is in US dollars. When a symbol is priced in another currency (CHF, JPY, INR, BTC ...), P&amp;L is converted at the live rate from the chart's own prices. If that rate is not available yet, the order waits with a message instead of using a guessed rate. Orders placed while a market is closed fill on the first new price after it opens.</p><p>Education only. Not financial advice.</p>"
+      },
+      {
        "id": "paper-balance",
        "q": "How do I change my starting paper balance?",
        "a": "<p>Open the Account tab of the paper panel and reset with a new balance. The default is $100,000 and it must be between $1,000 and $100,000,000 (\"Pick a starting balance between $1,000 and $100,000,000\").</p>",

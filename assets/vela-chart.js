@@ -665,6 +665,7 @@ function lateLists(provider){
   const IdxProvider = mods[4].IdxProvider;
   const BYO = mods[mods.length - 1];   // withByo(), ByoProvider
   const Stocks = mods[mods.length - 2];   // StocksProvider, installStockSearch, stockStatus
+  try { window.__stkStockStatus = Stocks.stockStatus; } catch (e) {}   // paper trading: is this stock's market open (assets/chart-paper.js isOpen)
   const COMMODITY_ROOTS = mods[4].COMMODITY_ROOTS || [];
   let Flow, Gex, GexHeat;
   // EMPTY LAYER CANVASES OFF (speed, 2026-10-23): Vela gives every registered renderer layer

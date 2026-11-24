@@ -168,18 +168,20 @@ function qtyRules(c) {
   if (c.live) return { min: 1, max: Infinity, step: 1, int: true };   // whole numbers from 1; no TradeZoro cap (the broker applies its own)
   if (!c.sp.ok) return { min: 1, max: 1, step: 1, int: true };
   if (c.sp.kind === 'futures') return { min: 1, max: c.sp.maxQty || 500, step: 1, int: true };
+  if (c.sp.qtyStep >= 0.01) return { min: c.sp.minQty, max: c.sp.maxQty, step: c.sp.qtyStep, int: c.sp.qtyStep === 1 };   // shares / contracts 1, lots 0.01
   return { min: c.sp.minQty || 0.0001, max: c.sp.maxQty || 1e6, step: 0, int: false };
 }
 function cleanQty(c, v) {
   const r = qtyRules(c); let q = num(v); if (!(q > 0)) q = r.min;
   if (r.lots) return L.roundLots(Math.min(q, r.max), r.lots) || r.min;
   if (r.int) q = Math.round(q);
+  else if (r.step) q = Number((Math.round(q / r.step) * r.step).toFixed(6));
   return clamp(q, r.min, r.max);
 }
 function stepQty(c, dir) {
   const r = qtyRules(c), q = cleanQty(c, F.qty);
   if (r.lots) return L.roundLots(clamp(q + dir * r.step + 1e-9, r.min, r.max), r.lots) || r.min;
-  if (r.step) return clamp(q + dir * r.step, r.min, r.max);
+  if (r.step) return clamp(Number((q + dir * r.step).toFixed(6)), r.min, r.max);
   const st = Math.pow(10, Math.floor(Math.log10(Math.max(q, r.min))));
   return clamp(Math.round((q + dir * st) * 1e8) / 1e8, r.min, r.max);
 }
@@ -231,6 +233,7 @@ function blockOf(c) {
   if (!c.a) return 'Paper trading is still loading.';
   if (!c.sp.ok) return c.sp.reason;
   if (!c.last) return 'Waiting for a price for ' + c.label + '…';
+  if (!(c.sp.pointValue > 0)) return c.sp.wait || 'Waiting for the price currency rate.';
   return '';
 }
 function send(c, o, src) {
@@ -758,7 +761,7 @@ export function update() {
       for (const b of rf.querySelectorAll('[data-rmode]')) { const o2 = b.dataset.rmode === F.risk.mode; b.classList.toggle('on', o2); b.setAttribute('aria-checked', String(o2)); b.disabled = !(F.risk.on && k.bracket); }
       rf.querySelector('[data-f="risk.v"]').disabled = !(F.risk.on && k.bracket); setVal('risk.v', F.risk.v);
       setText('runit', F.risk.mode === 'pct' ? '%' : 'USD');
-      const rt = !rs ? '' : rs.error ? rs.error : (rs.over ? 'Min size: ' + rs.qty + ' risks ' + money(rs.risk) + ', more than ' + money(rs.amt) : rs.qty + (c.fut || c.live ? (rs.qty === 1 ? ' lot' : ' lots') : '') + ' · risk ' + money(rs.risk) + (rs.capped ? ' (max size)' : ''));
+      const rt = !rs ? '' : rs.error ? rs.error : (rs.over ? 'Min size: ' + rs.qty + ' risks ' + money(rs.risk) + ', more than ' + money(rs.amt) : rs.qty + (c.fut || c.live ? (rs.qty === 1 ? ' lot' : ' lots') : c.sp.ok && c.sp.unit !== 'unit' ? ' ' + window.PaperEngine.unitWord(c.sp, rs.qty) : '') + ' · risk ' + money(rs.risk) + (rs.capped ? ' (max size)' : ''));
       const re = setText('rsum', rt); if (re) re.classList.toggle('bad', !!(rs && (rs.error || rs.over)));
     }
     if (rs && !rs.error && String(rs.qty) !== F.qty) { F.qty = String(rs.qty); setVal('qty', F.qty); }

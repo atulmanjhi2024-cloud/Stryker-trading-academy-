@@ -72,6 +72,21 @@ export const SYMBOLS = {
   CHFJPY: ['CHFJPY=X', 'Swiss Franc / Japanese Yen',      'FX', 'forex', 0.001,   1],
   GBPCHF: ['GBPCHF=X', 'British Pound / Swiss Franc',     'FX', 'forex', 0.00001, 1],
   AUDNZD: ['AUDNZD=X', 'Australian Dollar / New Zealand Dollar', 'FX', 'forex', 0.00001, 1],
+  // USD rate pairs for paper trading's quote-currency -> USD conversion (assets/paper-engine.js; INR, HKD ... stocks / crosses).
+  USDINR: ['USDINR=X', 'U.S. Dollar / Indian Rupee', 'FX', 'forex', 0.0001, 1],
+  USDHKD: ['USDHKD=X', 'U.S. Dollar / Hong Kong Dollar', 'FX', 'forex', 0.0001, 1],
+  USDSGD: ['USDSGD=X', 'U.S. Dollar / Singapore Dollar', 'FX', 'forex', 1e-05, 1],
+  USDCNY: ['USDCNY=X', 'U.S. Dollar / Chinese Yuan', 'FX', 'forex', 0.0001, 1],
+  USDKRW: ['USDKRW=X', 'U.S. Dollar / South Korean Won', 'FX', 'forex', 0.01, 1],
+  USDSEK: ['USDSEK=X', 'U.S. Dollar / Swedish Krona', 'FX', 'forex', 0.0001, 1],
+  USDNOK: ['USDNOK=X', 'U.S. Dollar / Norwegian Krone', 'FX', 'forex', 0.0001, 1],
+  USDDKK: ['USDDKK=X', 'U.S. Dollar / Danish Krone', 'FX', 'forex', 0.0001, 1],
+  USDMXN: ['USDMXN=X', 'U.S. Dollar / Mexican Peso', 'FX', 'forex', 0.0001, 1],
+  USDZAR: ['USDZAR=X', 'U.S. Dollar / South African Rand', 'FX', 'forex', 0.0001, 1],
+  USDTRY: ['USDTRY=X', 'U.S. Dollar / Turkish Lira', 'FX', 'forex', 0.0001, 1],
+  USDPLN: ['USDPLN=X', 'U.S. Dollar / Polish Zloty', 'FX', 'forex', 0.0001, 1],
+  USDBRL: ['USDBRL=X', 'U.S. Dollar / Brazilian Real', 'FX', 'forex', 0.0001, 1],
+  USDTWD: ['USDTWD=X', 'U.S. Dollar / New Taiwan Dollar', 'FX', 'forex', 0.001, 1],
   // Indices & ETFs (market 'equity', Yahoo cash-session series, not CME: served like forex, no real-time lane here).
   // The live candle for an admin comes from the Tick-stream hub's quote frames in the browser.
   SPX: ['^GSPC', 'S&P 500 Index',             'INDEX',  'equity', 0.01, 1],

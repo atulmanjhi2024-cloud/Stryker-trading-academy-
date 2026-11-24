@@ -157,6 +157,25 @@ export const FX_PAIRS = {
   GBPCHF: ['British Pound / Swiss Franc', 0.00001],
   AUDNZD: ['Australian Dollar / New Zealand Dollar', 0.00001]
 };
+// USD rate pairs (served by the same endpoint; chartable by typing fx:USDINR, not in the search list). Paper trading reads them
+// to convert a quote currency (INR, HKD ...) to USD (assets/chart-paper.js rateOf).
+export const FX_RATE_PAIRS = {
+  USDINR: ['U.S. Dollar / Indian Rupee', 0.0001],
+  USDHKD: ['U.S. Dollar / Hong Kong Dollar', 0.0001],
+  USDSGD: ['U.S. Dollar / Singapore Dollar', 1e-05],
+  USDCNY: ['U.S. Dollar / Chinese Yuan', 0.0001],
+  USDKRW: ['U.S. Dollar / South Korean Won', 0.01],
+  USDSEK: ['U.S. Dollar / Swedish Krona', 0.0001],
+  USDNOK: ['U.S. Dollar / Norwegian Krone', 0.0001],
+  USDDKK: ['U.S. Dollar / Danish Krone', 0.0001],
+  USDMXN: ['U.S. Dollar / Mexican Peso', 0.0001],
+  USDZAR: ['U.S. Dollar / South African Rand', 0.0001],
+  USDTRY: ['U.S. Dollar / Turkish Lira', 0.0001],
+  USDPLN: ['U.S. Dollar / Polish Zloty', 0.0001],
+  USDBRL: ['U.S. Dollar / Brazilian Real', 0.0001],
+  USDTWD: ['U.S. Dollar / New Taiwan Dollar', 0.001],
+};
+const FX_ALL = Object.assign({}, FX_PAIRS, FX_RATE_PAIRS);
 export const FX_MAJORS = ['EURUSD', 'GBPUSD', 'USDJPY', 'AUDUSD', 'USDCAD', 'USDCHF', 'NZDUSD'];
 // Futures roots the symbol search also lists under its "Commodities" tab.
 export const COMMODITY_ROOTS = ['GC', 'MGC', 'SI', 'SIL', 'HG', 'MHG', 'CL', 'MCL', 'NG'];
@@ -727,7 +746,7 @@ export function prefetchBars(sym, tf) {
 // ---- spot forex --------------------------------------------------------------------------
 function pairOf(ticker) {
   const r = String(ticker || '').trim().toUpperCase().replace(/^[A-Z_]+:/, '').replace(/[\/_\s]/g, '');
-  return Object.prototype.hasOwnProperty.call(FX_PAIRS, r) ? r : null;
+  return Object.prototype.hasOwnProperty.call(FX_ALL, r) ? r : null;
 }
 
 // Spot forex from the same endpoint (Yahoo "=X" series, edge-cached, polled, not a live feed).
@@ -761,7 +780,7 @@ export class FxProvider extends FuturesProvider {
   async getSymbolInfo(ticker) {
     const pair = pairOf(ticker);
     if (!pair) return undefined;
-    const [description, tick] = FX_PAIRS[pair];
+    const [description, tick] = FX_ALL[pair];
     const dec = decimalsOf(tick);
     return {
       ticker: pair,

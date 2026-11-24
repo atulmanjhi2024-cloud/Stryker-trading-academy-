@@ -226,6 +226,20 @@ function fmtP(sym, p){
   const sp = specOf(sym); const d = sp.ok ? Math.min(8, sp.decimals) : 2;
   return p.toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d });
 }
+// +/- step of the size field: one contract / share, 0.01 lot, or a power of ten for coins
+function qtyStepOf(sp, cur){ return sp.qtyStep >= 0.01 ? sp.qtyStep : Math.max(sp.minQty, cur >= 1 ? 1 : 0.01); }
+// forex: a price distance in pips (0.0001; JPY 0.01), shown next to P&L
+function pipsText(sp, dist){ return sp.ok && sp.kind === 'forex' && sp.pip > 0 && Number.isFinite(dist) ? ' · ' + (dist / sp.pip).toFixed(1) + ' pips' : ''; }
+function qtyHint(sp, sym){
+  if (!sp.ok) return '';
+  const usd = sp.pointValue > 0, q = sp.quote && sp.quote !== 'USD' ? ' (' + sp.quote + ' → USD)' : '';
+  if (sp.kind === 'futures') return '1 contract = ' + (usd ? money(sp.pointValue) : '—') + ' per point · tick ' + sp.tick + ' = ' + (usd ? money(sp.tick * sp.pointValue) : '—');
+  if (sp.kind === 'forex') return '1 lot = 100,000 ' + sp.base + ' · 1 pip = ' + (usd ? money(sp.pip * sp.pointValue) : '—') + ' per lot' + q;
+  if (sp.kind === 'metal') return '1 lot = ' + sp.qpv.toLocaleString('en-US') + ' oz · ' + (usd ? money(sp.pointValue) : '—') + ' per 1.00 move per lot';
+  if (sp.kind === 'stock') return 'Shares of ' + showSym(sym) + ' · P&L in USD' + q;
+  if (sp.kind === 'index') return '1 contract = 1 per index point' + (usd ? ' (' + money(sp.pointValue) + ')' : '') + ' · P&L in USD';
+  return 'Units of ' + showSym(sym) + ' · P&L in USD' + q;
+}
 // Paper toasts: our own compact stack in the chart's bottom-left corner (never over the price
 // scale), at most 2 visible, each gone after ~4 s (errors 6 s). Click to dismiss.
 const TOAST_MAX = 2, TOAST_MS = 4000;
@@ -259,17 +273,74 @@ function barsOf(cell){
   try { const b = inner(cell).scene.bars; if (b && b.length) return b; } catch (e) {}
   return null;
 }
+// Chart's symbol hint for the paper spec: { tick (chart min tick), currency (quote), type, pv (point value) }. The provider's
+// symbol info is fetched once per symbol (cached); until it lands the spec uses the tick alone (and its own currency rules).
+const symInfo = new Map();
+function infoOf(sym){
+  const k = String(sym || ''); if (symInfo.has(k)) return symInfo.get(k);
+  symInfo.set(k, null);
+  const m = /^([a-z_]+):(.+)$/i.exec(k); if (!m || !WS) return null;
+  let pv = null; try { pv = WS.feed.providerInstance(m[1].toLowerCase()); } catch (e) {}
+  if (pv && pv.getSymbolInfo) Promise.resolve(pv.getSymbolInfo(m[2])).then((i) => { if (i) { symInfo.set(k, i); renderAll(); } }, () => {});
+  return null;
+}
 function tickHint(sym){
-  for (const c of cells()) if (c.symbol === sym) { try { const m = inner(c).scene.priceMintick; if (m > 0) return m; } catch (e) {} }
-  return undefined;
+  let t;
+  for (const c of cells()) if (c.symbol === sym) { try { const m = inner(c).scene.priceMintick; if (m > 0) { t = m; break; } } catch (e) {} }
+  const i = infoOf(sym);
+  if (!i) return t;
+  return { tick: t || i.mintick, currency: i.currency, type: i.type, pv: /futures/i.test(String(i.type || '')) ? i.pointvalue : null };
+}
+// RATES (Owner 24 Nov): USD per 1 unit of a quote currency, from the price feeds the chart already has. Fiat: the fx provider
+// (EURUSD, or 1 / USDCHF ...); crypto quotes (BTC, ETH ...): <coin>USDT on the crypto feed. Re-read every 5 s while in use;
+// null (never a guess, never a hard-coded rate) until a feed has answered once: the account then holds orders with "Waiting for the CHF→USD rate".
+const RATE_MS = 5000;
+const rates = new Map();          // quote -> { v, at, busy }
+const FIAT = /^(EUR|GBP|JPY|CHF|CAD|AUD|NZD|INR|HKD|SGD|CNY|KRW|SEK|NOK|DKK|MXN|ZAR|TRY|PLN|BRL|TWD)$/;
+async function lastClose(prov, tk){
+  let p = null; try { p = WS.feed.providerInstance(prov); } catch (e) {}
+  if (!p || !p.getBars) return null;
+  const b = await p.getBars(tk, '1', { limit: 2 }).catch(() => null);
+  const c = b && b.length ? b[b.length - 1].close : null;
+  return c > 0 ? c : null;
+}
+async function fetchRate(q){
+  if (FIAT.test(q)) {
+    const direct = await lastClose('fx', q + 'USD');            // EURUSD, GBPUSD, AUDUSD, NZDUSD
+    if (direct) return direct;
+    const inv = await lastClose('fx', 'USD' + q);                // USDCHF, USDJPY, USDINR ...
+    return inv ? 1 / inv : null;
+  }
+  return (await lastClose('binance', q + 'USDT')) || (await lastClose('coinbase', q + '-USD'));
+}
+function rateOf(q){
+  q = String(q || '').toUpperCase(); if (!q) return null;
+  const r = rates.get(q) || {}, now = Date.now();
+  if (!r.busy && !(now - (r.at || 0) < RATE_MS) && WS) {
+    r.busy = true; rates.set(q, r);
+    fetchRate(q).then((v) => { r.busy = false; if (v > 0) { const had = r.v > 0; r.v = v; r.at = Date.now(); if (!had) renderAll(); } else r.at = Date.now() - RATE_MS + 1000; }, () => { r.busy = false; });
+  }
+  return r.v > 0 ? r.v : null;      // the newest close the feed gave (on a weekend: the Friday close)
 }
 function isOpen(sym, t){
   if (/^futures:/i.test(sym)) {
     const MH = window.StrykerMarketHours;
     try { return MH && MH.futuresStatus ? MH.futuresStatus(t || Date.now()).open : true; } catch (e) { return true; }
   }
-  return true;                    // crypto trades 24/7
+  const pre = String(sym).split(':')[0].toLowerCase();
+  if (pre === 'fx' || /^byo:[A-Z]{6}$/i.test(sym) && PE.specOf(sym).kind !== 'stock') return fxOpenAt(t || Date.now());   // Sun 17:00 - Fri 17:00 New York
+  if (pre === 'idx') return nyCashOpen(t || Date.now());
+  if (pre === 'stocks') { try { const ss = window.__stkStockStatus; return !ss || ss(sym.slice(7), t || Date.now()).s !== 'closed'; } catch (e) { return true; } }
+  return true;                    // crypto trades 24/7; other feeds: whenever the chart has prices
 }
+let nyFmt = null;
+function nyNow(ms){
+  nyFmt = nyFmt || new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', hourCycle: 'h23', weekday: 'short', hour: 'numeric', minute: 'numeric' });
+  const o = {}; for (const p of nyFmt.formatToParts(new Date(ms))) o[p.type] = p.value;
+  return { wd: ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].indexOf(o.weekday), m: Number(o.hour) * 60 + Number(o.minute) };
+}
+function fxOpenAt(ms){ const n = nyNow(ms); return !(n.wd === 6 || (n.wd === 5 && n.m >= 17 * 60) || (n.wd === 0 && n.m < 17 * 60)); }
+function nyCashOpen(ms){ const n = nyNow(ms); return n.wd >= 1 && n.wd <= 5 && n.m >= 9 * 60 + 30 && n.m < 16 * 60; }
 function dayStart(){ const d = new Date(clockNow()); d.setHours(0, 0, 0, 0); return d.getTime(); }
 function sound(kind){
   if (!acct || !acct.settings.sounds || !TV.get().sound || !paperOn()) return;
@@ -314,7 +385,7 @@ function syncFromLocal(){
   myRev = rev;
   if (!st) return;
   const last = acct.last;
-  acct = new PE.PaperAccount(st, { now: () => Date.now(), isOpen, tickOf: tickHint });
+  acct = new PE.PaperAccount(st, { now: () => Date.now(), isOpen, tickOf: tickHint, rate: rateOf });
   acct.last = last;
 }
 async function pushCloud(){
@@ -342,7 +413,7 @@ async function load(){
   let st = parse(localStorage.getItem(lsKey()));
   if (c && (!st || (Number(c.savedAt) || 0) >= (Number(st.savedAt) || 0))) st = c;
   const prev = replay ? liveAcct : acct;
-  const fresh = new PE.PaperAccount(st, { now: () => Date.now(), isOpen, tickOf: tickHint });
+  const fresh = new PE.PaperAccount(st, { now: () => Date.now(), isOpen, tickOf: tickHint, rate: rateOf });
   fresh.last = prev ? prev.last : {};
   if (replay) liveAcct = fresh; else acct = fresh;
   try { myRev = localStorage.getItem(revKey()) || ''; } catch (e) {}
@@ -360,7 +431,7 @@ window.addEventListener('storage', (e) => {
   const st = parse(e.newValue); if (!st) return;
   try { myRev = localStorage.getItem(revKey()) || myRev; } catch (e2) {}
   const last = acct.last;
-  acct = new PE.PaperAccount(st, { now: () => Date.now(), isOpen, tickOf: tickHint });
+  acct = new PE.PaperAccount(st, { now: () => Date.now(), isOpen, tickOf: tickHint, rate: rateOf });
   acct.last = last;
   renderAll();
   if (paperOn() !== applyEnabled.last) applyEnabled();   // switched in another Charts tab
@@ -430,7 +501,7 @@ export function setReplay(on){
     replay = { now: on.now, key: replayKey() };
     liveAcct = acct;
     let st = null; try { st = parse(localStorage.getItem(replay.key)); } catch (e) {}
-    acct = new PE.PaperAccount(st, { now: () => replay.now(), isOpen, tickOf: tickHint, source: 'replay' });
+    acct = new PE.PaperAccount(st, { now: () => replay.now(), isOpen, tickOf: tickHint, rate: rateOf, source: 'replay' });
     if (!st) { acct.state = PE.freshState(PE.DEFAULT_BALANCE, liveAcct ? Object.assign({}, liveAcct.state.settings, { qty: {} }) : null, replay.now()); save(); }
     leader = false; leaderTick(); tracks.clear();
   } else if (!on && replay) {
@@ -646,7 +717,8 @@ function act(fn, okMsg){
 }
 export function placeOrder(o){
   const r = act(() => acct.placeOrder(o));
-  if (r && r.order) toast(document.documentElement.classList.contains('stkbp-sheet') ? (o.side === 'buy' ? 'Buy ' : 'Sell ') + o.type + ' ' + r.order.qty + ' @ ' + fmtP(o.symbol, r.order.price) + ' placed' : 'Paper ' + o.side + ' ' + o.type + ' ' + r.order.qty + ' ' + showSym(o.symbol) + ' @ ' + fmtP(o.symbol, r.order.price) + ' working', 'success');
+  if (r && r.order && r.order.queued) toast('Paper ' + o.side + ' ' + r.order.qty + ' ' + showSym(o.symbol) + ' at market: market closed, it fills on the first new price.', 'info');
+  else if (r && r.order) toast(document.documentElement.classList.contains('stkbp-sheet') ? (o.side === 'buy' ? 'Buy ' : 'Sell ') + o.type + ' ' + r.order.qty + ' @ ' + fmtP(o.symbol, r.order.price) + ' placed' : 'Paper ' + o.side + ' ' + o.type + ' ' + r.order.qty + ' ' + showSym(o.symbol) + ' @ ' + fmtP(o.symbol, r.order.price) + ' working', 'success');
   return r;
 }
 function closePos(sym){ return act(() => acct.closePosition(sym)); }
@@ -703,7 +775,7 @@ function ownLines(sym){
   if (p) {
     const two = p.tp1 != null && p.tp1Qty > 0;
     out.push({ id: 'pos', kind: 'pos', price: p.avg, side: p.side });
-    if (TV.get().be) { const dir = p.side === 'buy' ? 1 : -1, c = (p.fees + acct.state.settings.commission * p.qty) / (p.qty * acct.spec(sym).pointValue); out.push({ id: 'be', kind: 'be', price: PE.roundTick(p.avg + dir * c, acct.spec(sym).tick / 100), side: p.side }); }
+    if (TV.get().be) { const dir = p.side === 'buy' ? 1 : -1, bsp = acct.spec(sym), c = bsp.pointValue > 0 ? (p.fees + (bsp.fees ? acct.state.settings.commission : 0) * p.qty) / (p.qty * bsp.pointValue) : 0; out.push({ id: 'be', kind: 'be', price: PE.roundTick(p.avg + dir * c, acct.spec(sym).tick / 100), side: p.side }); }
     if (two) out.push({ id: 'ptp1', kind: 'tp', price: p.tp1, side: p.side, ref: p.avg, qty: p.tp1Qty, tag: 'TP1' });
     if (p.tp != null) out.push({ id: 'ptp', kind: 'tp', price: p.tp, side: p.side, ref: p.avg, qty: two ? Number((p.qty - p.tp1Qty).toFixed(6)) : p.qty, tag: two ? 'TP2' : 'TP' });
     if (p.sl != null) out.push({ id: 'psl', kind: 'sl', price: p.sl, side: p.side, ref: p.avg, qty: p.qty, tag: p.beMoved ? 'SL BE' : 'SL' });
@@ -751,7 +823,7 @@ function chipParts(cellSym, l){
     const last = chartLast(sym), pnl = acct.openPnl(p);
     return { name: pre + (p.side === 'buy' ? 'LONG' : 'SHORT'), size: String(p.qty), price: '@ ' + fmtP(sym, p.avg), pnl: u(pnl, Math.sign(pnl), Math.abs((Number.isFinite(last) ? last : p.avg) - p.avg), p.avg), pa: 'a' };
   }
-  if (l.kind === 'ord') return { name: pre + name + ' ' + (l.type === 'limit' ? 'LMT' : 'STP'), size: String(l.qty), price: fmtP(sym, l.price), pnl: '', pa: 'b' };
+  if (l.kind === 'ord') return { name: pre + name + ' ' + (l.type === 'limit' ? 'LMT' : l.type === 'market' ? 'MKT' : 'STP'), size: String(l.qty), price: fmtP(sym, l.price), pnl: '', pa: 'b' };
   const v = acct.bracketValue(sym, l.side, l.qty, l.ref, l.price);
   const tag = l.tag || ((l.kind === 'tp' || l.kind === 'otp') ? 'TP' : 'SL');
   return { name: pre + tag, size: l.tag === 'TP1' || l.tag === 'TP2' ? String(l.qty) : '', price: fmtP(sym, l.price), pnl: u(v, Math.sign(v), Math.abs(l.price - l.ref), l.ref), pa: 'a' };
@@ -1189,7 +1261,7 @@ export function openTicket(pre){
   if (!ticket) buildTicket();
   const f = ticket.querySelector('form');
   f.qty.value = pre.modify ? pre.modify.qty : (pre.qty || acct.qtyFor(tk.sym));
-  f.qty.step = sp.kind === 'futures' ? '1' : 'any';
+  f.qty.step = sp.qtyStep >= 0.01 ? String(sp.qtyStep) : 'any';
   f.price.step = String(sp.tick);
   const last = acct.last[tk.sym];
   if (pre.modify) f.price.value = pre.modify.price;
@@ -1241,7 +1313,7 @@ function buildTicket(){
   ticket.addEventListener('keydown', (e) => { e.stopPropagation(); if (e.key === 'Escape') closeTicket(); });
   for (const b of ticket.querySelectorAll('[data-side]')) b.onclick = () => { if (tk.modify) return; tk.side = b.dataset.side; renderTicket(true); };
   for (const b of ticket.querySelectorAll('[data-type]')) b.onclick = () => { if (tk.modify) return; tk.type = b.dataset.type; renderTicket(true); };
-  for (const b of ticket.querySelectorAll('[data-q]')) b.onclick = () => { const sp = specOf(tk.sym); const st = sp.kind === 'futures' ? 1 : Math.max(sp.minQty, (parseFloat(f.qty.value) || 0) >= 1 ? 1 : 0.01); f.qty.value = Math.max(sp.minQty, +((parseFloat(f.qty.value) || 0) + st * Number(b.dataset.q)).toFixed(4)); renderTicket(); };
+  for (const b of ticket.querySelectorAll('[data-q]')) b.onclick = () => { const sp = specOf(tk.sym); const st = qtyStepOf(sp, parseFloat(f.qty.value) || 0); f.qty.value = Math.max(sp.minQty, +((parseFloat(f.qty.value) || 0) + st * Number(b.dataset.q)).toFixed(4)); renderTicket(); };
   f.addEventListener('input', () => { tk.tpOn = f.tpon.checked; tk.slOn = f.slon.checked; renderTicket(); });
   f.tpu.addEventListener('change', () => { convertUnit(f, 'tp'); });
   f.slu.addEventListener('change', () => { convertUnit(f, 'sl'); });
@@ -1261,7 +1333,7 @@ function bracketPrice(f, leg){
   if (!Number.isFinite(ref)) return NaN;
   const dir = (tk.side === 'buy' ? 1 : -1) * (leg === 'tp' ? 1 : -1);
   if (u === 'ticks') return PE.roundTick(ref + dir * Math.abs(v) * sp.tick, sp.tick);
-  if (!(qty > 0)) return NaN;
+  if (!(qty > 0) || !(sp.pointValue > 0)) return NaN;
   return PE.roundTick(ref + dir * Math.abs(v) / (qty * sp.pointValue), sp.tick);
 }
 function convertUnit(f, leg){
@@ -1289,7 +1361,7 @@ function renderTicket(retarget){
   if (retarget && tk.type !== 'market' && Number.isFinite(last)) f.price.value = PE.roundTick(last + (tk.type === 'stop' ? 1 : -1) * (tk.side === 'buy' ? 1 : -1) * 10 * sp.tick, sp.tick);
   ticket.querySelector('.stkpt-pricef').hidden = tk.type === 'market';
   const qty = parseFloat(f.qty.value) || 0;
-  ticket.querySelector('.stkpt-qhint').textContent = sp.kind === 'futures' ? ('1 contract = ' + money(sp.pointValue) + ' per point · tick ' + sp.tick + ' = ' + money(sp.tick * sp.pointValue)) : 'Units of ' + showSym(sym) + ' · P&L in USD';
+  ticket.querySelector('.stkpt-qhint').textContent = qtyHint(sp, sym);
   const ref = entryRef(f);
   const tp = bracketPrice(f, 'tp'), sl = bracketPrice(f, 'sl');
   const hint = (leg, p) => {
@@ -1298,7 +1370,7 @@ function renderTicket(retarget){
     f[leg + 'v'].disabled = !on; f[leg + 'u'].disabled = !on;
     if (!on) { el.textContent = ''; return; }
     if (!Number.isFinite(p) || !Number.isFinite(ref)) { el.textContent = 'Enter a value'; return; }
-    el.textContent = '@ ' + fmtP(sym, p) + ' · ' + money(acct.bracketValue(sym, tk.side, qty, ref, p), true);
+    el.textContent = '@ ' + fmtP(sym, p) + pipsText(sp, Math.abs(p - ref)) + ' · ' + money(acct.bracketValue(sym, tk.side, qty, ref, p), true);
   };
   hint('tp', tp); hint('sl', sl);
   const risk = Number.isFinite(sl) && sl != null && Number.isFinite(ref) ? Math.abs(acct.bracketValue(sym, tk.side, qty, ref, sl)) : null;
@@ -1312,7 +1384,7 @@ function renderTicket(retarget){
   ].filter(Boolean).join(' · ');
   const open = isOpen(sym, clockNow());
   const mk = ticket.querySelector('.stkpt-mk');
-  mk.textContent = !Number.isFinite(last) ? 'Waiting for a price for ' + showSym(sym) + '…' : !open ? 'Market closed: market orders are rejected until it reopens; limit and stop orders wait and fill after the open.' : '';
+  mk.textContent = !Number.isFinite(last) ? 'Waiting for a price for ' + showSym(sym) + '…' : !(sp.pointValue > 0) ? sp.wait : !open ? (sp.kind === 'futures' ? 'Market closed: market orders are rejected until it reopens; limit and stop orders wait and fill after the open.' : 'Market closed: orders wait and fill on the first new price after the open.') : (sp.note || '');
   mk.hidden = !mk.textContent;
   { const pl = [], ref = entryRef(f), tp2 = bracketPrice(f, 'tp'), sl2 = bracketPrice(f, 'sl'), q = parseFloat(f.qty.value) || 0;   // order preview lines (Trade display)
     if (!tk.modify && Number.isFinite(ref)) {
@@ -1584,7 +1656,7 @@ function viewPositions(){
 function viewOrders(){
   if (isPhone()) {
     return cards(acct.state.orders.slice().sort((a, b) => b.placedAt - a.placedAt).map((o) => card(null,
-      [h('button', { type: 'button', class: 'stkpt-sym', text: showSym(o.symbol), onclick: () => goSym(o.symbol) }), h('span', { class: o.side === 'buy' ? 'up' : 'down', text: (o.side === 'buy' ? 'Buy ' : 'Sell ') + (o.type === 'limit' ? 'limit' : 'stop') }), h('span', { class: 'q', text: o.qty + ' @ ' + fmtP(o.symbol, o.price) })],
+      [h('button', { type: 'button', class: 'stkpt-sym', text: showSym(o.symbol), onclick: () => goSym(o.symbol) }), h('span', { class: o.side === 'buy' ? 'up' : 'down', text: (o.side === 'buy' ? 'Buy ' : 'Sell ') + (o.type === 'limit' ? 'limit' : o.type === 'market' ? 'market' : 'stop') }), h('span', { class: 'q', text: o.qty + ' @ ' + fmtP(o.symbol, o.price) })],
       h('span', { class: 'pnl', text: isOpen(o.symbol, clockNow()) ? 'Working' : 'Waiting' }),
       [kv2('TP', o.tp != null ? fmtP(o.symbol, o.tp) : '—'), kv2('SL', o.sl != null ? fmtP(o.symbol, o.sl) : '—')],
       [h('button', { type: 'button', class: 'stkpt-b', text: 'Modify', onclick: () => openTicket({ modify: o }) }), h('button', { type: 'button', class: 'stkpt-b', text: 'Cancel', onclick: () => cancelOrder(o.id) })])), 'No working paper orders.');
@@ -1592,7 +1664,7 @@ function viewOrders(){
   const rows = acct.state.orders.slice().sort((a, b) => b.placedAt - a.placedAt).map((o) => h('tr', null, [
     h('td', null, [h('button', { type: 'button', class: 'stkpt-sym', text: showSym(o.symbol), onclick: () => goSym(o.symbol) })]),
     h('td', { class: o.side === 'buy' ? 'up' : 'down', text: o.side === 'buy' ? 'Buy' : 'Sell' }),
-    td(o.type === 'limit' ? 'Limit' : 'Stop'), td(String(o.qty)), td(fmtP(o.symbol, o.price)),
+    td(o.type === 'limit' ? 'Limit' : o.type === 'market' ? 'Market' : 'Stop'), td(String(o.qty)), td(fmtP(o.symbol, o.price)),
     td(o.tp != null ? fmtP(o.symbol, o.tp) : '—'), td(o.sl != null ? fmtP(o.symbol, o.sl) : '—'),
     td(isOpen(o.symbol, clockNow()) ? 'Working' : 'Waiting (market closed)'),
     h('td', { class: 'stkpt-acts' }, [
@@ -1789,7 +1861,7 @@ window.addEventListener('storage', (e) => {
 function hkSym(){ const c = activeCell(); return c ? tradeSym(c.symbol) : ''; }
 function hkQtyStep(sym, dir){
   const sp = specOf(sym); if (!sp.ok) return;
-  const cur = acct.qtyFor(sym), st = sp.kind === 'futures' ? 1 : (cur >= 1 ? 1 : 0.01);
+  const cur = acct.qtyFor(sym), st = qtyStepOf(sp, cur);
   hkQty(sym, Math.max(sp.minQty, +(cur + st * dir).toFixed(4)));
 }
 function hkQty(sym, q){
@@ -1801,7 +1873,7 @@ function hkQty(sym, q){
 function hkPart(sym, frac){
   const p = acct.state.positions[canonSym(sym)];
   if (!p) { toast('No open paper position on this chart.', 'info'); return; }
-  const q = PK.partQty(p.qty, frac, specOf(sym).kind === 'futures');
+  const q = PK.partQty(p.qty, frac, specOf(sym).qtyStep === 1);
   if (!(q > 0)) { toast('The position is too small to close ' + (frac === 0.5 ? 'half' : 'a quarter') + ' of it.', 'info'); return; }
   act(() => acct.closePosition(sym, q), 'Closed ' + q + ' of ' + p.qty + ' ' + showSym(sym));
 }

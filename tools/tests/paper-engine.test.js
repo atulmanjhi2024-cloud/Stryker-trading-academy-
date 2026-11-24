@@ -27,8 +27,8 @@ t('point values per the brief', () => {
   const pv = (s) => PE.specOf('futures:' + s + '1!').pointValue;
   assert.deepStrictEqual(['NQ', 'MNQ', 'ES', 'MES', 'YM', 'MYM', 'GC', 'MGC', 'SI', 'SIL', 'CL', 'MCL', 'RTY', 'M2K'].map(pv), [20, 2, 50, 5, 5, 0.5, 100, 10, 5000, 1000, 1000, 100, 50, 5]);
   assert.strictEqual(PE.specOf('binance:BTCUSDT', 0.01).pointValue, 1);
-  assert.strictEqual(PE.specOf('fx:EURUSD').ok, false);
-  assert.strictEqual(PE.specOf('binance:ETHBTC').ok, false);
+  assert.strictEqual(PE.specOf('fx:EURUSD').kind, 'forex');     // every chartable symbol trades (Owner 24 Nov)
+  assert.strictEqual(PE.specOf('binance:ETHBTC').quote, 'BTC');
 });
 
 
@@ -58,11 +58,12 @@ t('exchange-prefixed futures share one canonical net position', () => {
   assert.strictEqual(a.summary().unrealized, ((21010 - 21005) * 2 * 20));
 });
 
-t('unknown futures root names the root clearly', () => {
+t('futures root outside the table: chart tick + point value, else 1 per point with a note', () => {
   const sp = PE.specOf('CME_MINI:ABC1!');
-  assert.strictEqual(sp.ok, false);
-  assert.match(sp.reason, /futures root ABC/);
-  assert.doesNotMatch(sp.reason, /covers futures and crypto/);
+  assert.strictEqual(sp.ok, true); assert.strictEqual(sp.symbol, 'futures:ABC1!'); assert.strictEqual(sp.pointValue, 1);
+  assert.match(sp.note, /Point value not known for ABC/);
+  const zc = PE.specOf('CBOT:ZC1!', { tick: 0.25, pv: 50, type: 'futures' });
+  assert.strictEqual(zc.tick, 0.25); assert.strictEqual(zc.pointValue, 50); assert.strictEqual(zc.note, undefined);
 });
 
 t('market buy fills at last price, P&L uses NQ $20/point', () => {
@@ -511,6 +512,134 @@ t('mini / micro pairs: NQ<->MNQ, ES<->MES, YM<->MYM, RTY<->M2K, GC<->MGC, CL<->M
   a.placeOrder({ symbol: 'futures:MNQ1!', side: 'buy', type: 'market', qty: 1, tp: 20010 });
   const ev = a.onSegment('futures:MNQ1!', seg(20005, 20011, 20004, 20010));
   assert.strictEqual(ev[0].trade.pnl, 20); assert.strictEqual(ev[0].symbol, 'futures:MNQ1!');
+});
+
+
+// ---------------------------------------------------------------- every chartable symbol (Owner 24 Nov)
+const R = { CHF: 1.25, JPY: 1 / 150, INR: 1 / 84, BTC: 60000 };       // Sample data: USD per 1 quote unit
+const rdeps = (rates) => Object.assign(deps(), { rate: (q) => (rates[q] != null ? rates[q] : null), tickOf: (s) => (/ETHBTC/.test(s) ? 0.00001 : undefined) });
+const racct = (rates) => { open = true; return PE.PaperAccount.fresh(100000, rdeps(rates || R)); };
+const roundTrip = (a, sym, side, qty, inPx, outPx) => {
+  a.setLast(sym, inPx); a.placeOrder({ symbol: sym, side, type: 'market', qty });
+  a.setLast(sym, outPx); return a.closePosition(sym)[0].trade;
+};
+
+t('spec per class: GBPCHF EURJPY XAUUSD AAPL RELIANCE ETHBTC BTCUSDT NQ', () => {
+  const g = PE.specOf('fx:GBPCHF');
+  assert.deepStrictEqual([g.kind, g.quote, g.pointValue, g.unit, g.minQty, g.qtyStep, g.pip, g.tick], ['forex', 'CHF', 100000, 'lot', 0.01, 0.01, 0.0001, 0.00001]);
+  const j = PE.specOf('fx:EURJPY'); assert.deepStrictEqual([j.quote, j.pip, j.tick], ['JPY', 0.01, 0.001]);
+  const x = PE.specOf('byo:XAUUSD'); assert.deepStrictEqual([x.kind, x.pointValue, x.quote, x.unit], ['metal', 100, 'USD', 'lot']);
+  assert.strictEqual(PE.specOf('byo:XAGUSD').pointValue, 5000);
+  const ap = PE.specOf('stocks:NASDAQ:AAPL'); assert.deepStrictEqual([ap.kind, ap.quote, ap.unit, ap.qtyStep, ap.fees], ['stock', 'USD', 'share', 1, false]);
+  const rl = PE.specOf('stocks:NSE:RELIANCE'); assert.deepStrictEqual([rl.kind, rl.quote], ['stock', 'INR']);
+  assert.strictEqual(PE.specOf('stocks:XETR:SAP', { currency: 'EUR' }).quote, 'EUR');         // symbol info wins
+  const eb = PE.specOf('binance:ETHBTC', 0.00001); assert.deepStrictEqual([eb.kind, eb.quote, eb.tick], ['crypto', 'BTC', 0.00001]);
+  const bt = PE.specOf('binance:BTCUSDT'); assert.deepStrictEqual([bt.quote, bt.rate, bt.fees], ['USDT', 1, true]);
+  assert.strictEqual(PE.specOf('binance:BTCUSDT.P').quote, 'USDT');
+  assert.strictEqual(PE.specOf('okx:BTC-USDT-SWAP').quote, 'USDT');
+  assert.strictEqual(PE.specOf('kraken:XBTEUR').quote, 'EUR');
+  assert.strictEqual(PE.specOf('coinbase:ETH-BTC').quote, 'BTC');
+  assert.strictEqual(PE.specOf('hyperliquid:BTC').quote, 'USD');
+  const ix = PE.specOf('idx:SPX'); assert.deepStrictEqual([ix.kind, ix.pointValue, ix.unit], ['index', 1, 'contract']);
+  assert.strictEqual(PE.specOf('idx:SPY').kind, 'stock');
+  const nq = PE.specOf('NQ1!'); assert.deepStrictEqual([nq.kind, nq.pointValue, nq.quote], ['futures', 20, 'USD']);
+});
+
+t('no "not supported" for chartable symbols; no feed -> live-prices message', () => {
+  for (const s of ['fx:GBPCHF', 'stocks:NSE:RELIANCE', 'binance:ETHBTC', 'idx:VIX', 'byo:AAPL', 'vest:BTC-PERP']) assert.strictEqual(PE.specOf(s).ok, true, s);
+  const r = PE.specOf('weird:THING');
+  assert.strictEqual(r.ok, false); assert.strictEqual(r.reason, 'Paper trading needs live prices for THING. Try again when the market is open.');
+  assert.doesNotMatch(r.reason, /not supported/);
+});
+
+t('GBPCHF: P&L in CHF converted to USD (USD per CHF); pips; no commission', () => {
+  const a = racct(); a.setSettings({ commission: 5 });
+  const tr = roundTrip(a, 'fx:GBPCHF', 'buy', 0.5, 1.12000, 1.12500);       // +50 pips x 0.5 lot = 250 CHF
+  assert.strictEqual(tr.gross, 312.5); assert.strictEqual(tr.fees, 0); assert.strictEqual(tr.pnl, 312.5);
+  assert.strictEqual(tr.quote, 'CHF'); assert.strictEqual(tr.rate, 1.25);
+  assert.strictEqual(a.summary().balance, 100312.5);
+  assert.strictEqual(a.spec('fx:GBPCHF').pointValue, 125000);              // per 1.0 price move per lot, in USD
+});
+
+t('EURJPY via USDJPY; XAUUSD 100 oz lots; AAPL shares; RELIANCE INR; ETHBTC via BTCUSD; BTCUSDT; NQ', () => {
+  assert.strictEqual(roundTrip(racct(), 'fx:EURJPY', 'sell', 1, 160.000, 159.500).pnl, 333.33);    // 50 pips x 100,000 = 50,000 JPY / 150
+  assert.strictEqual(roundTrip(racct(), 'byo:XAUUSD', 'buy', 0.1, 2400.00, 2410.00).pnl, 100);     // 10 x 10 oz
+  assert.strictEqual(roundTrip(racct(), 'stocks:NASDAQ:AAPL', 'buy', 10, 230.00, 232.50).pnl, 25);
+  assert.strictEqual(roundTrip(racct(), 'stocks:NSE:RELIANCE', 'buy', 100, 2900, 2942).pnl, 50);   // 4,200 INR / 84
+  assert.strictEqual(roundTrip(racct(), 'binance:ETHBTC', 'buy', 2, 0.05, 0.051).pnl, 120);       // 0.002 BTC x 60,000
+  const a = racct(); a.setSettings({ commission: 1 });
+  assert.strictEqual(roundTrip(a, 'binance:BTCUSDT', 'buy', 0.5, 60000, 60100).pnl, 49);           // fees kept for crypto: 0.5 + 0.5
+  const b = racct(); b.setSettings({ commission: 2 });
+  assert.strictEqual(roundTrip(b, 'futures:NQ1!', 'buy', 1, 21000, 21010).pnl, 196);               // futures unchanged
+});
+
+t('open P&L marks at the live rate; risk sizing uses the USD point value', () => {
+  const rates = Object.assign({}, R), a = racct(rates);
+  a.setLast('fx:GBPCHF', 1.12); a.placeOrder({ symbol: 'fx:GBPCHF', side: 'buy', type: 'market', qty: 1 });
+  a.setLast('fx:GBPCHF', 1.121);                                    // +10 pips x 1 lot = 100 CHF
+  assert.strictEqual(a.summary().unrealized, 125);
+  rates.CHF = 1.1; assert.strictEqual(a.summary().unrealized, 110);
+  const sz = PE.sizeForRisk(a.spec('fx:GBPCHF'), 500, 1.12, 1.118, 100);  // 20 pips: 1 lot risks 200 CHF = $220
+  assert.strictEqual(sz.qty, 2.27); assert.strictEqual(sz.risk, 499.4);
+});
+
+t('conversion rate missing: order held with a "Waiting for the CHF→USD rate" message, nothing fills or marks', () => {
+  const rates = {}, a = racct(rates);
+  a.setLast('fx:GBPCHF', 1.12);
+  assert.throws(() => a.placeOrder({ symbol: 'fx:GBPCHF', side: 'buy', type: 'market', qty: 0.1 }), /Waiting for the CHF\u2192USD rate/);
+  assert.strictEqual(Object.keys(a.state.positions).length, 0);
+  rates.CHF = 1.25;
+  a.placeOrder({ symbol: 'fx:GBPCHF', side: 'buy', type: 'limit', qty: 0.1, price: 1.119 });
+  delete rates.CHF;
+  assert.deepStrictEqual(a.onSegment('fx:GBPCHF', seg(1.12, 1.12, 1.118, 1.119)), []);       // touched, but no rate: held
+  assert.strictEqual(a.state.orders.length, 1);
+  rates.CHF = 1.25;
+  assert.strictEqual(a.onSegment('fx:GBPCHF', seg(1.119, 1.1195, 1.1185, 1.119))[0].type, 'open');
+  assert.strictEqual(PE.sizeForRisk(racct({}).spec('fx:GBPCHF'), 100, 1.12, 1.11, 10).error.indexOf('Waiting for the CHF'), 0);
+});
+
+t('closed forex market: a market order queues and fills at the open of the first new price', () => {
+  const a = racct(); a.setLast('fx:EURJPY', 160);
+  open = false;
+  const r = a.placeOrder({ symbol: 'fx:EURJPY', side: 'buy', type: 'market', qty: 0.1, sl: 159 });
+  assert.ok(r.order && r.order.queued); assert.strictEqual(a.state.orders.length, 1);
+  assert.deepStrictEqual(a.onSegment('fx:EURJPY', seg(160, 160, 160, 160)), []);           // still closed: waits
+  const back = new PE.PaperAccount(JSON.parse(JSON.stringify(a.state)), rdeps(R));          // survives a reload
+  assert.strictEqual(back.state.orders[0].type, 'market'); assert.strictEqual(back.state.orders[0].queued, true);
+  open = true;
+  const ev = a.onSegment('fx:EURJPY', seg(160.2, 160.3, 160.1, 160.25));
+  assert.strictEqual(ev[0].type, 'open'); assert.strictEqual(ev[0].price, 160.2); assert.strictEqual(a.position('fx:EURJPY').sl, 159);
+  open = false;   // futures keep the old rule: rejected while closed
+  const f = racct(); f.setLast('futures:NQ1!', 21000); open = false;
+  assert.throws(() => f.placeOrder({ symbol: 'futures:NQ1!', side: 'buy', type: 'market', qty: 1 }), /Market closed/);
+  open = true;
+});
+
+t('brackets, TP1 and quantities work in lots', () => {
+  const a = racct(); a.setLast('fx:GBPCHF', 1.12);
+  a.placeOrder({ symbol: 'fx:GBPCHF', side: 'buy', type: 'market', qty: 0.3, sl: 1.118, tp: 1.124, tp1: 1.122, tp1Qty: 0.1 });
+  const ev = a.onSegment('fx:GBPCHF', seg(1.12, 1.1225, 1.1199, 1.122));
+  assert.strictEqual(ev[0].type, 'tp1'); assert.strictEqual(a.position('fx:GBPCHF').qty, 0.2);
+  assert.strictEqual(a.onSegment('fx:GBPCHF', seg(1.122, 1.1222, 1.1179, 1.118))[0].type, 'sl');
+  assert.throws(() => a.placeOrder({ symbol: 'fx:GBPCHF', side: 'buy', type: 'market', qty: 0.001 }), /smallest size is 0.01 lots/);
+  assert.strictEqual(a.qtyFor('fx:GBPCHF'), 0.1); assert.strictEqual(a.qtyFor('stocks:NASDAQ:AAPL'), 1);
+});
+
+t('migration: an old v1 state (futures + USDT crypto, no quote fields) loads unchanged and keeps trading', () => {
+  const old = { v: 1, currency: 'USD', startBalance: 50000, balance: 50210, realized: 210, fees: 4, createdAt: 1, resetAt: 1, nextId: 9,
+    settings: { enabled: true, commission: 2, slippage: 0, qty: { 'futures:NQ1!': 2, 'binance:BTCUSDT': 0.05 } },
+    positions: { 'futures:NQ1!': { symbol: 'futures:NQ1!', side: 'buy', qty: 2, avg: 21000, sl: 20900, tp: null, openedAt: 5, fees: 4 },
+      'binance:BTCUSDT': { symbol: 'binance:BTCUSDT', side: 'sell', qty: 0.5, avg: 60000, openedAt: 6, fees: 0 } },
+    orders: [{ id: 7, symbol: 'futures:ES1!', side: 'sell', type: 'limit', qty: 1, price: 6000, placedAt: 7 }],
+    trades: [{ id: 3, symbol: 'futures:NQ1!', side: 'buy', qty: 1, entry: 20000, exit: 20010.5, pnl: 210, pointValue: 20 }], history: [] };
+  const a = new PE.PaperAccount(JSON.parse(JSON.stringify(old)), rdeps({}));     // no rates at all: USD symbols need none
+  assert.strictEqual(a.state.v, PE.VERSION); assert.strictEqual(PE.VERSION, 1);
+  assert.deepStrictEqual(Object.keys(a.state.positions).sort(), ['binance:BTCUSDT', 'futures:NQ1!']);
+  assert.strictEqual(a.state.orders.length, 1); assert.strictEqual(a.state.trades[0].pnl, 210);
+  assert.strictEqual(a.summary().balance, 50210); assert.strictEqual(a.qtyFor('futures:NQ1!'), 2);
+  a.setLast('futures:NQ1!', 21010); a.setLast('binance:BTCUSDT', 59900);
+  assert.strictEqual(a.summary().unrealized, 400 + 50);
+  assert.strictEqual(a.closePosition('futures:NQ1!')[0].trade.pnl, 400 - 4 - 4);
 });
 
 console.log(`\n${n - fail}/${n} passed`);

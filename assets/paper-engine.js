@@ -30,7 +30,17 @@
  * Positions are NET per symbol (like TradingView's paper account): a same-side fill adds and
  * averages the price, an opposite-side fill reduces, closes or flips the position.
  * P&L = (exit - entry) x qty x point value (futures contract point values; crypto per unit).
- * Commission = `commission` dollars per contract (or unit) per side, charged on every fill.
+ * Commission = `commission` dollars per contract (or unit) per side, charged on every fill (futures + crypto only;
+ * forex, metals, indices and stocks have none: the spread is in the price).
+ *
+ * EVERY CHARTABLE SYMBOL (Owner 24 Nov, "paper trading should support everything"): forex (lots of 100,000 base units, pips),
+ * metals (XAU 100 oz / XAG 5,000 oz lots), stocks + ETFs (shares), indices (CFD-style contract, 1 per point), crypto spot +
+ * perps with ANY quote, futures roots outside FUTURES (tick + point value from the chart's symbol info, else 1 per point).
+ * The account stays in USD: a spec's point value is in its QUOTE currency, and PaperAccount.spec() multiplies it by
+ * deps.rate(quote) = USD per 1 quote unit, read from the chart's own feeds (assets/chart-paper.js rateOf, 5 s cache). No rate,
+ * no guess: spec.pointValue = null + spec.wait ("Waiting for the CHF→USD rate"), new orders are refused and nothing fills or
+ * marks until it arrives. A market order on a closed forex / stock / index market waits as a queued order and fills at the
+ * open of the first new price segment. Trades record quote + rate. State stays v1: old accounts load unchanged.
  *
  * REVIEW FIELDS (Trade review + leaderboard, Owner order 2026-10-14): every position also keeps
  *   sl0  the FIRST stop loss it had (the risk the trade was taken with; R = pnl / risk at sl0),
@@ -66,7 +76,8 @@
 
   if (!RE || !RE.Simulator) throw new Error('PaperEngine needs assets/replay-engine.js loaded first');
   const SIM = RE.Simulator.prototype;
-  const roundTick = RE.roundTick;
+  // the replay engine's rounding, minus float noise (1 / 0.00001 is 99999.99999999999: 1.121 came out as 1.1210000000000002)
+  const roundTick = (p, t) => { const r = RE.roundTick(p, t); return t > 0 && Number.isFinite(r) ? Number(r.toFixed(Math.min(14, decimalsOf(t) + 1))) : r; };
   // the replay engine's own fill rules (neither touches simulator state beyond `ambiguous`)
   const fillPriceOf = (o, seg) => SIM._fillPrice.call(null, o, seg);
   const exitOf = (p, seg) => SIM._exitCheck.call({ ambiguous: 'sl' }, p, seg);
@@ -89,7 +100,7 @@
   const PAIRS = { NQ: 'MNQ', ES: 'MES', YM: 'MYM', RTY: 'M2K', GC: 'MGC', CL: 'MCL', SI: 'SIL' };
   for (const k of Object.keys(PAIRS)) PAIRS[PAIRS[k]] = k;
   const MICROS = new Set(['MNQ', 'MES', 'MYM', 'M2K', 'MGC', 'MCL', 'SIL']);
-  const CRYPTO_PROVIDERS = ['binance', 'coinbase', 'hyperliquid', 'bybit', 'okx', 'bitget', 'kraken'];
+  const CRYPTO_PROVIDERS = ['binance', 'coinbase', 'hyperliquid', 'bybit', 'okx', 'bitget', 'kraken', 'vest'];
   const FUTURES_PREFIXES = ['futures', 'rithmic', 'cme', 'cme_mini', 'cbot', 'cbot_mini', 'comex', 'comex_mini', 'nymex', 'nymex_mini'];
 
   function round2(n) { return Math.round(n * 100) / 100; }
@@ -98,7 +109,8 @@
 
   function splitSymbol(symbol) {
     const raw = String(symbol || '').trim();
-    const i = raw.lastIndexOf(':');
+    // provider = before the FIRST colon ('stocks:NSE:RELIANCE' -> stocks / NSE:RELIANCE)
+    const i = raw.indexOf(':');
     if (i > 0) return { raw, prefix: raw.slice(0, i).toLowerCase(), ticker: raw.slice(i + 1).toUpperCase() };
     return { raw, prefix: '', ticker: raw.toUpperCase() };
   }
@@ -108,33 +120,102 @@
     const m = /^([A-Z0-9]+?)[FGHJKMNQUVXZ](\d|\d\d|\d{4})$/.exec(r);
     return !FUTURES[r] && m && FUTURES[m[1]] ? m[1] : r;
   }
-  function futuresSpec(root, source) {
+  // hint = chart minimum tick (number) or { tick, currency, pv, type } from the chart's symbol info
+  function hintOf(h) { return h && typeof h === 'object' ? h : { tick: h }; }
+  const tickOr = (h, d) => (Number(h.tick) > 0 ? Number(h.tick) : d);
+  function futuresSpec(root, h) {
     const r = futuresRootOf(root);
     const f = FUTURES[r];
-    if (!f) return { ok: false, reason: 'Paper trading does not cover futures root ' + (r || String(source || root).toUpperCase()) + ' yet.' };
-    return { ok: true, symbol: 'futures:' + r + '1!', kind: 'futures', root: r, tick: f[0], pointValue: f[1], qtyStep: 1, minQty: 1, maxQty: 500, decimals: decimalsOf(f[0]) };
+    if (f) return { ok: true, symbol: 'futures:' + r + '1!', kind: 'futures', root: r, tick: f[0], pointValue: f[1], quote: 'USD', unit: 'contract', fees: true, qtyStep: 1, minQty: 1, maxQty: 500, decimals: decimalsOf(f[0]) };
+    // a root we have no table row for: tick + point value from the chart's symbol info; unknown point value = 1 per point
+    if (!r) return { ok: false, reason: needPrices(root) };
+    const tick = tickOr(h, 0.01), pv = Number(h.pv) > 0 ? Number(h.pv) : 1;
+    const sp = { ok: true, symbol: 'futures:' + r + '1!', kind: 'futures', root: r, tick, pointValue: pv, quote: 'USD', unit: 'contract', fees: true, qtyStep: 1, minQty: 1, maxQty: 500, decimals: decimalsOf(tick) };
+    if (!(Number(h.pv) > 0)) sp.note = 'Point value not known for ' + r + ': P&L uses 1 per point.';
+    return sp;
+  }
+  /** 'contract' / 'lots' / 'shares' / 'units' for a size n of this spec. */
+  function unitWord(spec, n) { const u = (spec && spec.unit) || 'unit'; return n === 1 ? u : u + 's'; }
+  function needPrices(t) { return 'Paper trading needs live prices for ' + (t || 'this symbol') + '. Try again when the market is open.'; }
+
+  const CCY = new Set(['USD', 'EUR', 'GBP', 'JPY', 'CHF', 'CAD', 'AUD', 'NZD', 'INR', 'HKD', 'SGD', 'CNY', 'CNH', 'KRW', 'SEK', 'NOK', 'DKK', 'MXN', 'ZAR', 'TRY', 'PLN', 'BRL', 'TWD', 'ILS', 'HUF', 'CZK', 'THB', 'IDR', 'MYR', 'PHP', 'RUB', 'SAR', 'AED']);
+  const METALS = { XAU: 100, XAG: 5000, XPT: 100, XPD: 100 };     // ounces per lot
+  // crypto quote assets, longest first so 'ETHUSDT' ends in USDT, not USD
+  const CRYPTO_QUOTES = ['FDUSD', 'USDT', 'USDC', 'TUSD', 'BUSD', 'USDE', 'DAI', 'USD', 'EUR', 'GBP', 'TRY', 'BRL', 'JPY', 'AUD', 'INR', 'ZAR', 'MXN', 'PLN', 'CAD', 'CHF', 'BTC', 'XBT', 'ETH', 'BNB', 'SOL'];
+  // stock exchange -> trading currency, used until the chart's symbol info says otherwise
+  const EXCH_CCY = { NASDAQ: 'USD', NYSE: 'USD', AMEX: 'USD', ARCA: 'USD', NYSEARCA: 'USD', BATS: 'USD', CBOE: 'USD', OTC: 'USD', NSE: 'INR', BSE: 'INR',
+    LSE: 'GBX', XETR: 'EUR', FWB: 'EUR', EURONEXT: 'EUR', BME: 'EUR', MIL: 'EUR', TSE: 'JPY', HKEX: 'HKD', TSX: 'CAD', ASX: 'AUD', SIX: 'CHF', SGX: 'SGD' };
+  const US_EXCH = new Set(['NASDAQ', 'NYSE', 'AMEX', 'ARCA', 'NYSEARCA', 'BATS', 'CBOE', 'OTC']);
+  const INDICES = new Set(['SPX', 'NDX', 'VIX', 'RUT', 'DJI', 'NI225', 'UKX', 'DAX', 'NIFTY', 'BANKNIFTY', 'SENSEX', 'HSI']);
+  const STABLE = new Set(['USD', 'USDT', 'USDC', 'FDUSD', 'TUSD', 'BUSD', 'USDE', 'DAI']);
+  function pairParts(t) {
+    const p = String(t || '').replace(/[\/_\s.-]/g, '');
+    if (!/^[A-Z]{6}$/.test(p)) return null;
+    const b = p.slice(0, 3), q = p.slice(3);
+    if (METALS[b] && CCY.has(q)) return { pair: p, base: b, quote: q, metal: true };
+    return CCY.has(b) && CCY.has(q) ? { pair: p, base: b, quote: q } : null;
+  }
+  function fxSpec(prov, x, h) {
+    if (x.metal) {
+      const tick = tickOr(h, 0.01);
+      return { ok: true, symbol: prov + ':' + x.pair, kind: 'metal', root: x.pair, base: x.base, quote: x.quote, tick, pointValue: METALS[x.base], unit: 'lot', fees: false, qtyStep: 0.01, minQty: 0.01, maxQty: 100, defQty: 0.1, decimals: decimalsOf(tick) };
+    }
+    const jpy = x.quote === 'JPY', tick = tickOr(h, jpy ? 0.001 : 0.00001);
+    const pip = jpy ? 0.01 : tick >= 0.001 ? tick * 10 : 0.0001;
+    return { ok: true, symbol: prov + ':' + x.pair, kind: 'forex', root: x.pair, base: x.base, quote: x.quote, tick, pip, pointValue: 100000, unit: 'lot', fees: false, qtyStep: 0.01, minQty: 0.01, maxQty: 100, defQty: 0.1, decimals: decimalsOf(tick) };
+  }
+  function stockSpec(prov, ticker, h, index) {
+    const exch = ticker.indexOf(':') > 0 ? ticker.split(':')[0] : '';
+    const quote = String(h.currency || '') || EXCH_CCY[exch] || (prov === 'stocks' ? '' : 'USD');
+    const tick = tickOr(h, 0.01);
+    if (index) return { ok: true, symbol: prov + ':' + ticker, kind: 'index', root: ticker, quote: quote || 'USD', tick, pointValue: 1, unit: 'contract', fees: false, qtyStep: 1, minQty: 1, maxQty: 100000, decimals: decimalsOf(tick) };
+    return { ok: true, symbol: prov + ':' + ticker, kind: 'stock', root: ticker.replace(/^[^:]*:/, ''), exch, us: US_EXCH.has(exch) || prov === 'idx', quote, tick, pointValue: 1, unit: 'share', fees: false, qtyStep: 1, minQty: 1, maxQty: 1000000, decimals: decimalsOf(tick) };
+  }
+  function cryptoQuote(prov, ticker, h) {
+    if (prov === 'hyperliquid' || prov === 'vest') return 'USD';
+    const c = String(h.currency || '').toUpperCase();
+    if (c) return c === 'XBT' ? 'BTC' : c;
+    const t = ticker.replace(/\.P$/, '').replace(/-SWAP$/, '').replace(/[-_/]/g, '');
+    for (const q of CRYPTO_QUOTES) if (t.length > q.length && t.endsWith(q)) return q === 'XBT' ? 'BTC' : q;
+    return '';
   }
 
   /**
-   * Contract spec for a chart symbol ("futures:NQ1!", "CME_MINI:NQ1!", "NQ1!", "binance:BTCUSDT").
-   * Futures are canonicalised to "futures:ROOT1!" so positions/orders from exchange-prefixed,
-   * Rithmic-style or bare ids share one paper position. tickHint = chart minimum tick (crypto).
+   * Contract spec for a chart symbol. Every chartable kind (Owner 24 Nov: "paper trading should support everything"):
+   *   futures  "futures:NQ1!", "CME_MINI:NQ1!", "NQ1!", "MNQZ6"  -> canonical "futures:ROOT1!"; roots not in FUTURES use the chart's tick + point value
+   *   crypto   "binance:BTCUSDT", "binance:ETHBTC", "okx:BTC-USDT-SWAP", "kraken:ETHEUR" (spot + perps, any quote)
+   *   forex    "fx:GBPCHF", "byo:EURUSD" (lots of 100,000 base units)     metals "byo:XAUUSD" (lots of 100 oz / XAG 5,000 oz)
+   *   stocks   "stocks:NSE:RELIANCE", "idx:SPY", "byo:AAPL" (shares)     indices "idx:SPX" (CFD-style contract, 1 per point)
+   * pointValue is in the QUOTE currency (spec.quote); the account converts it to USD (deps.rate). hint = chart tick or symbol info.
    */
-  function specOf(symbol, tickHint) {
-    const parts = splitSymbol(symbol);
+  function specOf(symbol, hint) {
+    const parts = splitSymbol(symbol), h = hintOf(hint);
     if (!parts.raw) return { ok: false, reason: 'Pick a symbol on the chart first.' };
     const prov = parts.prefix, ticker = parts.ticker;
-    if ((!prov && /^[A-Z0-9]+(?:[12]!)?$/.test(ticker)) || FUTURES_PREFIXES.indexOf(prov) >= 0) {
-      return futuresSpec(ticker, ticker);
+    let sp;
+    if (FUTURES_PREFIXES.indexOf(prov) >= 0) sp = futuresSpec(ticker, h);
+    else if (!prov) {
+      const x = pairParts(ticker);
+      if (x) sp = fxSpec('fx', x, h);
+      else if (FUTURES[futuresRootOf(ticker)] || /[12]!$/.test(ticker)) sp = futuresSpec(ticker, h);
+    } else if (CRYPTO_PROVIDERS.indexOf(prov) >= 0) {
+      const tick = tickOr(h, 0.01), quote = cryptoQuote(prov, ticker, h);
+      sp = { ok: true, symbol: prov + ':' + ticker, kind: 'crypto', root: ticker, quote, tick, pointValue: 1, unit: 'unit', fees: true, qtyStep: 0.0001, minQty: 0.0001, maxQty: 1000000, defQty: 0.01, decimals: decimalsOf(tick) };
+    } else if (prov === 'fx' || prov === 'byo') {
+      const x = pairParts(ticker);
+      if (x) sp = fxSpec(prov, x, h);
+      else if (prov === 'byo' && /futures/i.test(String(h.type || ''))) sp = futuresSpec(ticker.replace(/^[^:]*:/, ''), h);
+      else if (prov === 'byo') sp = stockSpec(prov, ticker, h, false);
+    } else if (prov === 'idx') sp = stockSpec(prov, ticker, h, INDICES.has(ticker));
+    else if (prov === 'stocks') sp = stockSpec(prov, ticker, h, /^index$/i.test(String(h.type || '')));
+    if (!sp) return { ok: false, reason: needPrices(ticker || parts.raw) };
+    if (sp.ok) {
+      sp.quote = String(sp.quote || '') === 'GBp' ? 'GBX' : String(sp.quote || '').toUpperCase();
+      sp.rate = STABLE.has(sp.quote) ? 1 : null;                   // USD per 1 quote unit; the account fills the rest
+      sp.usdPv = sp.rate != null ? sp.pointValue * sp.rate : null;
+      if (!sp.defQty) sp.defQty = sp.minQty;
     }
-    if (CRYPTO_PROVIDERS.indexOf(prov) >= 0) {
-      // P&L is in the quote currency, so only USD-quoted pairs (USDT / USDC / USD) are allowed.
-      const usd = /(USDT|USDC|USD|FDUSD)$/.test(ticker.replace(/[-_/]/g, '')) || prov === 'hyperliquid';
-      if (!usd) return { ok: false, reason: 'Paper trading covers USD-quoted crypto pairs only (P&L is in USD).' };
-      const tick = Number(tickHint) > 0 ? Number(tickHint) : 0.01;
-      return { ok: true, symbol: prov + ':' + ticker, kind: 'crypto', root: ticker, tick, pointValue: 1, qtyStep: 0.0001, minQty: 0.0001, maxQty: 1000000, decimals: decimalsOf(tick) };
-    }
-    return { ok: false, reason: 'Paper trading covers futures and USD-quoted crypto. ' + (ticker || parts.raw) + ' is not supported.' };
+    return sp;
   }
 
   /** Mini/micro partner of a futures root ('NQ' -> 'MNQ', 'MNQ' -> 'NQ'), '' when it has none. */
@@ -158,7 +239,8 @@
     const r = Number(riskUsd), e = Number(entry), s = Number(sl);
     if (!(r > 0)) return { error: 'Enter the amount you want to risk.' };
     if (!(e > 0) || !(s > 0) || e === s) return { error: 'Set a stop loss first: the size comes from the stop distance.' };
-    const per = Math.abs(e - s) * spec.pointValue;              // $ risk of ONE contract / unit
+    if (!(spec.pointValue > 0)) return { error: spec.wait || 'Waiting for the price currency rate.' };
+    const per = Math.abs(e - s) * spec.pointValue;              // $ risk of ONE contract / unit / lot / share
     const step = spec.qtyStep, max = Math.min(spec.maxQty, Number(cap) > 0 ? Number(cap) : spec.maxQty);
     let q = Math.floor(r / per / step + 1e-9) * step;
     q = Number(q.toFixed(6));
@@ -166,7 +248,7 @@
     if (q < spec.minQty) q = spec.minQty;
     if (q > max) q = Math.floor(max / step + 1e-9) * step;
     q = Number(q.toFixed(6));
-    return { qty: q, perUnit: round2(per * (spec.kind === 'futures' ? 1 : step)), risk: round2(per * q), over, capped: q < Math.floor(r / per / step + 1e-9) * step };
+    return { qty: q, perUnit: round2(per * step), risk: round2(per * q), over, capped: q < Math.floor(r / per / step + 1e-9) * step };
   }
 
   // Member hotkeys (action id -> combo text, e.g. "Shift+B"); the page validates, this only keeps the shape sane.
@@ -230,9 +312,9 @@
     if (Array.isArray(raw.orders)) {
       for (const o of raw.orders.slice(0, MAX_ORDERS)) {
         const sp = specOf(o && o.symbol);
-        if (!o || !sp.ok || (o.type !== 'limit' && o.type !== 'stop')) continue;
+        if (!o || !sp.ok || (o.type !== 'limit' && o.type !== 'stop' && !(o.type === 'market' && o.queued))) continue;
         const qty = num(o.qty), price = num(o.price); if (!(qty > 0) || !(price > 0)) continue;
-        st.orders.push(Object.assign({ id: num(o.id) || 0, symbol: sp.symbol, side: side(o.side), type: o.type, qty, price, sl: num(o.sl), tp: num(o.tp), placedAt: num(o.placedAt) || now }, cleanTp1(o, qty)));
+        st.orders.push(Object.assign({ id: num(o.id) || 0, symbol: sp.symbol, side: side(o.side), type: o.type, qty, price, sl: num(o.sl), tp: num(o.tp), placedAt: num(o.placedAt) || now }, cleanTp1(o, qty), o.type === 'market' ? { queued: true } : {}));
       }
     }
     if (Array.isArray(raw.trades)) st.trades = raw.trades.filter((t) => t && typeof t === 'object' && num(t.pnl) != null).slice(-MAX_TRADES);
@@ -250,14 +332,33 @@
      * deps: { now(): ms, isOpen(symbol, ms): bool, tickOf(symbol): number|undefined }
      */
     constructor(state, deps) {
-      this.deps = Object.assign({ now: () => Date.now(), isOpen: () => true, tickOf: () => undefined, source: '' }, deps || {});
+      this.deps = Object.assign({ now: () => Date.now(), isOpen: () => true, tickOf: () => undefined, rate: () => null, source: '' }, deps || {});
       this.state = sanitize(state, this.deps.now());
       this.last = {};        // symbol -> last price seen (not persisted)
     }
     static fresh(balance, deps) { const a = new PaperAccount(null, deps); a.state = freshState(balance, null, a.deps.now()); return a; }
     toJSON() { return this.state; }
     get settings() { return this.state.settings; }
-    spec(symbol) { return specOf(symbol, this.deps.tickOf(symbol)); }
+    /**
+     * Spec with pointValue in USD: the quote-currency point value (qpv) x deps.rate(quote) (USD per 1 quote unit, from the
+     * chart's own feeds; null when not known yet). No rate -> pointValue null + spec.wait: orders hold, nothing fills.
+     */
+    spec(symbol) {
+      const sp = specOf(symbol, this.deps.tickOf(symbol));
+      if (!sp.ok) return sp;
+      sp.qpv = sp.pointValue;
+      if (sp.rate == null) {
+        const q = sp.quote;
+        let r = null;
+        if (q === 'GBX') { const g = num(this.deps.rate('GBP')); r = g > 0 ? g / 100 : null; }   // London pence
+        else if (q) { const v = num(this.deps.rate(q)); r = v > 0 ? v : null; }
+        sp.rate = r;
+        sp.pointValue = r != null ? sp.qpv * r : null;
+        if (r == null) sp.wait = q ? 'Waiting for the ' + (q === 'GBX' ? 'GBP' : q) + '\u2192USD rate for ' + this._name(sp.symbol) + '.' : 'Waiting for the price currency of ' + this._name(sp.symbol) + '.';
+      }
+      sp.usdPv = sp.pointValue;
+      return sp;
+    }
     setLast(symbol, price) {
       if (!(Number(price) > 0)) return;
       const raw = String(symbol || ''), sp = this.spec(raw);
@@ -272,7 +373,7 @@
     openPnl(p, price) {
       const px = price != null ? price : this.last[p.symbol];
       if (!(px > 0)) return 0;
-      const spec = this.spec(p.symbol); if (!spec.ok) return 0;
+      const spec = this.spec(p.symbol); if (!spec.ok || !(spec.pointValue > 0)) return 0;
       return round2((px - p.avg) * p.qty * spec.pointValue * (p.side === 'buy' ? 1 : -1));
     }
     summary(dayStartMs) {
@@ -291,7 +392,7 @@
     }
     // $ at the order's bracket for display (positive = profit)
     bracketValue(symbol, side, qty, entry, level) {
-      const spec = this.spec(symbol); if (!spec.ok || level == null || !(entry > 0)) return null;
+      const spec = this.spec(symbol); if (!spec.ok || !(spec.pointValue > 0) || level == null || !(entry > 0)) return null;
       return round2((level - entry) * qty * spec.pointValue * (side === 'buy' ? 1 : -1));
     }
 
@@ -318,7 +419,10 @@
       if (this.state.balance <= 0 && !reducing) throw new Error('This paper account has no balance left. Reset it to keep practising.');
       const last = this.last[symbol] || this.last[spec.symbol];
       if (!(last > 0)) throw new Error('No price yet for ' + this._name(symbol) + '. Open it on a chart and wait for the price.');
-      if (type === 'market' && !this.deps.isOpen(symbol, now)) {
+      if (!(spec.pointValue > 0)) throw new Error(spec.wait);
+      // forex / stocks / indices / metals: a market order while nothing trades waits for the next real price (weekend forex)
+      const queue = type === 'market' && spec.kind !== 'futures' && !o._close && !this.deps.isOpen(symbol, now);
+      if (type === 'market' && !queue && !this.deps.isOpen(symbol, now)) {
         this._hist({ kind: 'reject', symbol, side, type, qty, note: 'Market closed' });
         throw new Error('Market closed for ' + this._name(symbol) + '. Market orders are rejected until it reopens; limit and stop orders can wait.');
       }
@@ -330,12 +434,13 @@
       const tp = num(o.tp) != null ? roundTick(num(o.tp), spec.tick) : null;
       const t1 = this._tp1(spec, side, ref, qty, sl, tp, o);
       this._checkBracket(side, ref, sl, tp, t1.tp1);
-      if (type === 'market') {
+      if (type === 'market' && !queue) {
         const fill = roundTick(last + dir * this.state.settings.slippage * spec.tick, spec.tick);
         return { events: this._fill(Object.assign({ id: this.state.nextId++, symbol, side, type, qty, sl, tp }, t1), fill, now) };
       }
       if (this.state.orders.length >= MAX_ORDERS) throw new Error('You have ' + MAX_ORDERS + ' working orders, the most we keep. Cancel one first.');
       const order = Object.assign({ id: this.state.nextId++, symbol, side, type, qty, price: ref, sl, tp, placedAt: now }, t1);
+      if (queue) order.queued = true;     // market order: fills at the first new price (price = the last price, for display)
       this.state.orders.push(order);
       return { order };
     }
@@ -352,7 +457,7 @@
       if (!o) throw new Error('That order is no longer working.');
       const spec = this.spec(o.symbol);
       const next = Object.assign({}, o);
-      if (ch.price != null) next.price = roundTick(Number(ch.price), spec.tick);
+      if (ch.price != null && o.type !== 'market') next.price = roundTick(Number(ch.price), spec.tick);
       if (ch.qty != null) next.qty = this._qty(spec, ch.qty);
       if ('sl' in ch) next.sl = num(ch.sl) != null ? roundTick(num(ch.sl), spec.tick) : null;
       if ('tp' in ch) next.tp = num(ch.tp) != null ? roundTick(num(ch.tp), spec.tick) : null;
@@ -363,7 +468,7 @@
         if (o.type === 'stop' && !((next.price - last) * dir > 0)) throw new Error(o.side === 'buy' ? 'A buy stop must stay above the current price.' : 'A sell stop must stay below the current price.');
       }
       // moving the entry drags the bracket with it, like dragging a TradingView order line
-      if (ch.price != null && ch.keepBracket !== false && !('sl' in ch) && !('tp' in ch) && !('tp1' in ch)) {
+      if (ch.price != null && o.type !== 'market' && ch.keepBracket !== false && !('sl' in ch) && !('tp' in ch) && !('tp1' in ch)) {
         const d = next.price - o.price;
         if (o.sl != null) next.sl = roundTick(o.sl + d, spec.tick);
         if (o.tp != null) next.tp = roundTick(o.tp + d, spec.tick);
@@ -465,7 +570,7 @@
       return s;
     }
     setQty(symbol, qty) { const spec = this.spec(symbol); if (!spec.ok) return; try { this.state.settings.qty[spec.symbol] = this._qty(spec, qty); } catch (e) {} }
-    qtyFor(symbol) { const spec = this.spec(symbol); const q = this.state.settings.qty[spec.ok ? spec.symbol : symbol]; return q > 0 ? q : (spec.ok ? spec.minQty * (spec.kind === 'crypto' ? 100 : 1) : 1); }
+    qtyFor(symbol) { const spec = this.spec(symbol); const q = this.state.settings.qty[spec.ok ? spec.symbol : symbol]; return q > 0 ? q : (spec.ok ? spec.defQty : 1); }
     markJournaled(tradeId) { const t = this.state.trades.find((x) => x.id === tradeId); if (t) t.journaled = true; return t; }
 
     // ---- live feed ----
@@ -481,11 +586,12 @@
       if (!spec.ok) return events;
       symbol = spec.symbol;
       if (!this.deps.isOpen(symbol, seg.t != null ? seg.t : now) && !this.deps.isOpen(symbol, now)) { this.setLast(raw, seg.c); return events; }
+      if (!(spec.pointValue > 0)) { this.setLast(raw, seg.c); return events; }   // no USD rate yet: orders and brackets hold
       const slip = this.state.settings.slippage * spec.tick;
       const before = this.state.positions[symbol];   // only a position open BEFORE this segment saw its whole range
       for (const o of this.state.orders.slice()) {
         if (o.symbol !== symbol) continue;
-        let fp = fillPriceOf(o, seg);
+        let fp = o.type === 'market' ? seg.o + (o.side === 'buy' ? 1 : -1) * slip : fillPriceOf(o, seg);
         if (fp == null) continue;
         if (o.type === 'stop') fp += (o.side === 'buy' ? 1 : -1) * slip;
         this.state.orders.splice(this.state.orders.indexOf(o), 1);
@@ -538,8 +644,8 @@
       if (!(q > 0)) throw new Error('Quantity must be greater than zero.');
       const steps = Math.round(q / spec.qtyStep);
       const qq = Number((steps * spec.qtyStep).toFixed(6));
-      if (qq < spec.minQty) throw new Error('The smallest size is ' + spec.minQty + (spec.kind === 'futures' ? ' contract.' : '.'));
-      if (qq > spec.maxQty) throw new Error('The largest paper order is ' + spec.maxQty + (spec.kind === 'futures' ? ' contracts.' : ' units.'));
+      if (qq < spec.minQty) throw new Error('The smallest size is ' + spec.minQty + ' ' + unitWord(spec, spec.minQty) + '.');
+      if (qq > spec.maxQty) throw new Error('The largest paper order is ' + spec.maxQty + ' ' + unitWord(spec, spec.maxQty) + '.');
       return qq;
     }
     _checkBracket(side, ref, sl, tp, tp1) {
@@ -586,7 +692,8 @@
     _fill(order, price, t, reason) {
       const st = this.state, spec = this.spec(order.symbol), sym = order.symbol;
       const events = [];
-      const fee = round2(st.settings.commission * order.qty);
+      const com = spec.fees ? st.settings.commission : 0;     // forex / metals / indices / stocks: no commission (spread is in the price)
+      const fee = round2(com * order.qty);
       st.balance = round2(st.balance - fee); st.fees = round2(st.fees + fee);
       this._hist({ kind: 'fill', symbol: sym, side: order.side, type: order.type, qty: order.qty, price, orderId: order.id, note: reason ? ({ tp: 'Take profit', tp1: 'Take profit 1', sl: 'Stop loss' }[reason] || '') : '' });
       let p = st.positions[sym];
@@ -616,14 +723,14 @@
       const dir = p.side === 'buy' ? 1 : -1;
       const gross = round2((price - p.avg) * closeQty * spec.pointValue * dir);
       const feeIn = round2(p.fees * (closeQty / p.qty));
-      const feeOut = round2(st.settings.commission * closeQty);
+      const feeOut = round2(com * closeQty);
       const pnl = round2(gross - feeIn - feeOut);
       st.balance = round2(st.balance + gross); st.realized = round2(st.realized + pnl);
       const hi = Math.max(num(p.hi) || p.avg, p.avg, price), lo = Math.min(num(p.lo) || p.avg, p.avg, price);
       const mfe = dir > 0 ? hi - p.avg : p.avg - lo, mae = dir > 0 ? p.avg - lo : hi - p.avg;
       const bal0 = num(p.bal0) > 0 ? p.bal0 : st.startBalance;
       const trade = { id: st.nextId++, symbol: sym, side: p.side, qty: closeQty, entry: p.avg, exit: price, entryAt: p.openedAt, exitAt: t,
-        gross, fees: round2(feeIn + feeOut), pnl, reason: reason || (rest > 0 ? 'reverse' : 'manual'), sl: p.sl, tp: reason === 'tp1' ? p.tp1 : p.tp, pointValue: spec.pointValue, journaled: false,
+        gross, fees: round2(feeIn + feeOut), pnl, reason: reason || (rest > 0 ? 'reverse' : 'manual'), sl: p.sl, tp: reason === 'tp1' ? p.tp1 : p.tp, pointValue: spec.pointValue, journaled: false, quote: spec.quote, rate: spec.rate,
         sl0: p.sl0 != null ? p.sl0 : (p.sl != null ? p.sl : null), mae: Math.max(0, roundTick(mae, spec.tick / 100)), mfe: Math.max(0, roundTick(mfe, spec.tick / 100)),
         lev: Math.round(p.avg * (num(p.maxQty) || p.qty) * spec.pointValue / bal0 * 100) / 100, run: st.resetAt };
       if (this.deps.source) trade.src = this.deps.source;
@@ -639,7 +746,7 @@
       delete st.positions[sym];
       events.push({ type: reason || 'close', symbol: sym, side: p.side, qty: closeQty, price, trade });
       if (rest > 0) {
-        const np = st.positions[sym] = { symbol: sym, side: order.side, qty: rest, avg: price, sl: order.sl, tp: order.tp, openedAt: t, fees: round2(st.settings.commission * rest),
+        const np = st.positions[sym] = { symbol: sym, side: order.side, qty: rest, avg: price, sl: order.sl, tp: order.tp, openedAt: t, fees: round2(com * rest),
           sl0: order.sl != null ? order.sl : null, hi: price, lo: price, bal0: st.balance, maxQty: rest };
         Object.assign(np, cleanTp1(order, rest));
         events.push({ type: 'open', symbol: sym, side: np.side, qty: np.qty, price, position: np, reversed: true });
@@ -648,5 +755,5 @@
     }
   }
 
-  return { VERSION, DEFAULT_BALANCE, MIN_BALANCE, MAX_BALANCE, FUTURES, PAIRS, specOf, pairOf, pairSymbol, familyOf, sizeForRisk, freshState, sanitize, PaperAccount, round2, roundTick };
+  return { VERSION, DEFAULT_BALANCE, MIN_BALANCE, MAX_BALANCE, FUTURES, PAIRS, specOf, unitWord, pairOf, pairSymbol, familyOf, sizeForRisk, freshState, sanitize, PaperAccount, round2, roundTick };
 });

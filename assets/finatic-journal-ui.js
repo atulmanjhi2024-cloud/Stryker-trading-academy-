@@ -3,9 +3,9 @@
 // /connect/finatic/data (server allow-list, scoped to the member's own connection). The "Order test" step is admins only (admin flag).
 // Flow: start session -> broker portal in a new tab (the member logs in there) -> Continue -> pick account + dates -> preview -> import.
 // Depends on the journal page globals: auth, db, firebase, JOURNAL_UID, JOURNAL_TRADES, journalCollectionRef, reloadJournalData, showToast.
-import { CSS } from './rithmic-journal-ui.js?v=1255';
-import { acctInfo, grantFor, ageText } from './chart-live-core.js?v=1255';
-import { tripsFromBroker, tripToTrade, tripId, ordersToFetch, planImport } from './finatic-fills.js?v=1255';
+import { CSS } from './rithmic-journal-ui.js?v=1256';
+import { acctInfo, grantFor, ageText } from './chart-live-core.js?v=1256';
+import { tripsFromBroker, tripToTrade, tripId, ordersToFetch, planImport } from './finatic-fills.js?v=1256';
 
 // WHICH BROKERS WORK TODAY (CoS: flip one value to true/false; false = tile shows "Coming soon" and cannot be tapped). Checked 24 Nov 2026.
 // A broker counts as working only when a member can connect AND trade through our current path.

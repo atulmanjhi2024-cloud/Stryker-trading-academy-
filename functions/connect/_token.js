@@ -7,7 +7,7 @@ import { verifyIdToken, bearerOf } from '../api/chart/_rt.js';
 export const ORIGIN = 'https://tradezoro.com';
 const RATE_MAX = 20, TIMEOUT_MS = 8000;
 export const json = (obj, status = 200) => new Response(JSON.stringify(obj), { status, headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', 'referrer-policy': 'no-referrer' } });
-export const fail = (status, error) => json({ error }, status);
+export const fail = (status, error, code) => json(code ? { error, code } : { error }, status);
 const mem = new Map();
 
 // defer (optional, ctx.waitUntil wrapper): the counter write goes out after the reply instead of on the request path. The KV
@@ -60,12 +60,14 @@ export function makeHandler(cfg) {
     else { q.client_id = env[cfg.idVar]; q.client_secret = env[cfg.secretVar]; }
     let r;
     try {
-      r = await (deps.fetchImpl || fetch)(cfg.upstream, { method: 'POST', redirect: 'error', signal: AbortSignal.timeout(TIMEOUT_MS),
+      r = await (deps.fetchImpl || fetch)(cfg.upstream, { method: 'POST', redirect: 'manual', signal: AbortSignal.timeout(TIMEOUT_MS),
         headers: { Accept: 'application/json', 'Content-Type': cfg.as === 'form' ? 'application/x-www-form-urlencoded' : 'application/json' },
         body: cfg.as === 'form' ? new URLSearchParams(q).toString() : JSON.stringify(q) });
-    } catch (e) { return fail(502, cfg.label + ' did not answer'); }
+    } catch (e) { return fail(503, cfg.label + ' did not answer', 'upstream'); }
+    // Workers throw on redirect:'error', so 'manual' + refuse any 3xx here. 503 not 502: the edge swaps a 502 body for its own HTML.
+    if (r.status >= 300 && r.status < 400) return fail(503, cfg.label + ' did not answer', 'upstream');
     let j = null; try { j = await r.json(); } catch (e) { /* not json */ }
-    if (!r.ok || !j || typeof j.access_token !== 'string') return fail(r.status >= 500 ? 502 : 400, r.status >= 500 ? cfg.label + ' did not answer' : cfg.label + ' did not accept this sign-in');
+    if (!r.ok || !j || typeof j.access_token !== 'string') return r.status >= 500 ? fail(503, cfg.label + ' did not answer', 'upstream') : fail(400, cfg.label + ' did not accept this sign-in', 'rejected');
     // Only these fields go back.
     const scope = typeof j.scope === 'string' ? j.scope.slice(0, 200) : Array.isArray(j.scope) ? j.scope.join(' ').slice(0, 200) : undefined;
     return json({ access_token: j.access_token, refresh_token: cfg.refresh && typeof j.refresh_token === 'string' ? j.refresh_token : undefined, expires_in: Number(j.expires_in) || undefined, token_type: 'Bearer', scope });

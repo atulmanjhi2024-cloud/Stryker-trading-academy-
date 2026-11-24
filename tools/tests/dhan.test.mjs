@@ -102,7 +102,7 @@ await t('history pass-through: checks, forwards ONLY the two chart calls with th
     assert.equal((await call(req('data', { json: bad }))).status, 400, JSON.stringify(bad));
   assert.equal(up, null, 'nothing went upstream on a bad call');
   const r = await call(req('data', { json: DAILY })); const j = await r.json();
-  assert.equal(r.status, 200); assert.deepEqual(Object.keys(j), ['open', 'high', 'low', 'close', 'volume', 'timestamp']); assert.equal(up.u, 'https://api.dhan.co/v2/charts/historical'); assert.equal(up.o.method, 'POST'); assert.equal(up.o.redirect, 'error'); assert.equal(up.o.headers['access-token'], TOK);
+  assert.equal(r.status, 200); assert.deepEqual(Object.keys(j), ['open', 'high', 'low', 'close', 'volume', 'timestamp']); assert.equal(up.u, 'https://api.dhan.co/v2/charts/historical'); assert.equal(up.o.method, 'POST'); assert.equal(up.o.redirect, 'manual'); assert.equal(up.o.headers['access-token'], TOK);
   assert.deepEqual(JSON.parse(up.o.body), { securityId: '13', exchangeSegment: 'IDX_I', instrument: 'INDEX', expiryCode: 0, oi: false, fromDate: '2026-10-01', toDate: '2026-11-04' });
   await call(req('data', { json: { ...INTRA, extra: 'x', oi: true } })); assert.equal(up.u, 'https://api.dhan.co/v2/charts/intraday'); assert.deepEqual(JSON.parse(up.o.body), { securityId: '2885', exchangeSegment: 'NSE_EQ', instrument: 'EQUITY', interval: '5', oi: false, fromDate: '2026-11-02 00:00:00', toDate: '2026-11-04 00:00:00' });
   assert.equal((await call(req('data', { json: DAILY }), {})).status, 200, 'no secret needed: the member brings their own token');
@@ -110,7 +110,7 @@ await t('history pass-through: checks, forwards ONLY the two chart calls with th
   const run = async (fi) => (await dataH(req('data', { json: DAILY }), {}, { verifyFetch, fetchImpl: fi })).status;
   const s401 = await run(async () => new Response(JSON.stringify({ errorCode: 'DH-901' }), { status: 401 })), s902 = await run(async () => new Response(JSON.stringify({ errorCode: 'DH-902' }), { status: 400 })), s904 = await run(async () => new Response('{}', { status: 429 })), s500 = await run(async () => new Response('x', { status: 500 })), sx = await run(async () => { throw new Error('boom ' + TOK); });
   [console.log, console.error, console.warn] = o;
-  assert.deepEqual([s401, s902, s904, s500, sx], [401, 402, 429, 502, 502]); assert.ok(!logs.join('').includes(TOK));
+  assert.deepEqual([s401, s902, s904, s500, sx], [401, 402, 429, 503, 503]); assert.ok(!logs.join('').includes(TOK));
   const bad = await dataH(req('data', { json: DAILY }), {}, { verifyFetch, fetchImpl: async () => new Response(JSON.stringify({ errorMessage: TOK }), { status: 400 }) }); assert.ok(!(await bad.text()).includes(TOK));
   assert.ok(clean(DAILY) && !clean({ ...DAILY, securityId: '1; DROP' }));
 });
@@ -132,7 +132,7 @@ await t('partner function: probe false until both secrets exist; consent steps; 
   assert.deepEqual(Object.keys(c).sort(), ['access_token', 'client_id', 'expires_at']); assert.equal(c.access_token, TOK); assert.equal(c.client_id, '1000000001'); assert.equal(c.expires_at, Date.parse('2026-11-05T12:37:23+05:30'));
   assert.equal(ups[1].u, 'https://auth.dhan.co/partner/consume-consent?tokenId=tokenid-1234567'); assert.ok(!JSON.stringify(c).match(/JOHN|ABCD|PSECRET/));
   const bad = await tokH(req('token', { json: { grant: 'code', code: 'tokenid-1234567' } }), PARTNER, { verifyFetch, fetchImpl: async () => new Response(JSON.stringify({ message: 'PSECRETFAKE-abc' }), { status: 400 }) }); assert.equal(bad.status, 400); assert.ok(!(await bad.text()).includes('PSECRET'));
-  assert.equal((await tokH(req('token', { json: { grant: 'start' } }), PARTNER, { verifyFetch, fetchImpl: async () => { throw new Error('x'); } })).status, 502);
+  assert.equal((await tokH(req('token', { json: { grant: 'start' } }), PARTNER, { verifyFetch, fetchImpl: async () => { throw new Error('x'); } })).status, 503);
 });
 await t('symbol-list function: keeps stocks, indexes, futures only; quote-aware CSV; refuses unknown segments', async () => {
   const H = 'EXCH_ID,SEGMENT,SECURITY_ID,ISIN,INSTRUMENT,UNDERLYING_SECURITY_ID,UNDERLYING_SYMBOL,SYMBOL_NAME,DISPLAY_NAME,INSTRUMENT_TYPE,SERIES,LOT_SIZE,SM_EXPIRY_DATE';
@@ -261,11 +261,11 @@ await t('own-key function: step 1 and step 3 forward the member key for that cal
   let a, c; try { a = await (await call(KJ({ grant: 'start', clientId: '1000000001' }))).json(); c = await (await call(KJ({ grant: 'code', code: 'tokenid-1234567' }))).json(); } finally { Object.assign(console, orig); }
   assert.deepEqual(a, { url: 'https://auth.dhan.co/login/consentApp-login?consentAppId=f1e2d3c4-aaaa-bbbb-cccc-123456789012' });
   assert.equal(ups[0].u, 'https://auth.dhan.co/app/generate-consent?client_id=1000000001'); assert.equal(ups[0].o.method, 'POST'); assert.equal(ups[0].o.headers.app_id, 'appid-1234'); assert.equal(ups[0].o.headers.app_secret, 'secret-APPSECRET-9');
-  assert.equal(ups[1].u, 'https://auth.dhan.co/app/consumeApp-consent?tokenId=tokenid-1234567'); assert.equal(ups[1].o.method, 'GET'); assert.equal(ups[1].o.redirect, 'error');
+  assert.equal(ups[1].u, 'https://auth.dhan.co/app/consumeApp-consent?tokenId=tokenid-1234567'); assert.equal(ups[1].o.method, 'GET'); assert.equal(ups[1].o.redirect, 'manual');
   assert.deepEqual(Object.keys(c).sort(), ['access_token', 'client_id', 'expires_at']); assert.equal(c.expires_at, Date.parse('2026-11-05T12:37:23+05:30')); assert.ok(!JSON.stringify([a, c]).match(/JOHN|UCC1|APPSECRET/));
   assert.equal(logs.length, 0);
   const bad = await keyH(req('key', { json: KJ({ grant: 'code', code: 'tokenid-1234567' }) }), {}, { verifyFetch, fetchImpl: async () => new Response(JSON.stringify({ message: 'secret-APPSECRET-9' }), { status: 400 }) }); assert.equal(bad.status, 400); assert.ok(!(await bad.text()).includes('APPSECRET'));
-  assert.equal((await keyH(req('key', { json: KJ({ grant: 'start', clientId: '1000000001' }) }), {}, { verifyFetch, fetchImpl: async () => { throw new Error('x'); } })).status, 502);
+  assert.equal((await keyH(req('key', { json: KJ({ grant: 'start', clientId: '1000000001' }) }), {}, { verifyFetch, fetchImpl: async () => { throw new Error('x'); } })).status, 503);
 });
 await t('own-key function: rate limited, source has no logging and no order path', async () => {
   const src = read('functions/connect/dhan/key.js'); assert.match(src, /rateLimited\(env, request, 'dhan-key'\)/); assert.ok(!/console\./.test(src)); assert.ok(!/\/v2\//.test(src.replace(/\/\/.*$/gm, '')));

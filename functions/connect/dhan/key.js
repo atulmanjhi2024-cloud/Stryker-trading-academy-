@@ -24,10 +24,11 @@ export async function handle(request, env, deps = {}) {
   else return fail(400, 'Bad request');
   if (!ALLOWED(url)) return fail(400, 'Bad request');
   let r, j = null;
-  try { r = await (deps.fetchImpl || fetch)(url, { method, redirect: 'error', signal: AbortSignal.timeout(8000), headers: { app_id: b.appId, app_secret: b.appSecret, Accept: 'application/json' } }); }
-  catch (e) { return fail(502, 'Dhan did not answer'); }
+  try { r = await (deps.fetchImpl || fetch)(url, { method, redirect: 'manual', signal: AbortSignal.timeout(8000), headers: { app_id: b.appId, app_secret: b.appSecret, Accept: 'application/json' } }); }
+  catch (e) { return fail(503, 'Dhan did not answer', 'upstream'); }
+  if (r.status >= 300 && r.status < 400) return fail(503, 'Dhan did not answer', 'upstream');
   try { j = await r.json(); } catch (e) { /* not json */ }
-  const bad = () => fail(r.status >= 500 ? 502 : 400, 'Dhan did not accept this API key');
+  const bad = () => r.status >= 500 ? fail(503, 'Dhan did not answer', 'upstream') : fail(400, 'Dhan did not accept this API key', 'rejected');
   if (b.grant === 'start') {
     if (!r.ok || !j || !/^[A-Za-z0-9\-]{8,100}$/.test(j.consentAppId || '')) return bad();
     return json({ url: BASE + '/login/consentApp-login?consentAppId=' + encodeURIComponent(j.consentAppId) });

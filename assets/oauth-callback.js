@@ -42,5 +42,6 @@
             .then(function () { location.replace('/charts'); });
         });
     });
-  }).catch(function () { end(NAME + ' was not connected', 'Something went wrong. Try again from Data source in the charts.'); });
+  }).catch(function (e) { var s = e && e.status; console.warn('[oauth-callback]', JSON.stringify({ step: 'token', status: s || 0, code: (e && e.code) || '' }));
+    end(NAME + ' was not connected', s === 503 && e.code === 'upstream' ? NAME + " didn't answer. Please try again in a minute." : s === 400 || s === 401 ? NAME + " didn't accept the sign-in. Please try again." : 'Something went wrong. Try again from Data source in the charts.'); });
 })();

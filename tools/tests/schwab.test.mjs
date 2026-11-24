@@ -102,7 +102,7 @@ await t('token fn: swap + refresh go only to Schwab token URL; reply is trimmed;
   console.log = oLog; console.error = oErr; console.warn = oWarn;
   assert.equal(r.status, 200); assert.deepEqual(Object.keys(j).sort(), ['access_token', 'expires_in', 'refresh_token', 'scope', 'token_type']);
   assert.equal(r.headers.get('cache-control'), 'no-store');
-  assert.equal(upstream.u, 'https://api.schwabapi.com/v1/oauth/token'); assert.equal(upstream.o.method, 'POST'); assert.equal(upstream.o.redirect, 'error');
+  assert.equal(upstream.u, 'https://api.schwabapi.com/v1/oauth/token'); assert.equal(upstream.o.method, 'POST'); assert.equal(upstream.o.redirect, 'manual');
   assert.equal(upstream.o.headers.Authorization, 'Basic ' + Buffer.from('CLIENTID123:SECRETFAKE').toString('base64'));
   const f = new URLSearchParams(upstream.o.body); assert.equal(f.get('grant_type'), 'authorization_code'); assert.equal(f.get('redirect_uri'), 'https://tradezoro.com/connect/schwab/callback'); assert.equal(f.get('code'), 'CODEABCDEFGH');
   await call(req({ h, body: JSON.stringify({ grant: 'refresh', refresh_token: 'REFRESHFAKE1' }) }));
@@ -113,8 +113,8 @@ await t('token fn: Schwab errors become generic; rate limit', async () => {
   const h = { authorization: 'Bearer ' + good };
   const r400 = await call(req({ h }), ENV, { fetchImpl: async () => new Response('{"error":"invalid_grant","error_description":"SECRETFAKE"}', { status: 400 }) });
   assert.equal(r400.status, 400); assert.ok(!(await r400.text()).includes('SECRETFAKE'));
-  assert.equal((await call(req({ h }), ENV, { fetchImpl: async () => { throw new Error('boom ACCESSFAKE'); } })).status, 502);
-  assert.equal((await call(req({ h }), ENV, { fetchImpl: async () => new Response('<html>', { status: 500 }) })).status, 502);
+  assert.equal((await call(req({ h }), ENV, { fetchImpl: async () => { throw new Error('boom ACCESSFAKE'); } })).status, 503);
+  assert.equal((await call(req({ h }), ENV, { fetchImpl: async () => new Response('<html>', { status: 500 }) })).status, 503);
   const kv = new Map(); const env = { ...ENV, PASSKEYS: { get: async (k) => kv.get(k), put: async (k, v) => kv.set(k, v) } };
   let last; for (let i = 0; i < 25; i++) last = await call(req({ h: { ...h, 'cf-connecting-ip': '1.2.3.4' } }), env);
   assert.equal(last.status, 429);
@@ -159,3 +159,7 @@ await t('streamer: userPreference is the only /trader call; login, subscribe, ti
   off(); hub.stop();
 });
 console.log(n + ' tests passed');
+await t('token fn: a 3xx upstream is refused as 503 upstream', async () => {
+  const r = await call(req({ h: { authorization: 'Bearer ' + good } }), ENV, { fetchImpl: async (u, o) => { if (o.redirect === 'error') throw new TypeError('Invalid redirect value'); return new Response(null, { status: 302, headers: { location: 'https://x.test/' } }); } });
+  assert.equal(r.status, 503); assert.equal((await r.json()).code, 'upstream');
+});

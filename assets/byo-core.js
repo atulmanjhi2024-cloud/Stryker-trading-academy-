@@ -466,8 +466,9 @@ export function takeSchwabState(state, userId, store = globalThis.sessionStorage
 // Asks our function to swap a code / refresh a token. Origin is the page's own; the Firebase ID token proves a signed-in member.
 export async function schwabTokenCall(body, idToken, d) {
   const r = await dep(d).fetch(SCHWAB.TOKEN, { method: 'POST', ...HARD, headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + idToken }, body: JSON.stringify(body) });
-  if (r.status === 503) throw Object.assign(new Error('Schwab is coming soon'), { status: 503 });
   const j = await r.json().catch(() => null);
+  if (r.status === 503 && j && j.code === 'upstream') throw Object.assign(new Error('Schwab did not answer'), { status: 503, code: 'upstream' });   // broker down, not 'coming soon'
+  if (r.status === 503) throw Object.assign(new Error('Schwab is coming soon'), { status: 503 });
   if (!r.ok || !j || !j.access_token) throw Object.assign(new Error('Schwab ' + r.status), { status: r.status });
   return j;
 }

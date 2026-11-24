@@ -64,9 +64,10 @@ export function takeOauthState(id, state, userId, store = globalThis.sessionStor
 }
 export async function oauthTokenCall(id, body, idToken, d) {
   const r = await dep(d).fetch(tokenUrl(id), { method: 'POST', ...HARD, headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + idToken }, body: JSON.stringify(body) });
+  const j = await r.json().catch(() => null);
+  if (r.status === 503 && j && j.code === 'upstream') throw fail(srcById(id).name + ' did not answer', { status: 503, code: 'upstream' });   // broker down, not 'coming soon'
   if (r.status === 503) throw fail(srcById(id).name + ' is coming soon', { status: 503 });
-  const j = r.ok ? await r.json().catch(() => null) : null;
-  if (!j || !j.access_token) throw fail(id + ' ' + r.status, { status: r.status });
+  if (!r.ok || !j || !j.access_token) throw fail(id + ' ' + r.status, { status: r.status });
   // A mistake-stopper: refuse a grant that carries a trading scope (the sign-in URL never asks for one).
   if (TRADE_SCOPE.test(String(j.scope || ''))) throw fail('This sign-in can place trades. Not connected.', { status: 0 });
   return j;

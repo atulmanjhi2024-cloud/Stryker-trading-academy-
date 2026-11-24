@@ -28,5 +28,6 @@
       }).then(function (j) { return c.bindUser(u.uid).then(function () { return c.saveSchwab(j); }); })
         .then(function () { location.replace('/charts'); });
     });
-  }).catch(function () { end('Schwab was not connected', 'Something went wrong. Try again from Data source in the charts.'); });
+  }).catch(function (e) { var s = e && e.status; console.warn('[schwab-callback]', JSON.stringify({ step: 'token', status: s || 0, code: (e && e.code) || '' }));
+    end('Schwab' + ' was not connected', s === 503 && e.code === 'upstream' ? 'Schwab' + " didn't answer. Please try again in a minute." : s === 400 || s === 401 ? 'Schwab' + " didn't accept the sign-in. Please try again." : 'Something went wrong. Try again from Data source in the charts.'); });
 })();

@@ -28,13 +28,14 @@ export async function handle(request, env, deps = {}) {
   if (!body) return fail(400, 'Bad request');
   const kind = body.interval ? 'intraday' : 'daily';
   let r;
-  try { r = await (deps.fetchImpl || fetch)(UP[kind], { method: 'POST', redirect: 'error', signal: AbortSignal.timeout(8000), headers: { 'access-token': tok, 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify(body) }); }
-  catch (e) { return fail(502, 'Dhan did not answer'); }
+  try { r = await (deps.fetchImpl || fetch)(UP[kind], { method: 'POST', redirect: 'manual', signal: AbortSignal.timeout(8000), headers: { 'access-token': tok, 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify(body) }); }
+  catch (e) { return fail(503, 'Dhan did not answer', 'upstream'); }
+  if (r.status >= 300 && r.status < 400) return fail(503, 'Dhan did not answer', 'upstream');
   let j = null; try { j = await r.json(); } catch (e) { /* not json */ }
   if (r.status === 401 || (j && (j.errorCode === 'DH-901' || j.error_code === 'DH-901'))) return fail(401, 'Dhan did not accept this token');
   if (r.status === 429 || (j && (j.errorCode === 'DH-904' || j.error_code === 'DH-904'))) return fail(429, 'Dhan is limiting requests');
   if (j && (j.errorCode === 'DH-902' || j.error_code === 'DH-902')) return fail(402, 'Dhan Data plan is not active');
-  if (!r.ok || !j || !Array.isArray(j.close)) return fail(r.status >= 500 ? 502 : 400, 'Dhan could not return this data');
+  if (!r.ok || !j || !Array.isArray(j.close)) return r.status >= 500 ? fail(503, 'Dhan did not answer', 'upstream') : fail(400, 'Dhan could not return this data', 'rejected');
   const out = {}; for (const k of KEYS) out[k] = Array.isArray(j[k]) ? j[k].slice(0, 100000) : [];   // only price arrays go back
   return json(out);
 }

@@ -11,7 +11,7 @@ import { verifyIdToken, bearerOf } from '../../api/chart/_rt.js';
 const ORIGIN = 'https://tradezoro.com', REDIRECT = ORIGIN + '/connect/schwab/callback', UPSTREAM = 'https://api.schwabapi.com/v1/oauth/token';
 const RATE_MAX = 20, TIMEOUT_MS = 8000;
 const json = (obj, status = 200) => new Response(JSON.stringify(obj), { status, headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', 'referrer-policy': 'no-referrer' } });
-const fail = (status, error) => json({ error }, status);
+const fail = (status, error, code) => json(code ? { error, code } : { error }, status);
 const mem = new Map();
 
 async function rateLimited(env, request) {
@@ -61,13 +61,14 @@ export async function handle(request, env, deps = {}) {
   let r;
   try {
     r = await (deps.fetchImpl || fetch)(UPSTREAM, {
-      method: 'POST', redirect: 'error', signal: AbortSignal.timeout(TIMEOUT_MS),
+      method: 'POST', redirect: 'manual', signal: AbortSignal.timeout(TIMEOUT_MS),
       headers: { Authorization: 'Basic ' + btoa(env.SCHWAB_CLIENT_ID + ':' + env.SCHWAB_CLIENT_SECRET), 'Content-Type': 'application/x-www-form-urlencoded', Accept: 'application/json' },
       body: new URLSearchParams(form).toString()
     });
-  } catch (e) { return fail(502, 'Schwab did not answer'); }
+  } catch (e) { return fail(503, 'Schwab did not answer', 'upstream'); }
+  if (r.status >= 300 && r.status < 400) return fail(503, 'Schwab did not answer', 'upstream');
   let j = null; try { j = await r.json(); } catch (e) { /* not json */ }
-  if (!r.ok || !j || typeof j.access_token !== 'string') return fail(r.status === 400 || r.status === 401 ? 400 : 502, r.status === 400 || r.status === 401 ? 'Schwab did not accept this sign-in' : 'Schwab did not answer');
+  if (!r.ok || !j || typeof j.access_token !== 'string') return r.status === 400 || r.status === 401 ? fail(400, 'Schwab did not accept this sign-in', 'rejected') : fail(503, 'Schwab did not answer', 'upstream');
   // Only these fields go back (no id_token).
   return json({ access_token: j.access_token, refresh_token: typeof j.refresh_token === 'string' ? j.refresh_token : undefined, expires_in: Number(j.expires_in) || 1800, token_type: 'Bearer', scope: typeof j.scope === 'string' ? j.scope : undefined });
 }

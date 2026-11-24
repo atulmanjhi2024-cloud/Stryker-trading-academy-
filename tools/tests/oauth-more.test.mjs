@@ -44,7 +44,7 @@ for (const [id, S] of Object.entries(SRC)) {
     const r = await call(treq()); const j = await r.json(); [console.log, console.error, console.warn] = o;
     assert.equal(r.status, 200); assert.equal(j.access_token, 'ACCESSFAKE1'); assert.equal(j.id_token, undefined); assert.equal(j.extra, undefined);
     assert.ok(Object.keys(j).every((k) => ['access_token', 'refresh_token', 'expires_in', 'token_type', 'scope'].includes(k)));
-    assert.equal(upstream.u, S.up); assert.equal(upstream.o.method, 'POST'); assert.equal(upstream.o.redirect, 'error');
+    assert.equal(upstream.u, S.up); assert.equal(upstream.o.method, 'POST'); assert.equal(upstream.o.redirect, 'manual');
     const body = S.form ? Object.fromEntries(new URLSearchParams(upstream.o.body)) : JSON.parse(upstream.o.body);
     assert.match(upstream.o.headers['Content-Type'], S.form ? /x-www-form-urlencoded/ : /json/);
     assert.equal(body.grant_type, 'authorization_code'); assert.equal(body.code, 'CODEFAKE12345'); assert.equal(body.client_secret, SECRET); assert.equal(body.client_id, 'CLIENTID123');
@@ -56,7 +56,7 @@ for (const [id, S] of Object.entries(SRC)) {
     const b2 = S.form ? Object.fromEntries(new URLSearchParams(upstream.o.body)) : JSON.parse(upstream.o.body); assert.equal(b2.redirect_uri, `https://tradezoro.com/connect/${id}/callback`);
     const bad = await call(treq(), S.env, { fetchImpl: async () => new Response(JSON.stringify({ error: 'x', error_description: SECRET }), { status: 400 }) });
     assert.equal(bad.status, 400); assert.ok(!(await bad.text()).includes('SECRETFAKE'));
-    assert.equal((await call(treq(), S.env, { fetchImpl: async () => { throw new Error('boom ' + SECRET); } })).status, 502);
+    assert.equal((await call(treq(), S.env, { fetchImpl: async () => { throw new Error('boom ' + SECRET); } })).status, 503);
   });
   await t(id + ' token fn: refresh grant ' + (S.refresh ? 'works' : 'is refused (no refresh at this broker)'), async () => {
     upstream = null;

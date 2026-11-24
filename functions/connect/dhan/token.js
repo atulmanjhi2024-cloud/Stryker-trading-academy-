@@ -22,18 +22,18 @@ export async function handle(request, env, deps = {}) {
   if (!(await verifyIdToken(bearerOf(request), { fetchImpl: deps.verifyFetch }))) return fail(401, 'Sign in first');
   let b = null; try { const t = await request.text(); if (t.length <= 2048) b = JSON.parse(t); } catch (e) { b = null; }
   const hdr = { partner_id: env.DHAN_PARTNER_ID, partner_secret: env.DHAN_PARTNER_SECRET, Accept: 'application/json' };
-  const go = async (url, init) => { try { const r = await (deps.fetchImpl || fetch)(url, { redirect: 'error', signal: AbortSignal.timeout(8000), ...init, headers: hdr }); let j = null; try { j = await r.json(); } catch (e) { /* not json */ } return { r, j }; } catch (e) { return null; } };
+  const go = async (url, init) => { try { const r = await (deps.fetchImpl || fetch)(url, { redirect: 'manual', signal: AbortSignal.timeout(8000), ...init, headers: hdr }); if (r.status >= 300 && r.status < 400) return null; let j = null; try { j = await r.json(); } catch (e) { /* not json */ } return { r, j }; } catch (e) { return null; } };
   if (b && b.grant === 'start') {
     const x = await go(BASE + '/partner/generate-consent', { method: 'POST' });
-    if (!x) return fail(502, 'Dhan did not answer');
-    if (!x.r.ok || !x.j || !/^[A-Za-z0-9\-]{8,80}$/.test(x.j.consentId || '')) return fail(x.r.status >= 500 ? 502 : 400, 'Dhan did not accept this sign-in');
+    if (!x) return fail(503, 'Dhan did not answer', 'upstream');
+    if (!x.r.ok || !x.j || !/^[A-Za-z0-9\-]{8,80}$/.test(x.j.consentId || '')) return x.r.status >= 500 ? fail(503, 'Dhan did not answer', 'upstream') : fail(400, 'Dhan did not accept this sign-in', 'rejected');
     return json({ url: BASE + '/consent-login?consentId=' + encodeURIComponent(x.j.consentId) });
   }
   if (b && b.grant === 'code' && typeof b.code === 'string' && /^[A-Za-z0-9._~\-]{8,200}$/.test(b.code)) {
     const x = await go(BASE + '/partner/consume-consent?tokenId=' + encodeURIComponent(b.code), { method: 'GET' });
-    if (!x) return fail(502, 'Dhan did not answer');
+    if (!x) return fail(503, 'Dhan did not answer', 'upstream');
     const j = x.j;
-    if (!x.r.ok || !j || typeof j.accessToken !== 'string' || !/^\d{4,20}$/.test(String(j.dhanClientId || ''))) return fail(x.r.status >= 500 ? 502 : 400, 'Dhan did not accept this sign-in');
+    if (!x.r.ok || !j || typeof j.accessToken !== 'string' || !/^\d{4,20}$/.test(String(j.dhanClientId || ''))) return x.r.status >= 500 ? fail(503, 'Dhan did not answer', 'upstream') : fail(400, 'Dhan did not accept this sign-in', 'rejected');
     const at = Date.parse(String(j.expiryTime || '') + (/[zZ]|[+-]\d\d:?\d\d$/.test(String(j.expiryTime || '')) ? '' : '+05:30'));   // Dhan states the end time in India time
     return json({ access_token: j.accessToken, client_id: String(j.dhanClientId), expires_at: Number.isFinite(at) ? at : undefined });
   }

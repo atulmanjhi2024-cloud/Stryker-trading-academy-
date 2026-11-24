@@ -50,7 +50,7 @@ for (const [id, S] of Object.entries(SRC)) {
     const r = await call(treq()); const j = await r.json(); [console.log, console.error, console.warn] = o;
     assert.equal(r.status, 200); assert.equal(j.access_token, 'ACCESSFAKE1');
     assert.ok(Object.keys(j).every((k) => ['access_token', 'expires_in', 'token_type', 'scope'].includes(k)), JSON.stringify(Object.keys(j)));
-    assert.equal(upstream.u, S.up); assert.equal(upstream.o.method, 'POST'); assert.equal(upstream.o.redirect, 'error');
+    assert.equal(upstream.u, S.up); assert.equal(upstream.o.method, 'POST'); assert.equal(upstream.o.redirect, 'manual');
     const body = S.form ? Object.fromEntries(new URLSearchParams(upstream.o.body)) : JSON.parse(upstream.o.body);
     assert.ok(!logs.join('').match(/ACCESSFAKE|REFRESHFAKE|SECRETFAKE/));
     if (S.form) { assert.equal(body.grant_type, 'authorization_code'); assert.equal(body.code, 'CODEFAKE12345'); assert.equal(body.client_secret, SECRET); assert.equal(body.client_id, APPID); assert.equal(body.redirect_uri, 'https://tradezoro.com/connect/upstox/callback'); }
@@ -64,7 +64,7 @@ for (const [id, S] of Object.entries(SRC)) {
     assert.ok(!upstream.o.body.includes('evil.example.com'), 'client cannot choose the redirect');
     const bad = await call(treq(), S.env, { fetchImpl: async () => new Response(JSON.stringify({ error: 'x', message: SECRET }), { status: 400 }) });
     assert.equal(bad.status, 400); assert.ok(!(await bad.text()).includes('SECRETFAKE'));
-    assert.equal((await call(treq(), S.env, { fetchImpl: async () => { throw new Error('boom ' + SECRET); } })).status, 502);
+    assert.equal((await call(treq(), S.env, { fetchImpl: async () => { throw new Error('boom ' + SECRET); } })).status, 503);
     assert.equal((await call(treq(), S.env, { fetchImpl: async () => new Response(JSON.stringify({ s: 'error', code: -1, message: 'bad' }), { status: 200 }) })).status, 400, 'a 200 without a token is a failure');
   });
   await t(id + ' token fn: no refresh grant (member reconnects daily)', async () => {

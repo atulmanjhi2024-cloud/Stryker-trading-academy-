@@ -15,7 +15,7 @@
  */
 (function (root) {
   'use strict';
-  const V = '?v=1282';
+  const V = '?v=1283';
   const SCRIPTS = ['chart-templates.js', 'paper-engine.js', 'bar-replay-core.js', 'chart-pine-scripts.js', 'chart-pine-guard.js', 'chart-pine-library.js'];
   let loading = null;
 

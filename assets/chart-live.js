@@ -42,6 +42,10 @@ const DISCLAIMER = 'Education only. Not financial advice.';
 const esc = (s) => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 const money = (n, sign) => { if (n == null || !Number.isFinite(n)) return '—'; const s = Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); return (n < 0 ? '−' : sign && n > 0 ? '+' : '') + '$' + s; };
 const px = (n) => (n == null || !Number.isFinite(n) ? '—' : n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
+// AUTO-TPSL (Owner bug 25 Nov: "@ 1.10" on a EURUSD position): a broker symbol's prices use ITS digits (cTrader SymbolById 'digits',
+// else the tick): EURUSD 1.09526, NAS100 25,328.81. decOf(tick) -> digits; pxd(v, tick) -> text
+const decOf = (tick) => (tick > 0 ? Math.max(0, Math.min(8, Math.round(-Math.log10(tick)))) : 2);
+const pxd = (n, tick) => (n == null || !Number.isFinite(Number(n)) ? '—' : Number(n).toLocaleString('en-US', { minimumFractionDigits: decOf(tick), maximumFractionDigits: decOf(tick) }));
 const uuid = () => (crypto.randomUUID ? crypto.randomUUID() : 'k' + Date.now().toString(36) + Math.random().toString(36).slice(2, 14));
 const TEST = /^(127\.0\.0\.1|localhost)$/.test(location.hostname) ? window.__stkLiveTest : null;   // test hooks: localhost only
 const now = () => (TEST && TEST.now ? TEST.now() : Date.now());
@@ -591,7 +595,7 @@ const envWord = () => (S.env && S.env.env === 'sandbox' ? 'SANDBOX' : 'LIVE');
 export function lines(sym) {
   const i = info(sym); if (!i || (i.mt && (!i.code || !i.map.same))) return [];   // a CFD's prices are not this chart's prices: no lines
   const out = [];
-  if (i.pos.qty && i.pos.avg) out.push({ id: 'pos', kind: 'pos', live: true, price: i.pos.avg, side: i.pos.qty > 0 ? 'buy' : 'sell', qty: Math.abs(i.pos.qty), pnl: i.pnl });
+  if (i.pos.qty && i.pos.avg) { const one = i.ct && S.acct.ct ? ctPosOf(i.code) : null; out.push({ id: 'pos', kind: 'pos', live: true, price: i.pos.avg, side: i.pos.qty > 0 ? 'buy' : 'sell', qty: Math.abs(i.pos.qty), pnl: i.pnl, sltp: one ? { posId: String(one.positionId), sl: Number(one.stopLoss) > 0, tp: Number(one.takeProfit) > 0 } : null }); }
   const g = S.group && S.group.code === i.code ? S.group : null;
   for (const o of i.working) if (o.price) out.push({ id: 'L' + o.id, oid: o.id, kind: 'ord', live: true, price: o.price, side: o.side, type: o.type, qty: o.qty, role: g && g.slId === o.id ? 'sl' : g && g.tpId === o.id ? 'tp' : '' });
   if (i.ct) out.push(...ctSlTp(i));
@@ -609,8 +613,8 @@ function ctSlTp(i) {
   for (const p of S.data.positions) {
     if (!p || !same(p) || !Number(p.quantity)) continue;
     const side = Number(p.quantity) > 0 ? 'buy' : 'sell', qty = Math.abs(Number(p.quantity)), id = String(p.positionId || '');
-    if (Number(p.stopLoss) > 0) out.push({ id: 'SP' + id, kind: 'sl', role: 'sl', live: true, price: Number(p.stopLoss), side, ref: p.averagePrice, qty });
-    if (Number(p.takeProfit) > 0) out.push({ id: 'TP' + id, kind: 'tp', role: 'tp', live: true, price: Number(p.takeProfit), side, ref: p.averagePrice, qty });
+    if (Number(p.stopLoss) > 0) out.push({ id: 'SP' + id, kind: 'sl', role: 'sl', live: true, posId: id, price: Number(p.stopLoss), side, ref: p.averagePrice, qty });
+    if (Number(p.takeProfit) > 0) out.push({ id: 'TP' + id, kind: 'tp', role: 'tp', live: true, posId: id, price: Number(p.takeProfit), side, ref: p.averagePrice, qty });
   }
   for (const o of i.working) {
     const r = S.data.orders.find((x) => String(x.orderId || x.id || '') === o.id); if (!r) continue;
@@ -647,23 +651,27 @@ export function otherNote(sym) {
 export function openOther(sym) { try { window.STRYKER_VELA.active.setSymbol(sym); } catch (e) { toast('Could not open ' + String(sym).replace(/^byo:CT:/, '') + '.', 'error'); }
 }
 export function chipText(sym, l) {
-  const i = info(sym);
-  if (l.kind === 'pos' && i && i.mt) return ['LIVE ' + (l.side === 'buy' ? 'LONG ' : 'SHORT ') + lotTxt(l.qty) + ' ' + i.code + ' @ ' + px(l.price), money(i.pnl, true)];
+  const i = info(sym), pf = (v) => (i && i.mt && i.code ? pxd(v, i.tick) : px(v));
+  if (l.id === 'new' && l.slRole) { const v = sltpPreview(sym, l); return [(l.slRole === 'sl' ? 'SL ' : 'TP ') + pf(l.price), v.err || v.pnl]; }   // AUTO-TPSL: dragging a new TP / SL
+  // phones: the chart already names the symbol; leaving it out keeps the label + its TP / SL handles inside the screen
+  if (l.kind === 'pos' && i && i.mt) return ['LIVE ' + (l.side === 'buy' ? 'LONG ' : 'SHORT ') + lotTxt(l.qty) + (window.innerWidth <= 700 && i.map && i.map.same ? '' : ' ' + i.code) + ' @ ' + pf(l.price), money(i.pnl, true)];
   if (l.kind === 'pos') return ['LIVE ' + (l.side === 'buy' ? 'LONG ' : 'SHORT ') + l.qty + ' ' + (i ? i.code : '') + ' @ ' + px(l.price), money(i ? i.pnl : null, true)];
-  if (l.pending && l.role) return [(l.sent ? 'LIVE ' : 'SENDING ') + (l.role === 'sl' ? 'SL ' : 'TP ') + l.qty, px(l.price)];
-  if (l.pending) return [(l.sent ? 'LIVE ' : 'SENDING ') + (l.side === 'buy' ? 'BUY ' : 'SELL ') + l.qty + (l.type === 'market' ? ' MKT' : /stop/.test(l.type) ? ' STP' : ' LMT'), px(l.price)];
-  if (l.role) return ['LIVE ' + (l.role === 'sl' ? 'SL ' : 'TP ') + l.qty, px(l.price)];
-  return ['LIVE ' + (l.side === 'buy' ? 'BUY ' : 'SELL ') + (/stop/.test(l.type) ? 'STP ' : 'LMT ') + l.qty, px(l.price)];
+  if (l.pending && l.role) return [(l.sent ? 'LIVE ' : 'SENDING ') + (l.role === 'sl' ? 'SL ' : 'TP ') + l.qty, pf(l.price)];
+  if (l.pending) return [(l.sent ? 'LIVE ' : 'SENDING ') + (l.side === 'buy' ? 'BUY ' : 'SELL ') + l.qty + (l.type === 'market' ? ' MKT' : /stop/.test(l.type) ? ' STP' : ' LMT'), pf(l.price)];
+  if (l.role && l.posId) { const v = sltpPreview(sym, l); return ['LIVE ' + (l.role === 'sl' ? 'SL ' : 'TP ') + pf(l.price), v.err || v.pnl]; }   // a position's SL / TP: level + projected P&L
+  if (l.role) return ['LIVE ' + (l.role === 'sl' ? 'SL ' : 'TP ') + l.qty, pf(l.price)];
+  return ['LIVE ' + (l.side === 'buy' ? 'BUY ' : 'SELL ') + (/stop/.test(l.type) ? 'STP ' : 'LMT ') + l.qty, pf(l.price)];
 }
 // label parts for the Trade display toggles (all on = chipText above, word for word)
 export function chipParts(sym, l) {
-  const i = info(sym), t = chipText(sym, l);
-  const sd = (w) => ({ name: w, pa: 'a' });
-  if (l.kind === 'pos') { const mt = i && i.mt; return { name: 'LIVE ' + (l.side === 'buy' ? 'LONG' : 'SHORT'), size: mt ? lotTxt(l.qty) : String(l.qty), price: '@ ' + px(l.price), pnl: t[1], pa: 'a' }; }
-  if (l.pending && l.role) return { name: (l.sent ? 'LIVE ' : 'SENDING ') + (l.role === 'sl' ? 'SL' : 'TP'), size: String(l.qty), price: px(l.price), pnl: '', pa: 'a' };
-  if (l.pending) return { name: (l.sent ? 'LIVE ' : 'SENDING ') + (l.side === 'buy' ? 'BUY' : 'SELL') + (l.sent ? (/stop/.test(l.type) ? ' STP' : ' LMT') : ''), size: String(l.qty), price: px(l.price), pnl: '', pa: 'b' };
-  if (l.role) return { name: 'LIVE ' + (l.role === 'sl' ? 'SL' : 'TP'), size: String(l.qty), price: px(l.price), pnl: '', pa: 'a' };
-  return { name: 'LIVE ' + (l.side === 'buy' ? 'BUY' : 'SELL') + (/stop/.test(l.type) ? ' STP' : ' LMT'), size: String(l.qty), price: px(l.price), pnl: '', pa: 'b' };
+  const i = info(sym), t = chipText(sym, l), pf = (v) => (i && i.mt && i.code ? pxd(v, i.tick) : px(v));
+  if (l.id === 'new' && l.slRole) return { name: l.slRole === 'sl' ? 'SL' : 'TP', size: '', price: pf(l.price), pnl: t[1], pa: 'a' };
+  if (l.kind === 'pos') { const mt = i && i.mt; return { name: 'LIVE ' + (l.side === 'buy' ? 'LONG' : 'SHORT'), size: mt ? lotTxt(l.qty) : String(l.qty), price: '@ ' + (mt ? pf(l.price) : px(l.price)), pnl: t[1], pa: 'a' }; }
+  if (l.pending && l.role) return { name: (l.sent ? 'LIVE ' : 'SENDING ') + (l.role === 'sl' ? 'SL' : 'TP'), size: String(l.qty), price: pf(l.price), pnl: '', pa: 'a' };
+  if (l.pending) return { name: (l.sent ? 'LIVE ' : 'SENDING ') + (l.side === 'buy' ? 'BUY' : 'SELL') + (l.sent ? (/stop/.test(l.type) ? ' STP' : ' LMT') : ''), size: String(l.qty), price: pf(l.price), pnl: '', pa: 'b' };
+  if (l.role && l.posId) return { name: 'LIVE ' + (l.role === 'sl' ? 'SL' : 'TP'), size: '', price: pf(l.price), pnl: t[1], pa: 'a' };
+  if (l.role) return { name: 'LIVE ' + (l.role === 'sl' ? 'SL' : 'TP'), size: String(l.qty), price: pf(l.price), pnl: '', pa: 'a' };
+  return { name: 'LIVE ' + (l.side === 'buy' ? 'BUY' : 'SELL') + (/stop/.test(l.type) ? ' STP' : ' LMT'), size: String(l.qty), price: pf(l.price), pnl: '', pa: 'b' };
 }
 // the active account's fills on this chart's instrument, for Trade display > Executions: today's fills, plus the Trade history tab's when loaded
 export function execs(sym) {
@@ -684,7 +692,7 @@ export function execs(sym) {
   return out.sort((x, y) => x.t - y.t);
 }
 const lotTxt = (q) => Number(q).toFixed(2) + ' lot' + (Number(q) === 1 ? '' : 's');
-export const tickOf = (sym) => { const i = L.instrumentOf(sym); return i && i.asset === 'future' ? (L.ROOTS[i.root] || {}).tick || 0.01 : 0.01; };
+export const tickOf = (sym) => { if (S.acct && S.acct.mt) { const m = infoMt(sym); if (m && m.code && m.tick > 0) return m.tick; } const i = L.instrumentOf(sym); return i && i.asset === 'future' ? (L.ROOTS[i.root] || {}).tick || 0.01 : 0.01; };   // AUTO-TPSL: a broker symbol drags on its own tick (EURUSD 0.00001)
 
 // ------------------------------------------------------------------------------------------ confirm sheet
 let cf = null;
@@ -766,7 +774,7 @@ export function enableLive() {
 // the socket (c_send), cTrader's answer back (c_ack), toast shown (c_toast), the fill of a market order (c_fill). The marks go to
 // that order's log row (brokerOrderAudit, admin-read) through the relay, so the Owner's next live orders give real numbers.
 // The toast says "sending…" at once, then what cTrader answered: "filled @ price" (market) or "accepted" (limit / stop).
-async function write(body, what, pending, lat) {
+async function write(body, what, pending, lat, okText) {
   S.busy = true; S.lastWriteAt = now(); S.pending = pending || null; render();
   const tm = { op: body.op, t0: lat && lat.t0 ? lat.t0 : performance.now(), lat: lat || null };
   let okW = null;
@@ -774,6 +782,7 @@ async function write(body, what, pending, lat) {
   if (ct && body.op === 'place') toast(what + ' sending…', 'info');
   try {
     const r = await order(body, tm); tm.ok = true; okW = r || {};
+    if (okText) { toast(okText, 'success'); return r; }   // AUTO-TPSL: "Take profit set at 1.09800"
     if (ct) { ctToast(what, r, lat); return r; }
     toast(r.settled ? L.settledText(what, r) : what + ' sent. ' + (r.status ? 'Broker status: ' + r.status + '.' : ''), 'success'); return r;
   }
@@ -795,52 +804,17 @@ const ms0 = (lat, k) => (lat && lat[k] ? Math.max(0, Math.round(lat[k] - lat.t0)
 function ctMarks(body, lat) {
   if (!lat || lat.sentMarks || !CT.link || !body.idemKey) return; lat.sentMarks = true;
   const m = { c_cf: ms0(lat, 'cf'), c_open: ms0(lat, 'open'), c_send: ms0(lat, 'send'), c_ack: ms0(lat, 'ack'), c_toast: ms0(lat, 'toast'), c_fill: ms0(lat, 'fillAt') };
-  if (lat.exp) m.exp_px = lat.exp.price;
-  if (lat.slip) Object.assign(m, { fill_px: lat.slip.fill, slip_pts: lat.slip.pts }, lat.slip.money != null ? { slip_money: lat.slip.money } : {});
   S.lat = Object.assign({ at: Date.now(), op: body.op }, m, lat.watch && lat.watch.server ? lat.watch.server : {}); window.__stkLat = S.lat;
   CT.link.marks(body.idemKey, m);
 }
-const pxTxt = (v, tick) => { const d = tick > 0 ? Math.max(0, Math.min(8, Math.round(-Math.log10(tick)))) : 2; return Number(v).toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d }); };
-// ---- SLIPPAGE (Owner 25 Nov). lat.exp = the price the member saw at the click (placeMt, market orders on the broker's own prices);
-// at the fill: L.slippage (positive = worse for the trader), kept per account on this device by cTrader order id so Trade history can
-// show Expected / Slippage for orders sent from TradeZoro (other rows stay blank), and sent with the click's marks to the order's log
-// row (ctMarks, after the order, never before). Money only when the symbol is quoted in USD (same rule as the chart P&L, ctPnl).
-const slipKey = () => 'stryker_slip_' + uid + '_' + (S.acct ? S.acct.id : '');
-function slipBook() { try { const j = JSON.parse(localStorage.getItem(slipKey()) || '{}'); return j && typeof j === 'object' ? j : {}; } catch (e) { return {}; } }
-function slipSave(oid, s) {
-  if (!oid || !s) return; const b = slipBook(); b[oid] = { e: s.exp, f: s.fill, p: s.pts, m: s.money, s: s.src, at: Date.now() };
-  const ks = Object.keys(b); if (ks.length > 300) ks.sort((x, y) => (b[x].at || 0) - (b[y].at || 0)).slice(0, ks.length - 300).forEach((k) => delete b[k]);
-  try { localStorage.setItem(slipKey(), JSON.stringify(b)); } catch (e) { /* full: only the history column is lost */ }
-}
-function ctUnits(code, lots) {   // broker units for money, USD-quoted symbols only (else null: points only)
-  if (!CT.link) return null;
-  const K = String(code || '').toUpperCase(), id = CT.link.byName.get(K), d = id && CT.link.details.get(id); if (!d || !(d.lotSize > 0)) return null;
-  const qa = CT.link.quote && CT.link.quote.get(K), as = CT.link.assets && qa ? CT.link.assets.find((a) => a && Number(a.assetId) === qa) : null;
-  const usd = as ? String(as.name || as.displayName || '').toUpperCase() === 'USD' : /USD$/.test(K);
-  return usd ? Number(lots) * d.lotSize / 100 : null;
-}
-function ctSlip(lat, r, fill) {
-  if (!lat || !lat.exp || !lat.body) return null;
-  const b = lat.body, s = L.slippage(b.side, lat.exp.price, fill, ctUnits(b.symbol, b.qty), lat.tick); if (!s) return null;
-  s.src = lat.exp.src; lat.slip = s; slipSave(r && r.orderId ? String(r.orderId) : '', s);
-  return s;
-}
-// the price on screen at the click: the broker's own bid / ask (its chart plots the bid) when fresh, else the chart's last price
-function expectedAt(i, side, sym) {
-  if (!i || !i.map || !i.map.same) return null;   // a mapped futures chart is not the broker's price: no expected price
-  let q = null; try { q = CT.byo && CT.byo.quoteOf ? CT.byo.quoteOf('CT:' + String(i.code || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase()) : null; } catch (e) { q = null; }
-  if (TEST && TEST.ctQuote) q = TEST.ctQuote(i.code, sym);
-  if (q && q.at && Date.now() - q.at > 15000) q = null;   // stale quote: the chart's last price is what was on screen
-  return L.expectedPrice(side, q, i.last);
-}
+const pxTxt = (v, tick) => { const d = tick > 0 ? Math.max(0, Math.min(8, Math.round(-Math.log10(tick)))) : 2; return Number(v).toFixed(d); };
 function ctToast(what, r, lat) {
   const st = String(r.status || ''), tick = lat.tick || 0;
   const done = (msg) => { toast(msg, 'success'); lat.toast = performance.now(); };
-  const at = (v) => ' @ ' + pxTxt(v, tick) + L.slipText(ctSlip(lat, r, v), (x) => pxTxt(x, tick)) + '.';
-  if (/FILL/.test(st)) { lat.fillAt = lat.ack; done(what + ' filled' + (r.price ? at(r.price) : '.')); return; }
+  if (/FILL/.test(st)) { lat.fillAt = lat.ack; done(what + ' filled' + (r.price ? ' @ ' + pxTxt(r.price, tick) : '') + '.'); return; }
   if (r.fill && typeof r.fill.then === 'function') {   // a market order cTrader accepted first: the fill event follows
     lat.wait = true;
-    r.fill.then((p) => { lat.wait = false; if (p) { lat.fillAt = performance.now(); done(what + ' filled' + at(p)); } else done(what + ': cTrader accepted it. The fill shows in your positions.'); ctMarks(lat.body, lat); });
+    r.fill.then((p) => { lat.wait = false; if (p) { lat.fillAt = performance.now(); done(what + ' filled @ ' + pxTxt(p, tick) + '.'); } else done(what + ': cTrader accepted it. The fill shows in your positions.'); ctMarks(lat.body, lat); });
     return;
   }
   done(what + (/ACCEPTED|PENDING/.test(st) || !st ? ': order accepted by cTrader.' : ' sent. cTrader status: ' + st.toLowerCase().replace(/_/g, ' ') + '.'));
@@ -891,11 +865,91 @@ async function placeMt(sym, o, src) {
   const b = L.buildPlaceMt({ sym: i.code, side: o.side, qty, type: o.type, price: o.price, lots: i.lots, same: i.map.same, asset: L.mtAsset(S.placeSchema) }); if (b.error) { toast(b.error, 'error'); return null; }
   const body = Object.assign(b.body, { idemKey: uuid() }, i.ct && o.sl != null ? { sl: o.sl } : {}, i.ct && o.tp != null ? { tp: o.tp } : {});
   if (i.ct) { const sig = JSON.stringify(Object.assign({}, body, { idemKey: '' })), t = now(); if (S.lastSend && S.lastSend.sig === sig && t - S.lastSend.at < L.DUP_MS) return null; S.lastSend = { sig, at: t }; }   // double-click guard
-  const desc = sideWord(o.side) + ' ' + lotTxt(qty) + ' ' + i.code + ' ' + (o.type === 'market' ? 'MARKET' : o.type.toUpperCase() + ' @ ' + px(Number(body.limitPrice || body.stopPrice)));
+  const desc = sideWord(o.side) + ' ' + lotTxt(qty) + ' ' + i.code + ' ' + (o.type === 'market' ? 'MARKET' : o.type.toUpperCase() + ' @ ' + pxd(Number(body.limitPrice || body.stopPrice), i.tick));
   const pl = i.map.same ? L.pendingLine(body, i.last) : null; if (pl && i.ct) Object.assign(pl, { sl: Number(body.sl) > 0 ? Number(body.sl) : null, tp: Number(body.tp) > 0 ? Number(body.tp) : null });   // cTrader: SL / TP lines from the click too
-  if (lat) { lat.tick = i.tick; lat.body = body; lat.exp = o.type === 'market' && i.ct ? expectedAt(i, o.side, sym) : null; lat.cf = performance.now(); }   // c_cf: the chart's own checks done, the order leaves
+  if (lat) { lat.tick = i.tick; lat.body = body; lat.cf = performance.now(); }   // c_cf: the chart's own checks done, the order leaves
   return write(body, desc + (src ? ' (' + src + ')' : ''), pl, lat);
 }
+
+// ------------------------------------------------------------------------------------------ AUTO-TPSL: stop loss / take profit of an open cTrader position
+// (Owner bug 25 Nov \"cant set tp and sl\"). Set from the chart (hover / tap the position line -> TP and SL handles; drag one to its level),
+// moved by dragging the TP / SL line, removed with its x, or typed in the Positions & Orders dock. Every path ends in setSlTp(): the read
+// gate, the kill switch, Enable live trading, a side check against the latest bid / ask and the symbol's minimum distance (clear text,
+// nothing sent when wrong), the Trade display confirm setting, then ONE AmendPositionSLTPReq (2110) through the trade relay, which
+// re-checks the position id, every gate, the account lock and writes the audit row before anything reaches cTrader. Never retried.
+let balT = 0;
+function balSoon() { clearTimeout(balT); balT = setTimeout(() => { if (S.acct) { balance(S.acct.id, true); dayFills(true); } }, 700); }
+const ctPosRecs = (code) => S.data.positions.filter((p) => p && L.matches(p, code) && Number(p.quantity) && p.positionId != null);
+// the one cTrader position on this symbol (the chart's handles need exactly one; several = set them per row in the dock)
+function ctPosOf(code) { const r = ctPosRecs(code); return r.length === 1 ? r[0] : null; }
+const ctPosById = (id) => S.data.positions.find((p) => p && String(p.positionId) === String(id) && Number(p.quantity)) || null;
+// the money of ONE position at a price (USD-quoted symbols only, else null): (price - entry) x units
+function ctPnlOne(code, p, price) {
+  if (!Number.isFinite(price) || !(Number(p.averagePrice) > 0) || !(Number(p.volume) > 0)) return null;
+  const K = String(code).toUpperCase(), qa = CT.link && CT.link.quote && CT.link.quote.get(K), as = CT.link && CT.link.assets && qa ? CT.link.assets.find((a) => a && Number(a.assetId) === qa) : null;
+  if (!(as ? String(as.name || as.displayName || '').toUpperCase() === 'USD' : /USD$/.test(K))) return null;
+  return Math.round((price - Number(p.averagePrice)) * (Number(p.quantity) < 0 ? -1 : 1) * Number(p.volume) / 100 * 100) / 100;
+}
+// the latest bid / ask of a cTrader symbol: the trading account's own price stream, else the broker chart's last price (= its bid)
+let QUO = null;
+function quoteFor(code) {
+  if (!QUO) import('./byo-ctrader.js?v=1281').then((m) => { QUO = m.quoteOf; }).catch(() => {});
+  const q = QUO ? QUO(code) : null; if (q && q.bid > 0) return q;
+  let b = P && P.lastPrice ? P.lastPrice('byo:CT:' + code) : undefined;
+  if (!(b > 0) && TEST && TEST.quote) { const t = TEST.quote(code); if (t) return t; }
+  if (!(b > 0) && TEST && TEST.last) b = TEST.last('byo:CT:' + code);
+  return b > 0 ? { bid: b, ask: null } : null;
+}
+const symDetail = (code) => { const id = CT.link && CT.link.byName.get(String(code || '').toUpperCase()); return id ? CT.link.details.get(id) || null : null; };
+// a TP / SL line at a price: { pnl: '+$12.40' | '', err: 'A buy’s …' | '' } for the chip while it is dragged or shown
+function sltpPreview(sym, l) {
+  const role = l.slRole || l.role, p = l.posId ? ctPosById(l.posId) : null, i = infoMt(sym); if (!p || !i || !CT.mod) return { pnl: '', err: '' };
+  const side = Number(p.quantity) > 0 ? 'buy' : 'sell', want = { sl: null, tp: null }; want[role] = l.price;
+  const c = CT.mod.sltpCheck({ side }, want, quoteFor(i.code), symDetail(i.code));
+  const v = ctPnlOne(i.code, p, l.price);
+  return { pnl: v == null ? '' : money(v, true), err: c.error ? 'Wrong side' : '' };
+}
+// k 'sl' | 'tp', v = the new level (null = remove it). src 'chart' | 'dock'. -> Promise<{ ok } | { error }>
+export async function setSlTp(posId, k, v, src) {
+  if (!S.acct || !S.acct.ct || !CT.ops) return { error: 'Stop loss and take profit can be set here for cTrader positions.' };
+  const what = k === 'sl' ? 'Stop loss' : 'Take profit', fail2 = (m) => { toast(m, 'error'); return { error: m }; };
+  if (S.busy) return fail2('Another order is still on its way. Wait for its answer.');
+  if (!S.envBusy && (!S.env || now() - S.envAt > ENV_MAX_AGE)) await envCheck();
+  if (S.env && S.env.consent === false && S.env.blocked !== true) { enableLive(); return { error: 'Enable live trading first.' }; }
+  const why = blockReason(); if (why && !/^Pick the .* symbol/.test(why)) return fail2(why);
+  const p = ctPosById(posId); if (!p) return fail2('That position is not open any more.');
+  const code = String(p.symbol || ''), tick = codeTick(code), side = Number(p.quantity) > 0 ? 'buy' : 'sell';
+  const cur = { sl: Number(p.stopLoss) > 0 ? Number(p.stopLoss) : null, tp: Number(p.takeProfit) > 0 ? Number(p.takeProfit) : null };
+  const want = Object.assign({}, cur, { [k]: v == null || v === '' ? null : Number(Number(v).toFixed(decOf(tick))) });
+  if (want[k] != null && cur[k] != null && Math.abs(want[k] - cur[k]) < tick / 2) return { ok: true, same: true };
+  const q = quoteFor(code), d = symDetail(code);
+  // only the level that changes is checked against the market (the other one is cTrader's own, already accepted)
+  if (want[k] != null) { const c = CT.mod.sltpCheck({ side }, { [k]: want[k] }, q, d); if (c.error) return fail2(c.error); }
+  const lvl = want[k] == null ? '' : pxd(want[k], tick);
+  const tv = window.__stkTradeView && window.__stkTradeView.get ? window.__stkTradeView.get() : null;
+  if (tv && tv.confirm && tv.master) {
+    const pnl = want[k] == null ? null : ctPnlOne(code, p, want[k]);
+    const ok = await confirmSheet({ title: want[k] == null ? 'Remove ' + what.toLowerCase() : (cur[k] == null ? 'Set ' : 'Move ') + what.toLowerCase() + ' to ' + lvl, code, side: k === 'tp' ? 'buy' : 'sell', go: want[k] == null ? 'Remove' : (cur[k] == null ? 'Set ' : 'Move ') + what.toLowerCase(),
+      lines: ['Position <b>' + esc(code) + '</b> ' + (side === 'buy' ? 'long ' : 'short ') + lotTxt(Math.abs(Number(p.quantity))) + ' @ ' + pxd(p.averagePrice, tick), cur[k] != null ? 'Now ' + pxd(cur[k], tick) : 'Not set now', want[k] != null ? 'New level <b>' + lvl + '</b>' + (pnl != null ? ' (' + money(pnl, true) + ' at that price)' : '') : 'cTrader removes it'] });
+    if (!ok) return { error: 'Cancelled.' };
+  }
+  const body = { op: 'sltp', positionId: String(p.positionId), symbolId: Number(p.symbolId) || 0, side, sl: want.sl, tp: want.tp, check: k, bid: q && q.bid, ask: q && q.ask, idemKey: uuid() };
+  const done = want[k] == null ? what + ' removed.' : what + ' set at ' + lvl + '.';
+  const r = await write(body, what + ' ' + code, null, null, done);   // refused: "Take profit EURUSD refused: <cTrader's reason>"
+  if (!r) return { error: what + ' was not changed.' };
+  // the next read confirms it; draw the new level now
+  const rec = ctPosById(posId); if (rec) { rec.stopLoss = want.sl == null ? undefined : want.sl; rec.takeProfit = want.tp == null ? undefined : want.tp; render(); }
+  return { ok: true };
+}
+export const removeSlTp = (posId, k) => setSlTp(posId, k, null, 'chart');
+// a drag on the chart ended: d.slRole (a new level from the position's handle) or d.id 'SP<pos>' / 'TP<pos>' (an existing one moved)
+function dragSlTp(sym, d) {
+  const m = /^([ST])P(.+)$/.exec(String(d.id || '')), k = d.slRole || (m && m[1] === 'S' ? 'sl' : 'tp'), pid = d.posId || (m && m[2]);
+  if (!pid) return null;
+  return setSlTp(pid, k, d.price, 'chart');
+}
+// the chart's position chip asks which handles to show: { posId, sl: has one, tp: has one } | null
+export function posHandles(sym) { const i = S.acct && S.acct.ct ? infoMt(sym) : null; if (!i || !i.code || !i.map.same) return null; const p = ctPosOf(i.code); return p ? { posId: String(p.positionId), sl: Number(p.stopLoss) > 0, tp: Number(p.takeProfit) > 0, side: Number(p.quantity) > 0 ? 'buy' : 'sell', avg: Number(p.averagePrice), qty: Math.abs(Number(p.quantity)) } : null; }
 const MT_NO_SLTP = 'Stop loss and take profit for MetaTrader: set them in MetaTrader for now.';
 const CT_NO_SLTP = 'This chart’s prices are not your broker’s prices for this symbol, so stop loss and take profit can’t be set from here.';
 // ---- stop loss / take profit: after every positions read, ask the server to move the group on (place the children after the fill,
@@ -1002,10 +1056,27 @@ export function dock(tab) {
   const pos = [], ord = [];
   for (const code of codes) {
     const n = L.netPosition(S.data.positions, code), root = L.rootOfCode(code), pv = L.pvOfCode(code);
-    if (n.qty && S.acct.mt) { const ownLast = S.acct.ct && P.lastPrice ? P.lastPrice('byo:CT:' + code) : undefined, ok = Number.isFinite(ownLast) && ownLast > 0;   // cTrader: the broker's own chart price when that chart is open
-      pos.push({ sym: code, side: n.qty > 0 ? 'Long' : 'Short', buy: n.qty > 0, qty: Math.abs(n.qty).toFixed(2), avg: px(n.avg), last: ok ? px(ownLast) : '—', pnl: n.upl != null ? n.upl : ok ? ctPnl(code, n, ownLast) : null, close: () => (isOwn(S.acct) ? flattenCt(code) : flatten()) }); }
+    if (n.qty && S.acct.mt) { const ownLast = S.acct.ct && P.lastPrice ? P.lastPrice('byo:CT:' + code) : undefined, ok = Number.isFinite(ownLast) && ownLast > 0, tk = codeTick(code);   // cTrader: the broker's own chart price when that chart is open
+      // AUTO-TPSL: cTrader positions one row each (each has its own stop loss / take profit, editable in the row)
+      const recs = S.acct.ct ? S.data.positions.filter((p) => p && L.matches(p, code) && Number(p.quantity)) : [];
+      if (recs.length) for (const p of recs) { const q = Number(p.quantity), one = { qty: q, avg: Number(p.averagePrice) || null };
+        pos.push({ sym: code, side: q > 0 ? 'Long' : 'Short', buy: q > 0, qty: Math.abs(q).toFixed(2), avg: pxd(one.avg, tk), last: ok ? pxd(ownLast, tk) : '—', pnl: ok ? ctPnlOne(code, p, ownLast) : null,
+          sl: Number(p.stopLoss) > 0 ? pxd(Number(p.stopLoss), tk) : '', tp: Number(p.takeProfit) > 0 ? pxd(Number(p.takeProfit), tk) : '', posId: String(p.positionId), slRaw: Number(p.stopLoss) > 0 ? Number(p.stopLoss) : null, tpRaw: Number(p.takeProfit) > 0 ? Number(p.takeProfit) : null, dec: decOf(tk),
+          setLevel: (k, v) => setSlTp(String(p.positionId), k, v, 'dock'), close: () => flattenCt(code) }); }
+      else pos.push({ sym: code, side: n.qty > 0 ? 'Long' : 'Short', buy: n.qty > 0, qty: Math.abs(n.qty).toFixed(2), avg: pxd(n.avg, tk), last: ok ? pxd(ownLast, tk) : '—', pnl: n.upl != null ? n.upl : ok ? ctPnl(code, n, ownLast) : null, close: () => (isOwn(S.acct) ? flattenCt(code) : flatten()) }); }
     else if (n.qty) { const last = P.lastPrice && root ? P.lastPrice(root + '1!') : undefined; pos.push({ sym: code, side: n.qty > 0 ? 'Long' : 'Short', buy: n.qty > 0, qty: Math.abs(n.qty), avg: px(n.avg), last: px(last), pnl: pv ? L.openPnl(n.qty, n.avg, Number.isFinite(last) ? last : null, pv, n.upl) : n.upl, close: () => flatten(L.chartSymOf(code)) }); }
-    for (const o of L.workingOrders(S.data.orders, code)) ord.push({ sym: code, side: o.side === 'buy' ? 'Buy' : 'Sell', buy: o.side === 'buy', type: (o.type || '').replace(/^./, (c) => c.toUpperCase()), qty: o.qty, price: o.price ? px(o.price) : '—', status: o.cancelling ? 'Cancelling' : 'Working', cancel: o.cancelling ? null : () => cancel(o.id) });
+    const tk = S.acct.mt ? codeTick(code) : 0.01, pf = (v) => (S.acct.mt ? pxd(v, tk) : px(v));
+    for (const o of L.workingOrders(S.data.orders, code)) { const r = S.data.orders.find((x) => String(x.orderId || x.id || '') === o.id) || {};
+      ord.push({ sym: code, side: o.side === 'buy' ? 'Buy' : 'Sell', buy: o.side === 'buy', type: (o.type || '').replace(/^./, (c) => c.toUpperCase()), qty: S.acct.mt ? Number(o.qty).toFixed(2) : o.qty, price: o.price ? pf(o.price) : '—',
+        sl: Number(r.stopLoss) > 0 ? pf(Number(r.stopLoss)) : '—', tp: Number(r.takeProfit) > 0 ? pf(Number(r.takeProfit)) : '—', t: r.placedAt || 0,
+        status: o.cancelling ? 'Cancelling' : 'Working', cancel: o.cancelling ? null : () => cancel(o.id) }); }
+    // AUTO-TPSL (Owner bug 25 Nov "Open orders says No open orders"): a cTrader position's stop loss / take profit are working orders at
+    // cTrader, so they are listed here too (closing side, the position's size); x removes that level (AmendPositionSLTP without it)
+    if (S.acct.ct) for (const p of S.data.positions) {
+      if (!p || !L.matches(p, code) || !Number(p.quantity)) continue;
+      const q = Number(p.quantity), cs = q > 0 ? 'sell' : 'buy', pid = String(p.positionId || '');
+      for (const [k, v] of [['sl', Number(p.stopLoss)], ['tp', Number(p.takeProfit)]]) if (v > 0) ord.push({ sym: code, side: cs === 'buy' ? 'Buy' : 'Sell', buy: cs === 'buy', type: k === 'sl' ? 'Stop loss' : 'Take profit', qty: Math.abs(q).toFixed(2), price: pf(v), sl: '—', tp: '—', t: p.openedAt || 0, status: 'Protects position ' + pid, prot: k, cancel: () => removeSlTp(pid, k) });
+    }
   }
   const done = S.data.orders.filter((o) => !L.workingOrders([o], L.contractOf((o.legs || [])[0] || {}) || L.contractOf(o)).length);
   const oh = done.map((o) => { const leg = (o.legs || [])[0] || {}, s = String(leg.side || o.side || o.action || '').toLowerCase(); return { t: first(o, ['updatedAt', 'filledAt', 'createdAt', 'submittedAt', 'timestamp']), sym: L.contractOf(leg) || L.contractOf(o) || '—', side: s === 'buy' ? 'Buy' : s === 'sell' ? 'Sell' : '—', buy: s === 'buy', qty: first(leg, ['quantity']) || first(o, ['orderQty', 'quantity']) || '—', price: px(Number(first(o, ['averageFillPrice', 'avgFillPrice', 'limitPrice', 'price']) || first(leg, ['limitPrice', 'price'])) || null), note: String(o.status || '').replace(/_/g, ' ').toLowerCase().replace(/^./, (c) => c.toUpperCase()) }; })
@@ -1014,14 +1085,9 @@ export function dock(tab) {
   let th, oh2 = oh, thErr = S.hist.th.err, ohErr = '', thNote = '', thExt = null;
   if (S.acct.ct) {
     const lot = (q) => (Number.isFinite(q) ? q.toFixed(2) : '—');
-    thExt = ['Commission', 'Swap', 'Expected', 'Slippage'];
-    const sb = slipBook(), dg = (sym) => { const t = ctTick(sym, ''); return t > 0 ? Math.max(0, Math.min(8, Math.round(-Math.log10(t)))) : 2; };
-    th = S.hist.th.rows == null ? null : S.hist.th.rows.map((d) => {
-      const x = !d.closing && d.orderId ? sb[d.orderId] : null, n = x ? dg(d.sym) : 0;   // Expected / Slippage: only orders sent from TradeZoro
-      return { t: d.t, sym: d.sym, side: (d.side === 'buy' ? 'Buy' : 'Sell') + (d.closing ? ' · close' : ''), buy: d.side === 'buy', qty: lot(d.lots), price: d.price != null ? (x ? Number(d.price).toFixed(n) : String(d.price)) : '—', pnl: d.closing ? d.gross : null, pnlTxt: d.closing ? fm(d.gross, true) : '—',
-        ext: [fm(d.commission, true), d.closing ? fm(d.swap, true) : '—', x ? Number(x.e).toFixed(n) : '', x ? L.slipCell(x.p, x.m, cur) : ''], extN: [d.commission, d.closing ? d.swap : null, null, x ? -x.p : null], extT: [null, null, x ? 'Price on screen at the click (' + (x.s || 'last') + ')' : null, x ? 'Positive = filled worse than expected' : null] };
-    });
-    oh2 = S.hist.oh.rows == null ? null : S.hist.oh.rows.slice(0, 200).map((o) => ({ t: o.t, sym: o.sym, side: o.side === 'buy' ? 'Buy' : 'Sell', buy: o.side === 'buy', qty: lot(o.lots), price: o.price != null ? String(o.price) : '—', note: o.status + (o.type ? ' · ' + o.type : '') }));
+    thExt = ['Commission', 'Swap'];
+    th = S.hist.th.rows == null ? null : S.hist.th.rows.map((d) => ({ t: d.t, sym: d.sym, side: (d.side === 'buy' ? 'Buy' : 'Sell') + (d.closing ? ' · close' : ''), buy: d.side === 'buy', qty: lot(d.lots), price: d.price != null ? pxd(d.price, codeTick(d.sym)) : '—', pnl: d.closing ? d.gross : null, pnlTxt: d.closing ? fm(d.gross, true) : '—', ext: [fm(d.commission, true), d.closing ? fm(d.swap, true) : '—'], extN: [d.commission, d.closing ? d.swap : null] }));
+    oh2 = S.hist.oh.rows == null ? null : S.hist.oh.rows.slice(0, 200).map((o) => ({ t: o.t, sym: o.sym, side: o.side === 'buy' ? 'Buy' : 'Sell', buy: o.side === 'buy', qty: lot(o.lots), price: o.price != null ? pxd(o.price, codeTick(o.sym)) : '—', note: o.status + (o.type ? ' · ' + o.type : '') }));
     ohErr = S.hist.oh.err;
   } else {
     th = S.hist.th.rows == null ? null : S.hist.th.rows.map((f) => { const s = String(first(f, ['side', 'action'])).toLowerCase(); return { t: first(f, ['filledAt', 'timestamp', 'createdAt', 'executedAt', 'time']), sym: L.contractOf(f) || '—', side: s === 'buy' ? 'Buy' : s === 'sell' ? 'Sell' : '—', buy: s === 'buy', qty: first(f, ['quantity', 'qty', 'units']) || '—', price: px(Number(first(f, ['price', 'fillPrice', 'executionPrice'])) || null), pnl: null }; }).sort((a, b) => String(b.t).localeCompare(String(a.t)));
@@ -1029,10 +1095,12 @@ export function dock(tab) {
   }
   const bal = [];
   if (sm && sm.bal != null) { bal.push(['Balance' + (sm.age ? ' (' + sm.age + ')' : ''), L.fmtMoney(sm.bal, sm.cur)]); if (sm.rp != null) bal.push(['Realized P&L today', L.fmtMoney(sm.rp, sm.cur, true), sm.rp]); if (sm.up != null) bal.push(['Open P&L', L.fmtMoney(sm.up, sm.cur, true), sm.up]); }
-  return { live: true, pos, ord, oh: oh2, th, thErr, ohErr, thNote, thExt, thDays: S.acct.ct ? 7 : 0, bal, cancelAll: null, nPos: pos.length, nOrd: ord.length };
+  if (tab === 'bal' && S.acct) balance(S.acct.id);   // AUTO-TPSL: the Balances tab re-reads every 30 s while it is open (cached in between)
+  return { live: true, pos, ord, oh: oh2, th, thErr, ohErr, thNote, thExt, thDays: S.acct.ct ? 7 : 0, bal, cancelAll: null, nPos: pos.length, nOrd: ord.length, sltp: !!S.acct.ct };
 }
 // drag a working order line to a new price
 export async function drag(sym, d) {
+  if (d && (d.slRole || /^[ST]P/.test(String(d.id || '')))) return dragSlTp(sym, d);   // AUTO-TPSL: a position's stop loss / take profit
   const oid = String(d.id).replace(/^L/, ''); const i = info(sym); if (!i) return;
   const o = i.working.find((x) => x.id === oid); if (!o) { toast('That order is no longer working.', 'info'); return; }
   const why = blockReason(); if (why) { toast(why, 'error'); return; }
@@ -1040,8 +1108,8 @@ export async function drag(sym, d) {
   if (i.mt) {   // lines only exist when the chart is the broker's own instrument; move in place, never cancel + new
     if (S.modifyOk === false) { toast('This broker can’t move an order in place. Change it in MetaTrader.', 'error'); return; }
     const band = L.priceBandError(d.price, i.last); if (band) { toast(band, 'error'); return; }
-    const np = Number((Math.round(d.price / i.tick) * i.tick).toFixed(5));
-    const ok = await confirmSheet({ title: 'Move ' + sideWord(o.side) + ' ' + lotTxt(o.qty) + ' ' + i.code + ' to ' + px(np), code: i.code, side: o.side, go: 'Move order', lines: ['Symbol <b>' + esc(i.code) + '</b> (' + esc(i.mt) + ')', 'From ' + px(o.price) + ' to <b>' + px(np) + '</b>'] });
+    const np = Number((Math.round(d.price / i.tick) * i.tick).toFixed(decOf(i.tick)));
+    const ok = await confirmSheet({ title: 'Move ' + sideWord(o.side) + ' ' + lotTxt(o.qty) + ' ' + i.code + ' to ' + pxd(np, i.tick), code: i.code, side: o.side, go: 'Move order', lines: ['Symbol <b>' + esc(i.code) + '</b> (' + esc(i.mt) + ')', 'From ' + pxd(o.price, i.tick) + ' to <b>' + pxd(np, i.tick) + '</b>'] });
     if (!ok) return;
     await write(Object.assign({ op: 'modify', orderId: oid, type: kind, symbol: i.code }, kind === 'stop' ? { stopPrice: np } : { limitPrice: np }, { idemKey: uuid() }), 'Move');
     return;
@@ -1087,7 +1155,7 @@ export function domState(sym) {
   if (i.mt) return { live: true, code: i.code, orders: i.working.filter((o) => o.price).map((o) => ({ id: o.id, side: o.side, qty: o.qty, price: o.price })), pos: i.pos.qty ? { side: i.pos.qty > 0 ? 'buy' : 'sell', qty: Math.abs(i.pos.qty), avg: i.pos.avg || 0 } : null, pnl: i.pnl, sp: { ok: true, kind: 'forex', minQty: i.lots.min, symbol: i.code }, block: blockReason(), label: envWord() + ' ' + S.acct.label };
   return { live: true, code: i.code, orders: i.working.filter((o) => o.price).map((o) => ({ id: o.id, side: o.side, qty: o.qty, price: o.price })), pos: i.pos.qty ? { side: i.pos.qty > 0 ? 'buy' : 'sell', qty: Math.abs(i.pos.qty), avg: i.pos.avg || 0 } : null, pnl: i.pnl, sp: { ok: true, kind: i.asset === 'equity' ? 'equity' : 'futures', minQty: 1, symbol: i.code }, block: blockReason(), label: envWord() + ' ' + S.acct.label };
 }
-export function chipX(sym, id) { if (id === 'pos') return flatten(sym); if (/^[ST][PO]/.test(id)) { toast('Change or remove this stop loss / take profit in cTrader for now.', 'info'); return null; } if (/^P/.test(id)) { toast('This order is still being sent. Cancel it once it shows as working.', 'info'); return null; } return cancel(String(id).replace(/^L/, '')); }
+export function chipX(sym, id) { if (id === 'pos') return flatten(sym); if (/^[ST]P/.test(id) && S.acct && S.acct.ct) return removeSlTp(id.slice(2), id[0] === 'S' ? 'sl' : 'tp'); if (/^[ST][PO]/.test(id)) { toast('Change or remove the stop loss / take profit of a working order in cTrader for now.', 'info'); return null; } if (/^P/.test(id)) { toast('This order is still being sent. Cancel it once it shows as working.', 'info'); return null; } return cancel(String(id).replace(/^L/, '')); }
 export function flattenActive() { return flatten(P.activeSymbol()); }
 export function openTicket(pre) {
   pre = pre || {};
@@ -1313,6 +1381,10 @@ const CSS = `
 
 // ---- cTrader (admins and beta testers): the saved trading sign-in becomes one more live account; "Allow trading with cTrader" starts the sign-in
 function ctLots(code) { const l = CT.link && CT.mod ? CT.mod.lotsForName(CT.link, code) : null; if (!l && CT.link && !ctLots.wait) { ctLots.wait = true; setTimeout(() => { ctLots.wait = false; render(); }, 800); } return l || { min: 0.01, step: 0.01, max: 10, fromSchema: false }; }
+// the tick of a broker symbol code on the picked MetaTrader-style account (cTrader digits, BROKERS 3 rules, else the usual tick)
+function codeTick(code) { if (!S.acct || !S.acct.mt || !code) return 0.01; const k = (L.mtChartKey(code) || {}).key || String(code).toUpperCase(); return S.acct.ct ? ctTick(code, k) : S.acct.b3 ? b3Tick(code, k) : L.mtTick(k); }
+// a price for a chart symbol, in that symbol's digits (the live account's broker symbol when it is one; else 2 decimals as before)
+export function fmtPx(sym, v) { const i = S.acct && S.acct.mt ? infoMt(sym) : null; return i && i.code ? pxd(v, i.tick) : px(v); }
 function ctTick(code, key) { const id = CT.link && CT.link.byName.get(String(code || '').toUpperCase()), d = id && CT.link.details.get(id); return d && Number.isInteger(d.digits) ? Math.pow(10, -d.digits) : L.mtTick(key); }
 // admin, or a beta tester (POST /api/beta/status: verified email on settings/betaTesters). This only shows the option; the trade
 // relay decides again on the server (functions/connect/ctrader/trade.js mayTrade) before anything is sent.
@@ -1333,7 +1405,7 @@ async function loadCt() {
     if (!c || !c.access || !c.accountId) { CT.acct = null; return; }
     CT.creds = c; CT.link = new CT.mod.TradeLink(c, TEST && TEST.ctDeps ? TEST.ctDeps : undefined);
     CT.link.keep = () => !!(S.acct && S.acct.ct);   // heartbeats only while the account is picked; else the relay's idle close ends it
-    CT.link.onEvent = (k, m) => { if (k === 'exec' && S.acct && S.acct.ct) { fastReads(); histSoon(); } if (k === 'resolved') { toast('Your last cTrader order was checked: ' + (m.result === 'accepted' ? 'it reached cTrader.' : 'it did not reach cTrader. Nothing was sent twice.'), 'info'); if (S.acct && S.acct.ct) read(); } };
+    CT.link.onEvent = (k, m) => { if (k === 'exec' && S.acct && S.acct.ct) { fastReads(); histSoon(); balSoon(); } if (k === 'resolved') { toast('Your last cTrader order was checked: ' + (m.result === 'accepted' ? 'it reached cTrader.' : 'it did not reach cTrader. Nothing was sent twice.'), 'info'); if (S.acct && S.acct.ct) read(); } };
     CT.ops = CT.mod.ctOps(CT.link, { lastPrice: () => { const i = P && P.activeSymbol ? infoMt(P.activeSymbol()) : null; return i && Number.isFinite(i.last) ? i.last : null; } });
     const a = L.acctInfo({ accountId: 'ct-' + c.accountId, accountNumber: String(c.login || c.accountId) });
     a.broker = 'cTrader'; a.text = 'cTrader ' + a.number + (c.isLive === false ? ' demo' : ''); a.name = a.number; a.mt = 'cTrader'; a.ct = true; a.demo = c.isLive === false;
@@ -1345,7 +1417,7 @@ async function loadCt() {
 // useTradeAccount: trendbars + spots over the view-only data relay). Re-registered after a sign-in change clears the own-data feeds.
 function ctFeed() {
   if (!CT.creds || !CT.mod) return Promise.resolve(false);
-  return Promise.all([import('./byo-ctrader.js?v=1281'), import('./byo-core.js?v=1281')]).then(([b, c]) => { CT.byo = b; if (CT.creds) b.useTradeAccount(CT.creds, CT.mod.freshTrade, TEST && TEST.ctDeps ? TEST.ctDeps : undefined, c); return true; }, () => false);
+  return Promise.all([import('./byo-ctrader.js?v=1281'), import('./byo-core.js?v=1281')]).then(([b, c]) => { if (CT.creds) b.useTradeAccount(CT.creds, CT.mod.freshTrade, TEST && TEST.ctDeps ? TEST.ctDeps : undefined, c); return true; }, () => false);
 }
 window.addEventListener('tz:byo', (e) => { if (e.detail && e.detail.id === '*' && CT.acct) ctFeed(); });
 // ---- BROKERS 3 (admins and beta testers): tastytrade / TradeStation / OANDA trading sign-ins become live accounts
@@ -1354,7 +1426,7 @@ function b3Tick(code, key) { const r = S.placeSchema && S.placeSchema.rules && S
 function b3Feed(a) {
   if (B3S.feed) { B3S.feed.stop(); B3S.feed = null; }
   if (!a || !a.b3 || !B3S.mod || !B3S.creds[a.b3]) return;
-  B3S.feed = new B3S.mod.StatusFeed(a.b3, B3S.creds[a.b3], [a.acctNo], (ev) => { if (S.acct && S.acct.id === a.id) { fastReads(); histSoon(); if (ev.type === 'fill') toast(a.broker + ': order ' + ev.id + ' filled.', 'info'); } }, TEST && TEST.b3Deps ? TEST.b3Deps : undefined);
+  B3S.feed = new B3S.mod.StatusFeed(a.b3, B3S.creds[a.b3], [a.acctNo], (ev) => { if (S.acct && S.acct.id === a.id) { fastReads(); histSoon(); balSoon(); if (ev.type === 'fill') toast(a.broker + ': order ' + ev.id + ' filled.', 'info'); } }, TEST && TEST.b3Deps ? TEST.b3Deps : undefined);
   B3S.feed.start().catch(() => {});
 }
 async function loadB3() {
@@ -1427,12 +1499,12 @@ function betaReady() {
 export function mountLive(paperApi, opts) {
   P = paperApi; uid = opts.uid; toastFn = opts.toast || null; isAdmin = !!opts.admin;
   if (!document.getElementById('stklv-css')) { const st = document.createElement('style'); st.id = 'stklv-css'; st.textContent = CSS; document.head.appendChild(st); }
-  P.setLiveHook({ mtFor, mtSetSymbol, active, noLiveWhy, lines, chipText, badgeFor, badgeAct, openSymPicker, tickOf, chipX, drag, flattenActive, openTicket, renderHead, renderSummary, renderView, foot, dock, dockTrades, ladder, domState, cancel, flatten, caps, otherNote, openOther, opInfo, placeTicket, kill, killOn, retryEnv, enableLive });
+  P.setLiveHook({ setSlTp, posHandles, fmtPx, mtFor, mtSetSymbol, active, noLiveWhy, lines, chipText, badgeFor, badgeAct, openSymPicker, tickOf, chipX, drag, flattenActive, openTicket, renderHead, renderSummary, renderView, foot, dock, dockTrades, ladder, domState, cancel, flatten, caps, otherNote, openOther, opInfo, placeTicket, kill, killOn, retryEnv, enableLive });
   loadMeta(); loadAccounts();
   ctAllowed().then((ok) => { if (ok) Promise.all([loadCt(), loadB3()]).then(loadAccounts); });   // cTrader + BROKERS 3 trading: admins and beta testers (the servers re-check)
   // Copy trading: admins + beta testers (Owner 23 Nov). The server (functions/connect/finatic/copy.js) re-checks every call.
   if (isAdmin) mountCopyTrading(); else betaReady().then((b) => { if (b) mountCopyTrading(); });
   window.addEventListener('storage', (e) => { if (e.key === lsUserKey()) loadAccounts(); });
-  Object.assign(window.__stkLive, { dockTrades, openSymPicker, closeSymPicker, mtFor, mtSetSymbol, mtRemember, srcSymbols, srcSpec, ctFeed, connect, reconnect, pick, leave, read, loadAccounts, info, confirmSheet, balance, summary, metaOf, saveMeta, disconnect, L, envCheck, retryEnv, syncGroup, enableLive, get admin() { return isAdmin; }, get blockReason() { return blockReason(); } });
+  Object.assign(window.__stkLive, { setSlTp, posHandles, quoteFor, dockTrades, openSymPicker, closeSymPicker, mtFor, mtSetSymbol, mtRemember, srcSymbols, srcSpec, ctFeed, connect, reconnect, pick, leave, read, loadAccounts, info, confirmSheet, balance, summary, metaOf, saveMeta, disconnect, L, envCheck, retryEnv, syncGroup, enableLive, get admin() { return isAdmin; }, get blockReason() { return blockReason(); } });
   Object.defineProperty(window.__stkLive, 'blockReason', { configurable: true, get: () => blockReason() });   // a getter (Object.assign would copy one frozen value)
 }

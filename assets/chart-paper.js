@@ -223,6 +223,7 @@ function applyEnabled(){
 function canonSym(sym){ const sp = specOf(sym); return sp.ok ? sp.symbol : String(sym || ''); }
 function fmtP(sym, p){
   if (!Number.isFinite(p)) return '—';
+  if (LIVE && LIVE.fmtPx && liveOn()) { try { return LIVE.fmtPx(sym, p); } catch (e) {} }   // AUTO-TPSL: a live broker symbol's own digits (EURUSD 1.09526)
   const sp = specOf(sym); const d = sp.ok ? Math.min(8, sp.decimals) : 2;
   return p.toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d });
 }
@@ -768,7 +769,12 @@ function linesFor(sym){
 }
 function ownLines(sym){
   const dragOn = drag.on && canonSym(drag.sym) === canonSym(sym);
-  if (liveOn()) { const out = LIVE.lines(sym) || []; if (dragOn) for (const l of out) if (l.id === drag.id) l.price = drag.price; previewLines(sym, out); return out; }
+  if (liveOn()) {
+    const out = LIVE.lines(sym) || []; if (dragOn) for (const l of out) if (l.id === drag.id) l.price = drag.price;
+    // AUTO-TPSL: a new take profit / stop loss being dragged out of the live position's TP / SL handle
+    if (dragOn && drag.kind === 'new' && drag.slRole) out.push({ id: 'new', kind: drag.slRole, slRole: drag.slRole, posId: drag.posId, live: true, price: drag.price, side: drag.side, ref: drag.ref, qty: drag.qty });
+    previewLines(sym, out); return out;
+  }
   if (!acct || !acct.settings.lines || !paperOn()) return [];
   const out = [];
   const p = acct.position(sym);
@@ -1006,7 +1012,16 @@ function syncChips(cell, inst, lines){
     const A = chip.querySelector('.stkpt-chip-a'), B = chip.querySelector('.stkpt-chip-b');
     if (A.textContent !== a) A.textContent = a;
     if (B.textContent !== b) B.textContent = b;
-    if (l.live) { chip.classList.toggle('neg', l.pnl != null && l.pnl < 0); chip.title = l.kind === 'pos' ? 'Live position · × flattens (with a confirm)' : 'Live order · drag to move (with a confirm) · × cancels'; continue; }
+    if (l.live) {
+      chip.classList.toggle('neg', l.pnl != null && l.pnl < 0);
+      // AUTO-TPSL: the live position's TP / SL handles (hover or tap the position label; drag one up / down to place it)
+      if (l.kind === 'pos') liveHandles(chip, cell, inst, l.sltp);
+      if (l.kind === 'pos') chip.title = l.sltp ? 'Live position · drag TP or SL to set a take profit / stop loss · × flattens (with a confirm)' : 'Live position · × flattens (with a confirm)';
+      else if (l.posId) { chip.title = (l.role === 'sl' ? 'Stop loss' : 'Take profit') + ' · drag to move · × removes it'; const xb2 = chip.querySelector('.stkpt-chip-x'); if (xb2) { const t2 = 'Remove ' + (l.role === 'sl' ? 'stop loss' : 'take profit'); xb2.title = t2; xb2.setAttribute('aria-label', t2); } }
+      else if (l.id === 'new') chip.title = 'Release to place it';
+      else chip.title = 'Live order · drag to move (with a confirm) · × cancels';
+      continue;
+    }
     if (l.kind === 'pos') { const p = acct.position(l.sym || cell.symbol); chip.classList.toggle('neg', !!p && acct.openPnl(p) < 0); }
     chip.title = l.kind === 'pos' ? 'Drag up/down to add a take profit or stop loss' : l.kind === 'ord' ? 'Drag to move the order · double-click to edit' : l.tag === 'TP1' ? 'TP1: closes ' + l.qty + ' · drag to move' : (l.kind === 'sl' && acct.position(l.sym || cell.symbol) && acct.position(l.sym || cell.symbol).be != null) ? 'Stop loss · moves to break-even after TP1 · drag to move' : 'Drag to move';
   }
@@ -1102,6 +1117,27 @@ function livePnl(){
   }
   renderSummaryLive();
 }
+// AUTO-TPSL: TP and SL handles on a live position chip (MT5 / TradingView style). Shown on hover (desktop) or after a tap (touch);
+// a handle that already has its line is hidden (drag that line instead). Dragging a handle starts a 'new' line (onChipDown).
+function liveHandles(chip, cell, inst, hs){
+  let box = chip.querySelector('.stkpt-hs');
+  const want = hs ? [['tp', !hs.tp], ['sl', !hs.sl]].filter((x) => x[1]).map((x) => x[0]) : [];
+  if (!want.length) { if (box) box.remove(); chip.classList.remove('has-h'); return; }
+  if (!box) {
+    box = h('span', { class: 'stkpt-hs' });
+    for (const k of ['tp', 'sl']) {
+      const b = h('button', { type: 'button', class: 'stkpt-h', 'data-h': k, 'aria-label': (k === 'tp' ? 'Add take profit: drag up or down' : 'Add stop loss: drag up or down'), title: k === 'tp' ? 'Drag to set a take profit' : 'Drag to set a stop loss', text: k.toUpperCase() });
+      b.addEventListener('pointerdown', (e) => { e.stopPropagation(); onChipDown(e, cell, inst, chip, k); });
+      b.addEventListener('click', (e) => e.stopPropagation());
+      box.appendChild(b);
+    }
+    chip.insertBefore(box, chip.querySelector('.stkpt-chip-x'));
+    // touch: a tap on the label shows the handles (hover does it with a mouse)
+    chip.addEventListener('pointerup', (e) => { if (e.pointerType !== 'mouse' && chip.dataset.kind === 'pos' && chip.dataset.live) { chip.classList.add('show-h'); clearTimeout(chip._hT); chip._hT = setTimeout(() => chip.classList.remove('show-h'), 6000); } });
+  }
+  chip.classList.add('has-h');
+  for (const b of box.children) b.hidden = !want.includes(b.dataset.h);
+}
 function onChipX(sym, id){
   if (id === 'pos') return closePos(sym);
   if (id === 'ptp1') return act(() => { acct.modifyPosition(sym, { tp1: null }); return []; });
@@ -1114,12 +1150,15 @@ function onChipX(sym, id){
 }
 // DRAG TO MODIFY (TradingView-style): TP/SL/order chips move their line; releasing commits.
 // Dragging the position chip into profit creates a take profit, into loss a stop loss.
-function onChipDown(e, cell, inst, chip){
+function onChipDown(e, cell, inst, chip, hk){
   if (e.button != null && e.button !== 0) return;
   const { id, sym } = chipRef(cell.symbol, chip.dataset.id);
   const a = inst.args; if (!a) return;
   const isLive = !!chip.dataset.live;
-  if (isLive && chip.dataset.kind !== 'ord') return;   // live: only working orders move; the position has no TP/SL drag
+  // live: working orders move; a position's own TP / SL line moves (AUTO-TPSL); the position chip itself moves only from a TP / SL handle
+  const liveSlTp = isLive && /^[ST]P/.test(id) && (chip.dataset.kind === 'tp' || chip.dataset.kind === 'sl');
+  if (isLive && chip.dataset.kind !== 'ord' && !liveSlTp && !(hk && chip.dataset.kind === 'pos')) return;
+  const hd = isLive && hk && LIVE.posHandles ? LIVE.posHandles(sym) : null; if (isLive && hk && !hd) return;
   e.preventDefault(); e.stopPropagation();
   const R = inner(cell);
   const canvas = R && R.input && R.input.el;
@@ -1130,6 +1169,7 @@ function onChipDown(e, cell, inst, chip){
   if (startPrice == null) return;
   Object.assign(drag, { on: true, sym, id, kind: 'move', price: startPrice, moved: false, y0: e.clientY, live: isLive, start: startPrice });
   if (id === 'pos' && p) Object.assign(drag, { kind: 'new', id: 'new', side: p.side, ref: p.avg, qty: p.qty, newKind: 'tp' });
+  if (hd) Object.assign(drag, { kind: 'new', id: 'new', slRole: hk, posId: hd.posId, side: hd.side, ref: hd.avg, qty: hd.qty, moved: false });
   try { chip.setPointerCapture(e.pointerId); } catch (e2) {}
   chip.classList.add('dragging');
   let raf = 0;
@@ -1141,7 +1181,7 @@ function onChipDown(e, cell, inst, chip){
     let price = args.coords.yToPrice(y, args.scale, args.bounds);
     price = PE.roundTick(price, sp.tick);
     drag.price = price;
-    if (drag.kind === 'new') {
+    if (drag.kind === 'new' && !drag.slRole) {
       const last = acct.last[sym] || p.avg, dir = p.side === 'buy' ? 1 : -1;
       drag.newKind = (price - last) * dir > 0 ? 'tp' : 'sl';
     }
@@ -1156,7 +1196,7 @@ function onChipDown(e, cell, inst, chip){
     const d = Object.assign({}, drag); drag.on = false;
     if (raf) cancelAnimationFrame(raf);
     if (!d.moved) { pushLines(true); return; }
-    if (d.live) { if (d.price !== d.start) LIVE.drag(sym, d); pushLines(true); return; }
+    if (d.live) { if (d.slRole || d.price !== d.start) LIVE.drag(sym, d); pushLines(true); return; }
     if (TV.get().confirm && TV.get().master) { TV.confirm('Move ' + (d.kind === 'new' ? 'take profit / stop' : 'order') + ' to ' + fmtP(sym, d.price) + '?').then((ok) => { if (ok) commitDrag(sym, d); else pushLines(true); }); return; }
     commitDrag(sym, d);
   };
@@ -2273,6 +2313,17 @@ html.stklv-on .stkpt-badge{ display:none; }
 .stkpt-chip[data-pin=down] .stkpt-chip-a::before{ content:"↓ "; }
 .stkpt-chip[data-pin=up],.stkpt-chip[data-pin=down]{ border-style:dashed; opacity:.92; }
 .stkpt-chip.dragging{ box-shadow:0 0 0 2px var(--c); }
+/* AUTO-TPSL: TP / SL handles on a live position label (hover / tap), MT5 / TradingView style */
+.stkpt-hs{ display:none; align-items:center; gap:4px; padding:0 4px; border-left:1px solid var(--c); }
+.stkpt-chip.has-h:hover,.stkpt-chip.has-h.show-h,.stkpt-chip.has-h:focus-within{ z-index:5; }   /* wider with its handles: on top of a neighbour chip */
+.stkpt-chip.has-h:hover .stkpt-hs,.stkpt-chip.has-h.show-h .stkpt-hs,.stkpt-chip.has-h:focus-within .stkpt-hs{ display:inline-flex; }
+.stkpt-h{ display:inline-flex; align-items:center; justify-content:center; height:16px; min-width:24px; padding:0 4px; box-sizing:border-box; border:1px solid currentColor; border-radius:4px; background:transparent; font:700 10px/1 -apple-system,BlinkMacSystemFont,Roboto,sans-serif; letter-spacing:.02em; cursor:ns-resize; touch-action:none; }
+.stkpt-h[hidden]{ display:none; }
+.stkpt-h[data-h=tp]{ color:var(--stk-profit,#089981); } .stkpt-h[data-h=sl]{ color:var(--stk-loss,#f23645); }
+.stkpt-h[data-h=tp]:hover{ background:var(--stk-profit,#089981); border-color:var(--stk-profit,#089981); color:#fff; } .stkpt-h[data-h=sl]:hover{ background:var(--stk-loss,#f23645); border-color:var(--stk-loss,#f23645); color:#fff; }
+.stkpt-h:focus-visible{ outline:2px solid var(--c); outline-offset:1px; }
+@media (pointer:coarse){ .stkpt-h{ height:20px; min-width:32px; } }
+@media (max-width:700px){ .stkpt-chip.has-h.show-h .stkpt-chip-b{ display:none; } }   /* phone: the handles take the P&L's place while shown (P&L stays in the strip / dock) */
 .stkpt-chip[data-kind="new"],.stkpt-chip[data-id="new"]{ opacity:.85; }
 .stkpt-1c{ position:absolute; left:10px; top:30px; display:flex; align-items:stretch; height:36px; pointer-events:auto; border-radius:6px; overflow:hidden; box-shadow:0 1px 4px rgba(0,0,0,.35); font-family:-apple-system,BlinkMacSystemFont,"Trebuchet MS",Roboto,sans-serif; }
 .stkpt-1c button{ border:0; min-width:74px; padding:0 8px; display:flex; flex-direction:column; align-items:center; justify-content:center; cursor:pointer; color:#fff; line-height:1.1; }

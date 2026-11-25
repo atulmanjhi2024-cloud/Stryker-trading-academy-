@@ -85,11 +85,14 @@ export function mapReconcile(pl, names, details) {
   const lots = (v, id) => { const d = details.get(n(id)); return d && d.lotSize > 0 ? n(v) / d.lotSize : n(v) / 100 / 100000; };
   const positions = (pl.position || []).filter((p) => p && p.tradeData).map((p) => {
     const td = p.tradeData, s = side(td.tradeSide), q = lots(td.volume, td.symbolId);
-    return { positionId: String(p.positionId), symbol: nm(td.symbolId), symbolId: n(td.symbolId), quantity: s === 'sell' ? -q : q, volume: n(td.volume), averagePrice: n(p.price) || null, status: 'OPEN', stopLoss: p.stopLoss, takeProfit: p.takeProfit, label: td.label || '' };
+    return { positionId: String(p.positionId), symbol: nm(td.symbolId), symbolId: n(td.symbolId), quantity: s === 'sell' ? -q : q, volume: n(td.volume), averagePrice: n(p.price) || null, status: 'OPEN', stopLoss: p.stopLoss, takeProfit: p.takeProfit, label: td.label || '',
+      openedAt: tsOf(td.openTimestamp, p.utcLastUpdateTimestamp), trailing: !!p.trailingStopLoss, guaranteed: !!p.guaranteedStopLoss };
   });
-  const orders = (pl.order || []).filter((o) => o && o.tradeData && !o.closingOrder).map((o) => {
-    const td = o.tradeData, ty = String(o.orderType) === '3' || /STOP/i.test(String(o.orderType)) ? 'stop' : String(o.orderType) === '2' || /LIMIT/i.test(String(o.orderType)) ? 'limit' : 'market';
-    return { orderId: String(o.orderId), status: 'WORKING', orderType: ty, symbolId: n(td.symbolId), stopLoss: o.stopLoss, takeProfit: o.takeProfit, legs: [{ symbol: nm(td.symbolId), side: side(td.tradeSide), quantity: lots(td.volume, td.symbolId), limitPrice: o.limitPrice, stopPrice: o.stopPrice }] };
+  // AUTO-TPSL: a position's own stop loss / take profit (orderType 4, STOP_LOSS_TAKE_PROFIT) is shown from the position's fields, never twice
+  const prot = (o) => String(o.orderType) === '4' || /STOP_LOSS_TAKE_PROFIT/i.test(String(o.orderType));
+  const orders = (pl.order || []).filter((o) => o && o.tradeData && !o.closingOrder && !prot(o)).map((o) => {
+    const td = o.tradeData, ot = String(o.orderType), ty = ot === '6' || /STOP_LIMIT/i.test(ot) ? 'stop limit' : ot === '3' || /STOP/i.test(ot) ? 'stop' : ot === '2' || /LIMIT/i.test(ot) ? 'limit' : 'market';
+    return { orderId: String(o.orderId), status: 'WORKING', orderType: ty, symbolId: n(td.symbolId), stopLoss: o.stopLoss, takeProfit: o.takeProfit, placedAt: tsOf(td.openTimestamp, o.utcLastUpdateTimestamp), legs: [{ symbol: nm(td.symbolId), side: side(td.tradeSide), quantity: lots(td.volume, td.symbolId), limitPrice: o.limitPrice, stopPrice: o.stopPrice }] };
   });
   return { positions, orders };
 }
@@ -155,12 +158,39 @@ export function buildNewOrder(b, ctx) {
   }
   return [2106, p];
 }
+// AUTO-TPSL (Owner bug 25 Nov \"cant set tp and sl\"): stop loss / take profit of an OPEN position = AmendPositionSLTPReq (2110).
+// cTrader replaces both levels with what the request carries (a level left out is removed), so the body always carries the level
+// that stays. pos = { side 'buy'|'sell', sl, tp } now; want = { sl, tp } after (null = none). q = { bid, ask } (ask may be unknown:
+// the bid stands in). d = SymbolByIdRes details (digits, slDistance / tpDistance in points when distanceSetIn is 1).
+// -> { payload: { stopLoss?, takeProfit? } } | { error }
+export function sltpCheck(pos, want, q, d) {
+  const dig = d && Number.isInteger(d.digits) ? d.digits : 5, r = (v) => Number(Number(v).toFixed(dig)), fx = (v) => Number(v).toFixed(dig);
+  const bid = n(q && q.bid) > 0 ? n(q.bid) : null, ask = n(q && q.ask) > 0 ? n(q.ask) : bid, buy = pos.side !== 'sell';
+  const pts = d && (d.distanceSetIn == null || n(d.distanceSetIn) === 1 || /POINTS/i.test(String(d.distanceSetIn))) ? Math.pow(10, -dig) : 0;
+  const minSl = pts && n(d.slDistance) > 0 ? n(d.slDistance) * pts : 0, minTp = pts && n(d.tpDistance) > 0 ? n(d.tpDistance) * pts : 0;
+  const out = {};
+  for (const k of ['sl', 'tp']) {
+    const v = want[k]; if (v == null || v === '') continue;
+    const x = Number(v); if (!(x > 0) || !Number.isFinite(x)) return { error: (k === 'sl' ? 'Stop loss' : 'Take profit') + ': enter a price above 0.' };
+    if (bid == null) return { error: 'No price from cTrader yet for this symbol. Try again in a moment.' };
+    // a buy closes at the bid: its SL goes below the bid, its TP above the ask; a sell closes at the ask: SL above the ask, TP below the bid
+    const below = buy ? k === 'sl' : k === 'tp', refP = below ? bid : ask, min = k === 'sl' ? minSl : minTp;
+    if (below ? !(x < refP - min + 1e-12) : !(x > refP + min - 1e-12)) {
+      const what = k === 'sl' ? 'stop loss' : 'take profit', word = below ? 'bid' : (ask === bid ? 'price' : 'ask');
+      return { error: 'A ' + (buy ? 'buy' : 'sell') + '’s ' + what + ' must be ' + (below ? 'below' : 'above') + ' the ' + word + ' (' + fx(refP) + ')' + (min ? ' by at least ' + fx(min) : '') + '.' };
+    }
+    out[k === 'sl' ? 'stopLoss' : 'takeProfit'] = r(x);
+  }
+  return { payload: out };
+}
 // relay / cTrader answer for one write -> { ok, status, orderId } | throws Error with .code ('unknown' | 'rejected' | relay code)
 const EXEC = { 2: 'ACCEPTED', 3: 'FILLED', 4: 'REPLACED', 5: 'CANCELLED', 6: 'EXPIRED', 7: 'REJECTED', 8: 'CANCEL_REJECTED', 11: 'PARTIALLY_FILLED' };
 const CT_ERR = { NOT_ENOUGH_MONEY: 'Not enough money in the account for this order.', MARKET_CLOSED: 'The market is closed for this symbol.', TRADING_DISABLED: 'Trading is disabled for this symbol or account.',
   POSITION_NOT_FOUND: 'That position is not open any more.', OID_NOT_FOUND: 'That order is not working any more.', TRADING_BAD_VOLUME: 'The broker does not accept that size.', TRADING_BAD_STOPS: 'The broker does not accept that stop loss / take profit.',
   ALREADY_SUBSCRIBED: 'Already subscribed.', CH_ACCESS_TOKEN_INVALID: 'Your cTrader sign-in expired. Tap Allow trading again.', ACCOUNT_NOT_AUTHORIZED: 'This cTrader account is not authorised. Tap Allow trading again.',
-  NO_QUOTES: 'No price from the broker right now.', BAD_STOPS: 'The broker does not accept that stop loss / take profit.' };
+  NO_QUOTES: 'No price from the broker right now.', BAD_STOPS: 'The broker does not accept that stop loss / take profit.',
+  TRADING_BAD_PRICES: 'cTrader refused that price: it is on the wrong side of the market or too close to it.', POSITION_LOCKED: 'That position is locked at cTrader right now.',
+  POSITION_NOT_OPEN: 'That position is not open any more.', INVALID_REQUEST: 'cTrader refused the request as invalid.' };
 export const errText = (code, desc) => CT_ERR[String(code || '')] || ('The broker refused it' + (code ? ' (' + String(code).replace(/[^A-Z0-9_]/gi, '').slice(0, 40) + ')' : '') + '.');
 const RENEW = new Set(['gate_unreadable', 'renew']);
 // the fill price on an ExecutionEvent (deal, else the order's, else a new position's entry); null when there is none
@@ -374,6 +404,20 @@ export function ctOps(link, { lastPrice } = {}) {
         return link.write(q[0], q[1], key, b.lat ? Object.assign(b.lat, { market: b.type === 'market' || b.orderType === 'market' }) : undefined);
       }
       if (b.op === 'cancel') return link.write(2108, { orderId: n(b.orderId) }, key, b.lat);
+      // AUTO-TPSL: set / move / remove the stop loss and take profit of one open position (b.sl / b.tp = the levels AFTER; null = none).
+      // Checked here against the latest bid / ask and the symbol's minimum distance; the relay checks the position id and every gate again.
+      if (b.op === 'sltp') {
+        await link.open();
+        const pid = n(b.positionId), d = b.symbolId ? await link.detail(n(b.symbolId)) : null;
+        // the level that changes (b.check) is checked against the market; the one that stays is cTrader's own and is sent as it is
+        const chk = b.check === 'sl' || b.check === 'tp' ? { [b.check]: b[b.check] } : { sl: b.sl, tp: b.tp };
+        const c = sltpCheck({ side: b.side }, chk, { bid: b.bid, ask: b.ask }, d);
+        if (c.error) throw fail(c.error, { status: 400 });
+        const dig = d && Number.isInteger(d.digits) ? d.digits : 5, pl = { positionId: pid };
+        if (Number(b.sl) > 0) pl.stopLoss = Number(Number(b.sl).toFixed(dig));
+        if (Number(b.tp) > 0) pl.takeProfit = Number(Number(b.tp).toFixed(dig));
+        return link.write(2110, pl, key, b.lat);
+      }
       if (b.op === 'modify') { const d = b.stopPrice !== undefined ? { stopPrice: Number(b.stopPrice) } : { limitPrice: Number(b.limitPrice) }; return link.write(2109, { orderId: n(b.orderId), ...d }, key, b.lat); }
       if (b.op === 'flatten') {   // close every position in the symbol, one at a time (the relay's account lock takes them in turn)
         const st = (await ops.data('live')).data, same = (x) => String(x).toUpperCase() === String(b.symbol).toUpperCase();

@@ -119,7 +119,7 @@ function ctx() {
   const last = lv ? (li && li.mt ? li.chartLast : li && Number.isFinite(li.last) ? li.last : P.lastPrice(sym)) : (a && Number.isFinite(a.last[sp.symbol]) ? a.last[sp.symbol] : P.lastPrice(sym));
   const chartRootName = fam ? String((PE.specOf(chartSym) || {}).root || '') : '';
   const mt = li && li.mt ? li.mt : '';
-  return { sym, chartSym, fam, chartRootName, lv, li, a, sp, prov, tk, fut, rootName, label, code, mt, tick: tick || 0.01, dec: mt ? Math.min(decOf(tick || 0.01), 2) : decOf(tick || 0.01), last: Number.isFinite(last) && last > 0 ? last : null, live: !!lv };
+  return { sym, chartSym, fam, chartRootName, lv, li, a, sp, prov, tk, fut, rootName, label, code, mt, tick: tick || 0.01, dec: mt && !(li && li.map && li.map.same) ? Math.min(decOf(tick || 0.01), 2) : decOf(tick || 0.01),   /* AUTO-TPSL: on the broker's own chart (cTrader EURUSD) the symbol's digits */ last: Number.isFinite(last) && last > 0 ? last : null, live: !!lv };
 }
 const fmt = (c, p) => (p == null || !Number.isFinite(p) ? '—' : p.toLocaleString('en-US', { minimumFractionDigits: c.dec, maximumFractionDigits: c.dec }));
 const fmtIn = (c, p) => (Number.isFinite(p) ? p.toFixed(c.dec) : '');

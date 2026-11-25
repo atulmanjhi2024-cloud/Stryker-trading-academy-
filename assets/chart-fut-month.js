@@ -3,8 +3,8 @@
 // button switches that chart to the next month in one tap. A month with no prices yet says so instead of an empty chart.
 // Continuous charts (MES1!) are never touched. Same re-attach pattern as chart-data-dot.js (MutationObserver on #vela-chart).
 // Uses: ws.context().cells, ws.cell(id).setSymbol / .chart.orchestrator.rawBars; fut-months.js. Education only. Not financial advice.
-import { monthOfSym } from './chart-sym.js?v=1289';
-import { label, fmtExpiry, expiryOf, rollInfo, rollOf, chartSym } from './fut-months.js?v=1289';
+import { monthOfSym } from './chart-sym.js?v=1290';
+import { label, fmtExpiry, expiryOf, rollInfo, rollOf, chartSym } from './fut-months.js?v=1290';
 
 export const EMPTY_NOTE = 'Prices for this month start closer to expiry';
 const EMPTY_WAIT_MS = 6000;   // a slow first page is not "no prices": wait this long after the switch before saying so

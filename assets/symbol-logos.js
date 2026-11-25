@@ -7,7 +7,7 @@
 // Everything is self-hosted (no logo CDN at runtime), transparent (no tiles), lazy, with width/height set. The ticker->file
 // lookup is ONE small JSON (images/symbols/map.json) loaded once; until it is there a row shows the badge, then swaps in place.
 // Sources + licences: assets/images/symbols/LICENSES.md. Education only. Not financial advice.
-import { fxMark } from './fx-flags.js?v=1289';
+import { fxMark } from './fx-flags.js?v=1290';
 const DIR = '/assets/images/symbols/';
 let MAP = null, loading = null;
 const waiters = new Set();

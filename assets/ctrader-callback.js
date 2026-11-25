@@ -78,7 +78,7 @@
   }
   user().then(function (u) {
     if (!u) return end('Sign in first', 'Sign in to TradeZoro, then connect cTrader again.');
-    return Promise.all([import('./byo-core.js?v=1284'), import('./byo-ctrader.js?v=1284'), import('./ctrader-trade.js?v=1284')]).then(function (m) {
+    return Promise.all([import('./byo-core.js?v=1285'), import('./byo-ctrader.js?v=1285'), import('./ctrader-trade.js?v=1285')]).then(function (m) {
       var c = m[0], ct = m[1], tr = m[2];
       if (tr.takeTradeState(state, u.uid)) return trade(c, ct, tr, u);
       var rec = ct.takeCtraderState(state, u.uid);

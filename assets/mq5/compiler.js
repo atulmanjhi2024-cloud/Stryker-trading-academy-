@@ -5,11 +5,11 @@
 // compile time (globals, locals, struct fields); they are never used as JS property keys.
 //
 // build(source, env) -> Instance (assets/mq5/program.js) ready to run; check(source) -> { ok, diagnostics, meta }.
-import { preprocess, MqError, err } from './lexer.js?v=1266';
-import { parse, BASE_TYPES } from './parser.js?v=1266';
-import { CONSTS, ENUMS, STRUCTS, UNSUPPORTED, UNSUPPORTED_WHY, EMPTY_VALUE } from './consts.js?v=1266';
-import { MArr, rtErr, cloneVal, copyInto, fmtDouble, timeToString, colorToString, LIMITS } from './runtime.js?v=1266';
-import { BUILTINS } from './builtins.js?v=1266';
+import { preprocess, MqError, err } from './lexer.js?v=1267';
+import { parse, BASE_TYPES } from './parser.js?v=1267';
+import { CONSTS, ENUMS, STRUCTS, UNSUPPORTED, UNSUPPORTED_WHY, EMPTY_VALUE } from './consts.js?v=1267';
+import { MArr, rtErr, cloneVal, copyInto, fmtDouble, timeToString, colorToString, LIMITS } from './runtime.js?v=1267';
+import { BUILTINS } from './builtins.js?v=1267';
 
 // ---------- types ----------
 const TY = {};

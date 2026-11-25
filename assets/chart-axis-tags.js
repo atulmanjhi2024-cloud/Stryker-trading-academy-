@@ -8,12 +8,7 @@
 //      selected or hovered. Per drawing switch: style.axisTag === false (settings > "Price label on scale"; saved with the drawing).
 //   3. Indicators that paint their own axis tags (GEX, Camarilla ...) are not touched: only these two sources are tagged here.
 //   4. Overlap: tags are sorted by y and pushed apart (never over the last-price tag, which keeps its place), inside the pane.
-//   5. BID / ASK lines (Owner 25 Nov 2026: "show spread lines like mt5 chart on our cfd charts"): broker charts whose feed streams both
-//      sides (cTrader spots, OANDA pricing -> byo-core.js QUOTES = window.__stkQuotes, the same stream as the chart) get a Bid line in
-//      the chart's own last-price colour and a thin red Ask line, each with a "Bid 25,124.36" / "Ask 25,125.56" tag on the scale.
-//      Other charts have no quote, so nothing is drawn. Chart settings > Scales and lines > "Show bid / ask lines" (on by default,
-//      saved per user: localStorage stk_bidask_<uid>). Painted in this module's one rAF loop, only when a value moved.
-// No data, no network. Tests: tools/tests/chart-axistags-browser.js, tools/tests/spread-browser.js.
+// No data, no network. Test: tools/tests/chart-axistags-browser.js.
 const H = 16, GAP = 1, MAXTAGS = 80;
 const FONT = '600 11px -apple-system, BlinkMacSystemFont, "Trebuchet MS", Roboto, Ubuntu, sans-serif';
 const NO_PRICE = new Set(['vline', 'text', 'note', 'callout', 'comment', 'pricenote', 'pricelabel', 'signpost', 'fibtimezones', 'trendfibtime', 'iconstamp', 'flagmark', 'arrowmarkup', 'arrowmarkdown', 'magnifier', 'anchoredvwap', 'fixedrangevp']);
@@ -21,10 +16,6 @@ const LINES = new Set(['hline', 'hray']);
 const TRADE_KEY = 'stk_axtags_trade';
 let WS = null, started = false, tradeOn = true;
 try { tradeOn = localStorage.getItem(TRADE_KEY) !== '0'; } catch (e) {}
-const ASK_COLOR = '#f23645';
-const baKey = () => { let u = ''; try { u = (window.firebase && firebase.auth().currentUser || {}).uid || ''; } catch (e) {} return 'stk_bidask_' + (u || 'guest'); };
-export function bidAskOn() { try { return localStorage.getItem(baKey()) !== '0'; } catch (e) { return true; } }
-export function setBidAsk(on) { try { localStorage.setItem(baKey(), on ? '1' : '0'); } catch (e) {} }
 const states = new WeakMap();   // renderer -> { canvas, tags: Map(key -> list), sig, boxes }
 const cv = document.createElement('canvas'), cx = cv.getContext('2d');
 
@@ -72,12 +63,13 @@ function drawingTags(cell, R) {
   const hov = ud ? ud.hoveredId : null;
   for (const d of all) {
     if (!d || d.visible === false || (d.paneId && d.paneId !== 'price') || NO_PRICE.has(d.type) || !drawingTagOn(d)) continue;
-    const line = LINES.has(d.type), on = line || sel.includes(d.id) || d.id === hov;
+    // OWNER ADDITION 2 (25 Nov): the Position tool's entry / target / stop are tagged like a horizontal line (always, while in view)
+    const line = LINES.has(d.type) || d.type === 'position', on = line || sel.includes(d.id) || d.id === hov;
     if (!on) continue;
     const col = solid(d.style && (d.style.lineColor || d.style.borderColor || d.style.color), '#2962ff');
     if (d.type === 'position' && typeof d.prices === 'function') {
       const p = d.prices(); if (!p) continue;
-      out.push({ price: p.entry, color: '#787b86' }, { price: p.stop, color: solid(d.lossColor, '#f23645') }, { price: p.target, color: solid(d.profitColor, '#089981') });
+      out.push({ price: p.entry, color: '#5d6b85', kind: 'entry' }, { price: p.stop, color: solid(d.lossColor, '#f23645'), kind: 'sl' }, { price: p.target, color: solid(d.profitColor, '#089981'), kind: 'tp' });
     } else if (Array.isArray(d.levels) && typeof d.levelPrice === 'function' && d.anchors.length >= 2) {
       if (d.showPrices === false) continue;
       for (const lv of d.levels) if (lv.enabled) out.push({ price: d.levelPrice(lv.ratio, d.anchors[0].price, d.anchors[1].price), color: solid(lv.color, col) });
@@ -134,19 +126,8 @@ function paint(cell, R) {
     const y = co.priceToY(l.price, pane.scale, pane.bounds);
     if (!(y >= top && y <= bot)) continue;
     const color = solid(l.color, '#787b86');
-    items.push({ y, color, text: l.text || fmt(l.price) });
+    items.push({ y, color, text: l.text || fmt(l.price), fade: l.fade > 0 && l.fade < 1 ? l.fade : 0, kind: l.kind || '' });
     if (items.length >= MAXTAGS) break;
-  }
-  // bid / ask of a broker chart (drawn last, exactly on their price: the Bid tag may cover the last-price tag, it is the same price)
-  const ba = [];
-  const Q = window.__stkQuotes, q = Q && bidAskOn() && cell.symbol ? Q.get(cell.symbol, sc.priceMintick) : null;
-  if (q) {
-    let bidCol = '#2962ff';
-    try { const n0 = sc.bars.length; if (n0 && R.chrome && R.chrome.priceElementColor) bidCol = solid(R.chrome.priceElementColor(sc, co, R.theme, sc.bars[n0 - 1]), bidCol); } catch (e) {}
-    for (const [k, p, col] of [['Bid', q.bid, bidCol], ['Ask', q.ask, ASK_COLOR]]) {
-      const y = co.priceToY(p, pane.scale, pane.bounds);
-      if (y >= top && y <= bot) ba.push({ y, color: col, text: k + ' ' + fmt(p), k });
-    }
   }
   // the last-price tag (and its countdown under it) keeps its place: nothing is painted over it
   const reserved = [];
@@ -155,7 +136,7 @@ function paint(cell, R) {
     const ly = co.priceToY(sc.bars[n - 1].close, pane.scale, pane.bounds);
     if (ly >= top && ly <= bot) reserved.push({ t: ly - 8, b: ly - 8 + (sc.showPriceLabel && sc.showCountdown ? 32 : 16), gap: GAP });
   }
-  const sig = [pw, ph, dpr, axW, top, bot, reserved.map((r) => r.t).join()].join('|') + '#' + items.concat(ba).map((i) => Math.round(i.y * 2) + i.color + i.text).join(',');
+  const sig = [pw, ph, dpr, axW, top, bot, reserved.map((r) => r.t).join()].join('|') + '#' + items.map((i) => Math.round(i.y * 2) + i.color + i.text + (i.fade || '')).join(',');
   if (sig === s.sig) return;
   s.sig = sig;
   const bw = Math.round(pw * dpr), bh = Math.round(ph * dpr);
@@ -163,27 +144,17 @@ function paint(cell, R) {
   c.style.width = pw + 'px'; c.style.height = ph + 'px';
   g.setTransform(1, 0, 0, 1, 0, 0); g.clearRect(0, 0, c.width, c.height); g.setTransform(dpr, 0, 0, dpr, 0, 0);
   s.boxes = [];
-  if (axW < 20 || !(items.length || ba.length)) return;
+  if (axW < 20 || !items.length) return;
   g.font = FONT; g.textBaseline = 'middle'; g.textAlign = 'center';
   // the scale widens when a tag needs it: Vela's gutter is fixed, so a long price is squeezed to fit (never clipped, never over the plot)
   for (const { it, t } of layout(items, top, bot, reserved)) {
     let fs = 11; g.font = FONT;
     const room = axW - 8, w = g.measureText(it.text).width;
     if (w > room) { fs = Math.max(8, Math.floor(11 * room / w)); g.font = FONT.replace('11px', fs + 'px'); }
-    g.fillStyle = it.color; g.fillRect(W + 1, t, axW - 2, H);
+    // a filled, slightly rounded tag (like a horizontal line's); a working order's tag is its side colour at lower opacity
+    g.globalAlpha = it.fade || 1; g.fillStyle = it.color; g.beginPath(); if (g.roundRect) g.roundRect(W + 1, t, axW - 2, H, 2); else g.rect(W + 1, t, axW - 2, H); g.fill(); g.globalAlpha = 1;
     g.fillStyle = ink(it.color); g.fillText(it.text, W + axW / 2, t + H / 2 + 0.5);
-    s.boxes.push({ y: it.y, top: t, color: it.color, text: it.text, x: W + 1, w: axW - 2, h: H });
-  }
-  // Bid / Ask: a 1 px line over the plot + a tag that starts on the scale and grows left into the plot when "Ask 25,125.56" needs it
-  g.font = FONT;
-  for (const it of ba) {
-    const yy = Math.round(it.y) + 0.5, w = Math.ceil(g.measureText(it.text).width) + 12, x = Math.min(W + 1, pw - 1 - w), bw = pw - 1 - x;
-    g.strokeStyle = it.color; g.lineWidth = 1; g.globalAlpha = it.k === 'Ask' ? 0.9 : 0.75;
-    g.beginPath(); g.moveTo(0, yy); g.lineTo(x, yy); g.stroke(); g.globalAlpha = 1;
-    const t = Math.round(it.y - H / 2);
-    g.fillStyle = it.color; g.fillRect(x, t, bw, H);
-    g.fillStyle = ink(it.color); g.textAlign = 'center'; g.fillText(it.text, x + bw / 2, t + H / 2 + 0.5);
-    s.boxes.push({ y: it.y, top: t, color: it.color, text: it.text, x, w: bw, h: H, kind: it.k.toLowerCase() });
+    s.boxes.push({ y: it.y, top: t, color: it.color, text: it.text, x: W + 1, w: axW - 2, h: H, fade: it.fade, kind: it.kind });
   }
 }
 
@@ -214,7 +185,7 @@ function watchDialogs() {
 
 export function mountAxisTags(ws) {
   WS = ws; if (started) return; started = true;
-  window.__stkAxisTags = { setTags, setTradeTags, get tradeTagsOn() { return tradeOn; }, boxes, layout, rendererOf, cellsOf, bidAskOn, setBidAsk };
+  window.__stkAxisTags = { setTags, setTradeTags, get tradeTagsOn() { return tradeOn; }, boxes, layout, rendererOf, cellsOf };
   const tick = () => {
     if (!document.hidden) for (const cell of cellsOf()) { const R = rendererOf(cell); if (R) { try { paint(cell, R); } catch (e) { console.warn('TradeZoro axis tags', e); } } }
     requestAnimationFrame(tick);

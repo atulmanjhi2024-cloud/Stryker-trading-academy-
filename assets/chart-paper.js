@@ -973,7 +973,9 @@ function pushLines(force){
     const lines = (lv ? linesFor(sym) : sp.ok ? linesFor(sym) : []).filter((l) => TV.visible(l));
     const data = lines.map((l) => Object.assign({ id: l.id, kind: l.kind, price: l.price, color: lineColor(l), label: fmtP(sym, l.price) }, (() => { const s = TV.lineStyle(l); return { dash: s.dash, w: s.w }; })()));
     syncChips(cell, inst, lines);
-    try { if (window.__stkAxisTags) window.__stkAxisTags.setTags(R, 'trade', data.map((l) => ({ price: l.price, color: l.color, text: l.label }))); } catch (e) {}   // price tags on the scale (chart-axis-tags.js)
+    // price tags on the scale (chart-axis-tags.js). OWNER ADDITION 2: entry / TP / SL tags in their colours; working orders in their side
+    // colour at lower opacity; a live cTrader chart adds its ask (dark). The last-price tag always keeps its place.
+    try { if (window.__stkAxisTags) window.__stkAxisTags.setTags(R, 'trade', data.map((l) => ({ price: l.price, color: l.color, text: l.label, kind: l.kind, fade: l.kind === 'ord' && !/^[ST]O/.test(l.id) ? 0.6 : 0 })).concat(lv && LIVE.quoteTags ? LIVE.quoteTags(sym) : [])); } catch (e) {}
     const badge = '';   // Owner 24 Nov: no LIVE/SANDBOX account badge on the chart (the order panel shows the account)
     const ex = TV.execOn() ? execsFor(sym) : [], rr = TV.rrOn() ? rrFor(sym) : null;
     const onote = lv && LIVE.otherNote ? LIVE.otherNote(sym) : null;   // a mapped chart (NQ1!) with the broker's NAS100 order / position: say where it is
@@ -1012,11 +1014,15 @@ function syncChips(cell, inst, lines){
     const A = chip.querySelector('.stkpt-chip-a'), B = chip.querySelector('.stkpt-chip-b');
     if (A.textContent !== a) A.textContent = a;
     if (B.textContent !== b) B.textContent = b;
+    // OWNER STYLE: a live position's TP / SL (and one being dragged out) = dark chip with a small TP / SL pill, price, P&L at that level
+    const tg = l.live && (l.posId || (l.id === 'new' && l.slRole)) ? (l.slRole || l.role) : '';
+    chip.classList.toggle('tagged', !!tg); if (tg) { A.dataset.tag = tg.toUpperCase(); chip.classList.toggle('neg', /^−|Wrong/.test(b)); }
+    if (tg) { chip.title = l.id === 'new' ? 'Release to place it' : (tg === 'sl' ? 'Stop loss' : 'Take profit') + ' · drag to move · × removes it'; const xb2 = chip.querySelector('.stkpt-chip-x'); if (xb2) { const t2 = 'Remove ' + (tg === 'sl' ? 'stop loss' : 'take profit'); xb2.title = t2; xb2.setAttribute('aria-label', t2); } continue; }
     if (l.live) {
       chip.classList.toggle('neg', l.pnl != null && l.pnl < 0);
       // AUTO-TPSL: the live position's TP / SL handles (hover or tap the position label; drag one up / down to place it)
       if (l.kind === 'pos') liveHandles(chip, cell, inst, l.sltp);
-      if (l.kind === 'pos') chip.title = l.sltp ? 'Live position · drag TP or SL to set a take profit / stop loss · × flattens (with a confirm)' : 'Live position · × flattens (with a confirm)';
+      if (l.kind === 'pos') chip.title = 'Entry ' + fmtP(cell.symbol, l.price) + (l.sltp ? ' · drag TP or SL to set a take profit / stop loss' : '') + ' · × closes (with a confirm)';
       else if (l.posId) { chip.title = (l.role === 'sl' ? 'Stop loss' : 'Take profit') + ' · drag to move · × removes it'; const xb2 = chip.querySelector('.stkpt-chip-x'); if (xb2) { const t2 = 'Remove ' + (l.role === 'sl' ? 'stop loss' : 'take profit'); xb2.title = t2; xb2.setAttribute('aria-label', t2); } }
       else if (l.id === 'new') chip.title = 'Release to place it';
       else chip.title = 'Live order · drag to move (with a confirm) · × cancels';
@@ -2313,17 +2319,30 @@ html.stklv-on .stkpt-badge{ display:none; }
 .stkpt-chip[data-pin=down] .stkpt-chip-a::before{ content:"↓ "; }
 .stkpt-chip[data-pin=up],.stkpt-chip[data-pin=down]{ border-style:dashed; opacity:.92; }
 .stkpt-chip.dragging{ box-shadow:0 0 0 2px var(--c); }
-/* AUTO-TPSL: TP / SL handles on a live position label (hover / tap), MT5 / TradingView style */
-.stkpt-hs{ display:none; align-items:center; gap:4px; padding:0 4px; border-left:1px solid var(--c); }
-.stkpt-chip.has-h:hover,.stkpt-chip.has-h.show-h,.stkpt-chip.has-h:focus-within{ z-index:5; }   /* wider with its handles: on top of a neighbour chip */
-.stkpt-chip.has-h:hover .stkpt-hs,.stkpt-chip.has-h.show-h .stkpt-hs,.stkpt-chip.has-h:focus-within .stkpt-hs{ display:inline-flex; }
-.stkpt-h{ display:inline-flex; align-items:center; justify-content:center; height:16px; min-width:24px; padding:0 4px; box-sizing:border-box; border:1px solid currentColor; border-radius:4px; background:transparent; font:700 10px/1 -apple-system,BlinkMacSystemFont,Roboto,sans-serif; letter-spacing:.02em; cursor:ns-resize; touch-action:none; }
+/* AUTO-TPSL + OWNER STYLE (25 Nov): TP / SL handles = two small outlined chips left of the live position chip (always shown with a
+   mouse; a tap shows them on touch). Drag one off the line to place it. TP solid green outline, SL dashed in the loss colour. */
+.stkpt-chip.has-h{ overflow:visible; }
+.stkpt-chip.has-h .stkpt-chip-a{ border-radius:3px 0 0 3px; } .stkpt-chip.has-h .stkpt-chip-x{ border-radius:0 3px 3px 0; }
+.stkpt-hs{ display:none; position:absolute; top:-1px; height:22px; width:max-content; white-space:nowrap; box-sizing:border-box; right:calc(100% + 6px); align-items:stretch; gap:4px; }
+.stkpt-chip.has-h:hover,.stkpt-chip.has-h.show-h,.stkpt-chip.has-h:focus-within{ z-index:5; }   /* on top of a neighbour chip */
+.stkpt-chip.has-h.show-h .stkpt-hs,.stkpt-chip.has-h:focus-within .stkpt-hs{ display:flex; }
+@media (hover:hover) and (pointer:fine){ .stkpt-chip.has-h .stkpt-hs{ display:flex; } }
+.stkpt-h{ display:inline-flex; align-items:center; justify-content:center; flex:none; white-space:nowrap; height:22px; min-width:28px; padding:0 6px; box-sizing:border-box; border:1px solid currentColor; border-radius:4px; background:#131722; font:600 11px/1 -apple-system,BlinkMacSystemFont,"Trebuchet MS",Roboto,sans-serif; cursor:ns-resize; touch-action:none; box-shadow:0 1px 4px rgba(0,0,0,.35); }
+:root[data-theme="light"] .stkpt-h{ background:#fff; }
 .stkpt-h[hidden]{ display:none; }
-.stkpt-h[data-h=tp]{ color:var(--stk-profit,#089981); } .stkpt-h[data-h=sl]{ color:var(--stk-loss,#f23645); }
-.stkpt-h[data-h=tp]:hover{ background:var(--stk-profit,#089981); border-color:var(--stk-profit,#089981); color:#fff; } .stkpt-h[data-h=sl]:hover{ background:var(--stk-loss,#f23645); border-color:var(--stk-loss,#f23645); color:#fff; }
+.stkpt-h[data-h=tp]{ color:var(--stk-profit,#089981); } .stkpt-h[data-h=sl]{ color:var(--stk-loss,#f23645); border-style:dashed; }
+.stkpt-h[data-h=tp]:hover{ background:var(--stk-profit,#089981); border-color:var(--stk-profit,#089981); color:#fff; } .stkpt-h[data-h=sl]:hover{ background:var(--stk-loss,#f23645); border-color:var(--stk-loss,#f23645); border-style:solid; color:#fff; }
 .stkpt-h:focus-visible{ outline:2px solid var(--c); outline-offset:1px; }
-@media (pointer:coarse){ .stkpt-h{ height:20px; min-width:32px; } }
-@media (max-width:700px){ .stkpt-chip.has-h.show-h .stkpt-chip-b{ display:none; } }   /* phone: the handles take the P&L's place while shown (P&L stays in the strip / dock) */
+@media (pointer:coarse){ .stkpt-h{ min-width:36px; } }
+/* live position's TP / SL chip: dark, a small coloured TP / SL pill, the price, a hairline, the P&L at that level (green / red) */
+.stkpt-chip.tagged .stkpt-chip-a{ display:inline-flex; align-items:center; gap:6px; background:transparent; color:inherit; padding:0 8px 0 3px; font-variant-numeric:tabular-nums; }
+.stkpt-chip.tagged .stkpt-chip-a::before{ content:attr(data-tag); display:inline-flex; align-items:center; height:16px; padding:0 5px; border-radius:3px; background:var(--c); color:#fff; font-size:10px; font-weight:700; letter-spacing:.02em; }
+.stkpt-chip.tagged[data-pin=up] .stkpt-chip-a::before{ content:"↑ " attr(data-tag); } .stkpt-chip.tagged[data-pin=down] .stkpt-chip-a::before{ content:"↓ " attr(data-tag); }
+.stkpt-chip.tagged .stkpt-chip-b{ border-left:1px solid rgba(127,127,127,.35); color:var(--stk-profit,#089981); font-family:inherit; font-weight:600; font-variant-numeric:tabular-nums; }
+.stkpt-chip.tagged.neg .stkpt-chip-b{ color:var(--stk-loss,#f23645); }
+.stkpt-chip[data-kind="pos"][data-live]{ background:var(--c); color:#fff; }   /* the live position = one filled chip in its side colour */
+.stkpt-chip[data-kind="pos"][data-live] .stkpt-chip-b,.stkpt-chip[data-kind="pos"][data-live].neg .stkpt-chip-b{ color:#fff; border-left:1px solid rgba(255,255,255,.35); font-family:inherit; font-weight:600; font-variant-numeric:tabular-nums; }
+.stkpt-chip[data-kind="pos"][data-live] .stkpt-chip-x{ border-left-color:rgba(255,255,255,.35); } .stkpt-chip[data-kind="pos"][data-live] .stkpt-chip-x:hover{ background:rgba(0,0,0,.18); }
 .stkpt-chip[data-kind="new"],.stkpt-chip[data-id="new"]{ opacity:.85; }
 .stkpt-1c{ position:absolute; left:10px; top:30px; display:flex; align-items:stretch; height:36px; pointer-events:auto; border-radius:6px; overflow:hidden; box-shadow:0 1px 4px rgba(0,0,0,.35); font-family:-apple-system,BlinkMacSystemFont,"Trebuchet MS",Roboto,sans-serif; }
 .stkpt-1c button{ border:0; min-width:74px; padding:0 8px; display:flex; flex-direction:column; align-items:center; justify-content:center; cursor:pointer; color:#fff; line-height:1.1; }

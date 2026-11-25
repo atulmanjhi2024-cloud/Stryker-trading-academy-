@@ -4,7 +4,7 @@
 // Our function /connect/ctrader/token swaps the code (it holds the client secret). Prices come over our relay
 // /connect/ctrader/ws (it adds the secret and lets only market-data messages through). Nothing is stored on our side;
 // the member's tokens stay in the encrypted, user-bound device vault. Docs: help.ctrader.com/open-api.
-import { ADAPTERS, ROUTERS, SOURCES, Hub, QUOTES, candleBuilder, normTf, saveSource, srcById } from './byo-core.js?v=1286';
+import { ADAPTERS, ROUTERS, SOURCES, Hub, candleBuilder, normTf, saveSource, srcById } from './byo-core.js?v=1286';
 
 const MIN = 60000;
 export const CT = {
@@ -172,6 +172,10 @@ export function symbolOf(t) {
 const PERIOD = { '1': 1, '5': 5, '15': 7, '30': 8, '60': 9, '240': 10, D: 12, W: 13, M: 14 };
 const SPAN = { '1': MIN, '5': 5 * MIN, '15': 15 * MIN, '30': 30 * MIN, '60': 60 * MIN, '240': 240 * MIN, D: 864e5, W: 7 * 864e5, M: 31 * 864e5 };
 const PX = 1e5;   // cTrader prices are integers in 1/100000
+// AUTO-TPSL: the latest bid / ask per streamed symbol key ('EURUSD' data feed, 'CT:EURUSD' trading account feed); read-only, for the
+// stop loss / take profit side check (a buy's SL below the bid, TP above the ask) in assets/chart-live.js
+export const QUOTES = new Map();
+export const quoteOf = (name) => { const k = String(name || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase(); const q = QUOTES.get('CT:' + k) || QUOTES.get(k); return q && Date.now() - q.at < 120000 ? q : null; };
 const symCache = new WeakMap();   // creds -> Map(key -> { id, desc }); memory only, per account
 async function symbolId(c, key, d) { return (await symRec(c, key, d)).id; }
 async function symRec(c, key, d) {
@@ -233,7 +237,7 @@ export const ctrader = {
               const k = back.get(e.symbolId); if (!k) return;
               const l = last.get(k) || {}; if (e.bid != null) l.bid = e.bid; if (e.ask != null) l.ask = e.ask; last.set(k, l);
               if (l.bid == null) return;
-              if (l.ask != null) QUOTES.put(k, round(l.bid / PX), round(l.ask / PX), e.timestamp);   // the same spot: Bid / Ask lines + spread
+              QUOTES.set(k, { bid: round(l.bid / PX), ask: l.ask != null ? round(l.ask / PX) : null, at: Date.now() });   // AUTO-TPSL: SL / TP side checks
               onTick(k, round(l.bid / PX), e.timestamp > 0 ? e.timestamp : Date.now(), 0);   // chart plots the bid, like a broker chart
             }));
             subbed = ids.map((x) => x[0]);
@@ -264,7 +268,7 @@ export function useTradeAccount(creds, freshTrade, deps, core) {
     id: 'ctacct', name: 'cTrader', symbolOf: ctKey,
     async info(t, c) {
       const k = ctKey(t); if (!k) return undefined;
-      let r = null, dg = 5; try { r = await symRec(c, k, D); const x = await sessionOf(c, D).call(2116, { symbolId: [r.id] }); const sd = ((x.payload && x.payload.symbol) || [])[0]; if (sd && Number.isInteger(+sd.digits)) dg = +sd.digits; if (sd && Number.isInteger(+sd.pipPosition)) QUOTES.setPip(k, Math.pow(10, -sd.pipPosition)); } catch (e) { /* defaults */ }
+      let r = null, dg = 5; try { r = await symRec(c, k, D); const x = await sessionOf(c, D).call(2116, { symbolId: [r.id] }); const sd = ((x.payload && x.payload.symbol) || [])[0]; if (sd && Number.isInteger(+sd.digits)) dg = +sd.digits; } catch (e) { /* defaults */ }
       const nm = k.slice(3), ps = Math.pow(10, Math.max(0, Math.min(dg, 8)));
       return { ticker: k, tickerid: 'BYO:' + k, prefix: 'BYO', description: ((r && r.desc) || nm) + ' · via cTrader', type: symbolOf(nm) ? (CRYPTO.test(nm) ? 'crypto' : 'forex') : 'cfd', market: symbolOf(nm) ? (CRYPTO.test(nm) ? 'crypto' : 'forex') : 'cfd', currency: '', mintick: 1 / ps, pricescale: ps, minmove: 1, pointvalue: 1, timezone: 'Etc/UTC', session: '24x7' };
     },

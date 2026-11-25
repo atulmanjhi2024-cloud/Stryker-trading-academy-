@@ -116,10 +116,10 @@ async function run(b, w, h, mobile, theme) {
   await sleep(700);
   C = await chips(p);
   const pc = C.find((c) => c.kind === 'pos');
-  check(pc && /LONG/.test(pc.a) && (mobile || /NAS100/.test(pc.a)) && /\$/.test(pc.b), tag + ': position chip: LIVE LONG 0.01 lot NAS100 @ price + P&L', C);
+  check(pc && /^Buy 0\.01 lots?$/.test(pc.a) && /USD$/.test(pc.b), tag + ': position chip: LIVE LONG 0.01 lot NAS100 @ price + P&L', C);
   D = await dockRows(p, 'pos');
   check(D.length === 1 && D[0][0] === 'NAS100' && D[0][1] === 'Long' && /\$/.test(D[0][D[0].length - 2]) && D[0][4] !== '—', tag + ': dock Positions shows NAS100 Long with Last + Open P&L (same as the chip)', D);
-  check(D[0] && pc && D[0][D[0].length - 2] === pc.b, tag + ': dock P&L = chip P&L', [D[0] && D[0][5], pc && pc.b]);
+  check(D[0] && pc && D[0][D[0].length - 2].replace(/\$/, '') + ' USD' === pc.b, tag + ': dock P&L = chip P&L', [D[0] && D[0][5], pc && pc.b]);
   await sleep(300);
   await hidePanel(); await sleep(250); await p.screenshot({ path: OUT + '/position-' + tag + '.png' });
   // stop sell -> line; cancel -> gone (chart + dock)

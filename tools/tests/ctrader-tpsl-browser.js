@@ -123,21 +123,40 @@ async function run(b, w, h, mobile, theme) {
   await opWait(p, () => [...document.querySelectorAll('.stkpt-chip[data-kind=pos]')].some((c) => c.offsetWidth > 0), null, 8000);
   let C = await chips(p);
   const pc = C.find((c) => c.kind === 'pos');
-  check(pc && (mobile ? /LIVE LONG 0\.02 lots @ 0\.90526/ : /LIVE LONG 0\.02 lots EURUSD @ 0\.90526/).test(pc.a), tag + ': position label "LIVE LONG 0.02 lots' + (mobile ? '' : ' EURUSD') + ' @ 0.90526" (5 digits)', C);
+  check(pc && /^Buy 0\.02 lots$/.test(pc.a) && /^[+−]\d+\.\d{2} USD$/.test(pc.b), tag + ': position chip "Buy 0.02 lots | ±x.xx USD"', C);
+  check(await p.evaluate(() => /Entry 0\.90526/.test([...document.querySelectorAll('.stkpt-chip[data-kind=pos]')].find((x) => x.offsetWidth > 0).title)), tag + ': chip tooltip names the entry in 5 digits');
   const slc = C.find((c) => c.id === 'SP5001');
-  check(slc && /SL 0\.89000/.test(slc.a), tag + ': SL line label in 5 digits', C);
+  check(slc && slc.a === '0.89000' && /USD$/.test(slc.b) && await p.evaluate(() => document.querySelector('.stkpt-chip[data-id=SP5001] .stkpt-chip-a').dataset.tag === 'SL'), tag + ': SL chip [SL] 0.89000 | −x.xx USD', C);
+  // OWNER ADDITION 2: price-scale tags for the entry (side colour), SL (loss colour) and the working limit (side colour, faded); the
+  // ask tag; none over the last-price tag
+  // Sample data: the ask (the mock sends no spot events); the bid is the chart's last price
+  await p.evaluate(async (b) => { const m = await import('/assets/byo-ctrader.js?v=1286'); m.QUOTES.set('CT:EURUSD', { bid: b, ask: Math.round((b + 0.00012) * 1e5) / 1e5, at: Date.now() }); }, bid);
+  await opWait(p, () => { const R = window.__stkAxisTags.rendererOf(window.__stkAxisTags.cellsOf()[0]); return window.__stkAxisTags.boxes(R).some((b) => b.kind === 'ask'); }, null, 5000);
+  const AX = await p.evaluate(() => { const cell = window.__stkAxisTags.cellsOf()[0], R = window.__stkAxisTags.rendererOf(cell), sc = R.scene, pane = sc.panes.get('price'), co = R.coords;
+    const n = sc.bars.length, ly = co.priceToY(sc.bars[n - 1].close, pane.scale, pane.bounds); const tv = window.__stkTradeView.get().col;
+    const inV = (px) => { const y = co.priceToY(px, pane.scale, pane.bounds); return y >= pane.bounds.top && y <= pane.bounds.top + pane.bounds.height; };
+    return { inSl: inV(0.89), inLim: inV(0.885), boxes: window.__stkAxisTags.boxes(R), last: { t: ly - 8, b: ly - 8 + (sc.showPriceLabel && sc.showCountdown ? 32 : 16), on: !!(sc.showPriceLabel || sc.showCountdown) }, col: tv }; });
+  const tagOf = (txt) => AX.boxes.find((b) => b.text === txt);
+  const hx = (c) => String(c).toLowerCase();
+  const eT = tagOf('0.90526'), sT = tagOf('0.89000'), lT = tagOf('0.88500');
+  check(eT && hx(eT.color) === hx(AX.col.buy), tag + ': entry tag 0.90526 on the scale in the buy colour', AX.boxes);
+  check(AX.inSl ? sT && hx(sT.color) === hx(AX.col.sl) : !sT, tag + ': SL tag 0.89000 in the SL colour while in view (none when off-screen)', AX);
+  check(AX.inLim ? lT && lT.fade > 0 && lT.fade < 1 : !lT, tag + ': working limit tag 0.88500 faded while in view (none when off-screen)', AX);
+  check(AX.boxes.some((b) => b.kind === 'ask'), tag + ': ask tag on the scale', AX.boxes);
+  check(!AX.last.on || AX.boxes.every((b) => b.top + b.h <= AX.last.t + 0.5 || b.top >= AX.last.b - 0.5), tag + ': no tag covers the last-price tag', AX);
 
   // ---- BUG 2b: TP handle -> drag -> confirm off -> one 2110 with the dragged price, stop loss kept
   await ready(p);
   const hs = await p.evaluate(() => { const c = [...document.querySelectorAll('.stkpt-chip[data-kind=pos]')].find((x) => x.offsetWidth > 0); c.classList.add('show-h'); const hb = [...c.querySelectorAll('.stkpt-h')].filter((x) => !x.hidden && x.offsetWidth > 0);
-    const cr = c.getBoundingClientRect(), a = c.querySelector('.stkpt-chip-a').getBoundingClientRect(), box = c.querySelector('.stkpt-hs').getBoundingClientRect();
-    return { n: hb.map((x) => x.dataset.h), cyChip: cr.top + cr.height / 2, cyA: a.top + a.height / 2, cys: hb.map((x) => { const r = x.getBoundingClientRect(); return r.top + r.height / 2; }), cl: cr.left, pads: hb.map((x) => { const r = x.getBoundingClientRect(), rng = document.createRange(); rng.selectNodeContents(x); const t = rng.getBoundingClientRect(); return { l: t.left - r.left, r: r.right - t.right, t: t.top - r.top, b: r.bottom - t.bottom }; }), boxR: box.right, chipR: cr.right, inView: cr.right <= innerWidth && cr.left >= 0 }; });
+    const cr = c.getBoundingClientRect(), a = c.querySelector('.stkpt-chip-a').getBoundingClientRect(), box = c.querySelector('.stkpt-hs').getBoundingClientRect(), g = hb.length > 1 ? hb[1].getBoundingClientRect().left - hb[0].getBoundingClientRect().right : null;
+    return { n: hb.map((x) => x.dataset.h), cyChip: cr.top + cr.height / 2, cyA: a.top + a.height / 2, cys: hb.map((x) => { const r = x.getBoundingClientRect(); return r.top + r.height / 2; }), cl: cr.left, pads: hb.map((x) => { const r = x.getBoundingClientRect(), rng = document.createRange(); rng.selectNodeContents(x); const t = rng.getBoundingClientRect(); return { l: t.left - r.left, r: r.right - t.right, t: t.top - r.top, b: r.bottom - t.bottom }; }), boxR: box.right, chipR: cr.right, gapToChip: cr.left - box.right, inView: cr.right <= innerWidth && box.left >= 0, h: hb.map((x) => x.getBoundingClientRect().height), ch: cr.height }; });
   check(hs.n.length === 1 && hs.n[0] === 'tp', tag + ': hover / tap shows the TP handle (SL already set: drag its line instead)', hs);
   check(hs.cys.every((y) => Math.abs(y - hs.cyChip) <= 1) && Math.abs(hs.cyA - hs.cyChip) <= 1, tag + ': handles and label share one vertical centre', hs);
-  check(hs.pads.every((q) => Math.abs(q.l - q.r) <= 1 && Math.abs(q.t - q.b) <= 1.5), tag + ': handle text centred (even padding)', hs.pads);
+  check(hs.pads.every((q) => Math.abs(q.l - q.r) <= 1 && Math.abs(q.t - q.b) <= 1.5 && q.t >= 0), tag + ': handle text centred (even padding)', hs.pads);
   check(hs.inView, tag + ': position chip with handles fits in view', hs);
+  check(Math.abs(hs.gapToChip - 4) <= 1 && hs.h.every((x) => Math.abs(x - hs.ch) <= 1), tag + ': TP chip sits 4 px left of the position chip, same height', hs);
   await sleep(200); await p.screenshot({ path: OUT + '/handles-' + tag + '.png' });
-  const tpPx = Math.round((bid + 0.004) * 1e5) / 1e5;
+  const tpPx = Math.round((bid + 0.0025) * 1e5) / 1e5;
   // screen y of a price = the position chip's centre + the pane's price-to-y distance from the entry
   const yOf = (px) => p.evaluate((px) => { const R = window.STRYKER_VELA.chart.renderer.renderer, pane = R.scene.panes.get('price'), co = R.coords;
     const c = [...document.querySelectorAll('.stkpt-chip[data-kind=pos]')].find((x) => x.offsetWidth > 0).getBoundingClientRect();
@@ -151,10 +170,11 @@ async function run(b, w, h, mobile, theme) {
   await sleep(250);
   const mid = await chips(p);
   const nc = mid.find((c) => c.id === 'new');
-  check(nc && /^TP \d\.\d{5}$/.test(nc.a.trim()), tag + ': dragging shows a TP line with its 5-digit price', mid);
+  check(nc && /^\d\.\d{5}$/.test(nc.a.trim()) && /USD$/.test(nc.b), tag + ': dragging shows a TP chip with its 5-digit price and the P&L there', mid);
   const dragPx = await p.evaluate(() => { const l = (window.__stkPaper.live.lines(window.STRYKER_VELA.active.symbol) || []).find((x) => x.id === 'new'); return l && l.price; });
   await p.screenshot({ path: OUT + '/drag-tp-' + tag + '.png' });
   await p.mouse.up();
+  await p.mouse.move(200, 500); await p.keyboard.press('Escape').catch(() => {});
   const got = await opWait(p, (n) => window.__ctM.sent.filter((m) => m.payloadType === 2110).length > n, S0, 8000);
   let A = await sentOf(p, 2110);
   const f = A[A.length - 1] || {};
@@ -166,8 +186,31 @@ async function run(b, w, h, mobile, theme) {
   await sleep(700);
   C = await chips(p);
   const tpc = C.find((c) => c.id === 'TP5001');
-  check(tpc && /TP \d\.\d{5}/.test(tpc.a) && /\$/.test(tpc.b), tag + ': TP label shows price + projected $ P&L', C);
+  check(tpc && /^\d\.\d{5}$/.test(tpc.a) && /^\+\d+\.\d{2} USD$/.test(tpc.b), tag + ': TP chip shows [TP] price | +x.xx USD', C);
+  const AX2 = await p.evaluate((px) => { const R = window.__stkAxisTags.rendererOf(window.__stkAxisTags.cellsOf()[0]), pane = R.scene.panes.get('price'), y = R.coords.priceToY(px, pane.scale, pane.bounds); return { inV: y >= pane.bounds.top && y <= pane.bounds.top + pane.bounds.height, b: window.__stkAxisTags.boxes(R), col: window.__stkTradeView.get().col }; }, Number(tpc && tpc.a));
+  check(AX2.inV ? AX2.b.some((b) => b.text === tpc.a && b.color.toLowerCase() === AX2.col.tp.toLowerCase()) : !AX2.b.some((b) => b.text === tpc.a), tag + ': TP tag on the scale in the TP colour while in view (pinned chip only when off-screen)', AX2);
   await p.screenshot({ path: OUT + '/tp-set-' + tag + '.png' });
+
+  // ---- OWNER STYLE: the confirm card (Trade display "confirm" on): title, sub line, rows, Don't show again, Cancel + Confirm change
+  await ready(p);
+  await p.evaluate(() => window.__stkTradeView.set('confirm', true));
+  const Sx = (await sentOf(p, 2110)).length, tp2 = Math.round((bid + 0.006) * 1e5) / 1e5;
+  const prc = p.evaluate((px) => window.__stkLive.setSlTp('5001', 'tp', px, 'test'), tp2);
+  const cfOk = await opWait(p, () => !!document.querySelector('#stklv-cf.stklv-card'), null, 4000);
+  const cfI = cfOk && await p.evaluate(() => { const el = document.querySelector('#stklv-cf .stklv-cf-box'), B = el.getBoundingClientRect(), cs = getComputedStyle(el), c = (r) => r.top + r.height / 2;
+    const h2 = el.querySelector('h2').getBoundingClientRect(), x = el.querySelector('.stklv-x').getBoundingClientRect(), bt = [...el.querySelectorAll('.stklv-cf-btns .stklv-btn')].map((b) => b.getBoundingClientRect());
+    const rows = [...el.querySelectorAll('.stklv-cf-rows > div')].map((r) => ({ t: r.querySelector('dt').textContent, v: r.querySelector('dd').textContent, d: Math.abs(c(r.querySelector('dt').getBoundingClientRect()) - c(r.querySelector('dd').getBoundingClientRect())), r: B.right - parseFloat(cs.paddingRight) - r.querySelector('dd').getBoundingClientRect().right }));
+    return { title: el.querySelector('h2').textContent, sub: (el.querySelector('.stklv-cf-sub') || {}).textContent, rows, ds: !!el.querySelector('[data-k=ds]'), go: el.querySelector('[data-k=yes]').textContent, headD: Math.abs(c(h2) - c(x)), btnD: Math.abs(c(bt[0]) - c(bt[1])), padL: parseFloat(cs.paddingLeft), padR: parseFloat(cs.paddingRight), clip: el.scrollWidth > el.clientWidth + 1, rad: cs.borderTopLeftRadius }; });
+  check(cfOk && cfI.title === 'Change stop loss and take profit' && cfI.sub === 'EURUSD · Buy · 0.02 lots' && cfI.go === 'Confirm change' && cfI.ds, tag + ': confirm card: title, sub line, Confirm change, Don’t show this again', cfI);
+  const rv = (t) => (cfI.rows.find((r) => r.t === t) || {}).v || '';
+  check(cfI && rv('Entry price') === '0.90526' && rv('Stop loss') === '0.89000' && new RegExp('^\\d\\.\\d{5} → ' + tp2.toFixed(5).replace('.', '\\.') + '$').test(rv('Take profit')) && /Demo/.test(rv('Account')), tag + ': rows Entry / Stop loss / Take profit (old → new) / Account', cfI && cfI.rows);
+  check(cfI && cfI.rows.every((r) => r.d <= 1 && Math.abs(r.r) <= 1) && cfI.headD <= 1 && cfI.btnD <= 1 && Math.abs(cfI.padL - cfI.padR) <= 1 && !cfI.clip, tag + ': card aligned (rows label/value one centre, values flush right, even padding)', cfI);
+  await sleep(250); await p.screenshot({ path: OUT + '/confirm-card-' + tag + '.png' });
+  await p.evaluate(() => { document.querySelector('#stklv-cf [data-k=ds]').click(); document.querySelector('#stklv-cf [data-k=yes]').click(); });
+  await prc;
+  check(await opWait(p, (n) => window.__ctM.sent.filter((m) => m.payloadType === 2110).length > n, Sx, 6000), tag + ': Confirm change -> one 2110');
+  check(await p.evaluate(() => window.__stkTradeView.get().confirm === false), tag + ': Don’t show this again turns the confirm setting off');
+  await opWait(p, (v) => { const x = window.__stkLive.state.data.positions.find((q) => String(q.positionId) === '5001'); return x && Math.abs(x.takeProfit - v) < 1e-9; }, tp2, 6000);
 
   // ---- BUG 2c: wrong side -> nothing sent, clear text (API path = what the drag and the editor call)
   await ready(p);
@@ -206,7 +249,7 @@ async function run(b, w, h, mobile, theme) {
   await sleep(200); await p.screenshot({ path: OUT + '/dock-editor-err-' + tag + '.png' });
   const edA = await p.evaluate(() => { const ed = document.querySelector('#stkpo-dock .stkpo-ed'), i = ed.querySelector('input').getBoundingClientRect(), bs = [...ed.querySelectorAll('button')].map((x) => x.getBoundingClientRect()); const c = (r) => r.top + r.height / 2; return { d: Math.max(...bs.map((r) => Math.abs(c(r) - c(i)))), clip: ed.scrollWidth > ed.clientWidth + 1 }; });
   check(edA.d <= 1 && !edA.clip, tag + ': editor input + buttons share one centre', edA);
-  const goodSl = Math.round((bid - 0.006) * 1e5) / 1e5;
+  const goodSl = Math.round((bid - 0.0015) * 1e5) / 1e5;
   await ready(p);
   await p.fill('#stkpo-dock .stkpo-ed input', String(goodSl));
   await p.keyboard.press('Enter');
@@ -214,6 +257,8 @@ async function run(b, w, h, mobile, theme) {
   A = await sentOf(p, 2110);
   check(A[A.length - 1].stopLoss === goodSl && A[A.length - 1].takeProfit > 0, tag + ': 2110 carries the new SL and keeps the TP', A[A.length - 1]);
   check(await opWait(p, (v) => [...document.querySelectorAll('#stkpo-dock [data-lv=sl]')].some((b) => b.textContent === v.toFixed(5)), goodSl, 6000), tag + ': dock SL cell shows the new level');
+  const AX3 = await p.evaluate((px) => { const R = window.__stkAxisTags.rendererOf(window.__stkAxisTags.cellsOf()[0]), pane = R.scene.panes.get('price'), y = R.coords.priceToY(px, pane.scale, pane.bounds); return { inV: y >= pane.bounds.top && y <= pane.bounds.top + pane.bounds.height, b: window.__stkAxisTags.boxes(R), sl: window.__stkTradeView.get().col.sl }; }, goodSl);
+  check(AX3.inV && AX3.b.some((b) => b.text === goodSl.toFixed(5) && b.color.toLowerCase() === AX3.sl.toLowerCase()), tag + ': new SL tag on the scale in the SL colour', AX3);
   await sleep(300); await p.screenshot({ path: OUT + '/dock-positions-' + tag + '.png' });
   // the Open orders tab now lists the SL + TP protection
   D = await dockRows(p, 'ord');

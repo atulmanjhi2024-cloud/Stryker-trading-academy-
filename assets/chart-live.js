@@ -44,6 +44,8 @@ const money = (n, sign) => { if (n == null || !Number.isFinite(n)) return '—';
 const px = (n) => (n == null || !Number.isFinite(n) ? '—' : n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
 // AUTO-TPSL (Owner bug 25 Nov: "@ 1.10" on a EURUSD position): a broker symbol's prices use ITS digits (cTrader SymbolById 'digits',
 // else the tick): EURUSD 1.09526, NAS100 25,328.81. decOf(tick) -> digits; pxd(v, tick) -> text
+// OWNER STYLE (25 Nov): broker chips say money as "+7.82 USD" / "−0.12 USD" (the cTrader P&L here is in USD, USD-quoted symbols only)
+const moneyU = (n) => (n == null || !Number.isFinite(n) ? '' : (n < 0 ? '−' : n > 0 ? '+' : '') + Math.abs(n).toFixed(2) + ' USD');
 const decOf = (tick) => (tick > 0 ? Math.max(0, Math.min(8, Math.round(-Math.log10(tick)))) : 2);
 const pxd = (n, tick) => (n == null || !Number.isFinite(Number(n)) ? '—' : Number(n).toLocaleString('en-US', { minimumFractionDigits: decOf(tick), maximumFractionDigits: decOf(tick) }));
 const uuid = () => (crypto.randomUUID ? crypto.randomUUID() : 'k' + Date.now().toString(36) + Math.random().toString(36).slice(2, 14));
@@ -652,24 +654,26 @@ export function openOther(sym) { try { window.STRYKER_VELA.active.setSymbol(sym)
 }
 export function chipText(sym, l) {
   const i = info(sym), pf = (v) => (i && i.mt && i.code ? pxd(v, i.tick) : px(v));
-  if (l.id === 'new' && l.slRole) { const v = sltpPreview(sym, l); return [(l.slRole === 'sl' ? 'SL ' : 'TP ') + pf(l.price), v.err || v.pnl]; }   // AUTO-TPSL: dragging a new TP / SL
-  // phones: the chart already names the symbol; leaving it out keeps the label + its TP / SL handles inside the screen
-  if (l.kind === 'pos' && i && i.mt) return ['LIVE ' + (l.side === 'buy' ? 'LONG ' : 'SHORT ') + lotTxt(l.qty) + (window.innerWidth <= 700 && i.map && i.map.same ? '' : ' ' + i.code) + ' @ ' + pf(l.price), money(i.pnl, true)];
+  // OWNER STYLE (25 Nov): TP / SL chips = [TP pill] price | P&L at that level; the position chip = [Buy 0.02 lots] | P&L | x. The entry
+  // price is on the price scale tag (chart-axis-tags.js) in the symbol's digits, and in the chip's tooltip.
+  if (l.id === 'new' && l.slRole) { const v = sltpPreview(sym, l); return [pf(l.price), v.err || v.pnl]; }   // AUTO-TPSL: dragging a new TP / SL
+  if (l.kind === 'pos' && i && i.mt) return [(l.side === 'buy' ? 'Buy ' : 'Sell ') + lotTxt(l.qty), i.pnl == null ? '' : moneyU(i.pnl)];
   if (l.kind === 'pos') return ['LIVE ' + (l.side === 'buy' ? 'LONG ' : 'SHORT ') + l.qty + ' ' + (i ? i.code : '') + ' @ ' + px(l.price), money(i ? i.pnl : null, true)];
   if (l.pending && l.role) return [(l.sent ? 'LIVE ' : 'SENDING ') + (l.role === 'sl' ? 'SL ' : 'TP ') + l.qty, pf(l.price)];
   if (l.pending) return [(l.sent ? 'LIVE ' : 'SENDING ') + (l.side === 'buy' ? 'BUY ' : 'SELL ') + l.qty + (l.type === 'market' ? ' MKT' : /stop/.test(l.type) ? ' STP' : ' LMT'), pf(l.price)];
-  if (l.role && l.posId) { const v = sltpPreview(sym, l); return ['LIVE ' + (l.role === 'sl' ? 'SL ' : 'TP ') + pf(l.price), v.err || v.pnl]; }   // a position's SL / TP: level + projected P&L
+  if (l.role && l.posId) { const v = sltpPreview(sym, l); return [pf(l.price), v.err || v.pnl]; }   // a position's SL / TP: level + projected P&L
   if (l.role) return ['LIVE ' + (l.role === 'sl' ? 'SL ' : 'TP ') + l.qty, pf(l.price)];
   return ['LIVE ' + (l.side === 'buy' ? 'BUY ' : 'SELL ') + (/stop/.test(l.type) ? 'STP ' : 'LMT ') + l.qty, pf(l.price)];
 }
 // label parts for the Trade display toggles (all on = chipText above, word for word)
 export function chipParts(sym, l) {
   const i = info(sym), t = chipText(sym, l), pf = (v) => (i && i.mt && i.code ? pxd(v, i.tick) : px(v));
-  if (l.id === 'new' && l.slRole) return { name: l.slRole === 'sl' ? 'SL' : 'TP', size: '', price: pf(l.price), pnl: t[1], pa: 'a' };
-  if (l.kind === 'pos') { const mt = i && i.mt; return { name: 'LIVE ' + (l.side === 'buy' ? 'LONG' : 'SHORT'), size: mt ? lotTxt(l.qty) : String(l.qty), price: '@ ' + (mt ? pf(l.price) : px(l.price)), pnl: t[1], pa: 'a' }; }
+  if (l.id === 'new' && l.slRole) return { name: '', size: '', price: pf(l.price), pnl: t[1], pa: 'a' };
+  if (l.kind === 'pos' && i && i.mt) return { name: l.side === 'buy' ? 'Buy' : 'Sell', size: lotTxt(l.qty), price: '', pnl: t[1], pa: 'a' };
+  if (l.kind === 'pos') return { name: 'LIVE ' + (l.side === 'buy' ? 'LONG' : 'SHORT'), size: String(l.qty), price: '@ ' + px(l.price), pnl: t[1], pa: 'a' };
   if (l.pending && l.role) return { name: (l.sent ? 'LIVE ' : 'SENDING ') + (l.role === 'sl' ? 'SL' : 'TP'), size: String(l.qty), price: pf(l.price), pnl: '', pa: 'a' };
   if (l.pending) return { name: (l.sent ? 'LIVE ' : 'SENDING ') + (l.side === 'buy' ? 'BUY' : 'SELL') + (l.sent ? (/stop/.test(l.type) ? ' STP' : ' LMT') : ''), size: String(l.qty), price: pf(l.price), pnl: '', pa: 'b' };
-  if (l.role && l.posId) return { name: 'LIVE ' + (l.role === 'sl' ? 'SL' : 'TP'), size: '', price: pf(l.price), pnl: t[1], pa: 'a' };
+  if (l.role && l.posId) return { name: '', size: '', price: pf(l.price), pnl: t[1], pa: 'a' };
   if (l.role) return { name: 'LIVE ' + (l.role === 'sl' ? 'SL' : 'TP'), size: String(l.qty), price: pf(l.price), pnl: '', pa: 'a' };
   return { name: 'LIVE ' + (l.side === 'buy' ? 'BUY' : 'SELL') + (/stop/.test(l.type) ? ' STP' : ' LMT'), size: String(l.qty), price: pf(l.price), pnl: '', pa: 'b' };
 }
@@ -698,25 +702,37 @@ export const tickOf = (sym) => { if (S.acct && S.acct.mt) { const m = infoMt(sym
 let cf = null;
 function closeConfirm(v) { if (cf) { const r = cf.resolve; cf.el.remove(); document.removeEventListener('keydown', cf.key, true); cf = null; r(v === true); } }
 // one tap, used only by flatten and drag moves (new orders send on the click). d: { title, lines:[...], code, go, side }
+// OWNER STYLE (25 Nov): a neat, simple card. d.sub = one grey line under the title ("EURUSD · Buy · 0.02 lots"); d.rows = [[label, value
+// html]] hairline-separated, label left / value right; the Account row is added for every card. d.dontShow: a "Don't show this again"
+// box that turns the Trade display "confirm" setting off (only on confirms that setting opened). d.lines (older callers) still work.
 function confirmSheet(d) {
   closeConfirm(false);
   return new Promise((resolve) => {
-    const el = document.createElement('div'); el.id = 'stklv-cf';
+    const el = document.createElement('div'); el.id = 'stklv-cf'; el.className = 'stklv-card';
+    const acctTxt = esc(S.acct.broker || S.acct.mt || '') + ' <span class="stklv-env' + (S.acct.demo || envWord() === 'SANDBOX' ? ' demo' : '') + '">' + (S.acct.demo || envWord() === 'SANDBOX' ? 'Demo' : 'Live') + '</span> <span class="n">' + esc(S.acct.number || S.acct.label || '') + '</span>';
+    const rows = (d.rows || []).concat([['Account', acctTxt]]);
     el.innerHTML = '<div class="stklv-cf-box" role="alertdialog" aria-modal="true" aria-labelledby="stklv-cf-h" aria-describedby="stklv-cf-d">' +
       '<div class="stklv-grab" aria-hidden="true"></div>' +
-      '<div class="stklv-cf-head"><span class="stklv-badge">' + esc(envWord() + ' ' + S.acct.label) + '</span><button type="button" class="stklv-x" data-k="no" aria-label="Cancel">×</button></div>' +
-      '<h2 id="stklv-cf-h">' + esc(d.title) + '</h2>' +
-      '<div id="stklv-cf-d" class="stklv-cf-lines">' + d.lines.map((x) => '<p>' + x + '</p>').join('') + '</div>' +
-      '<div class="stklv-cf-btns"><button type="button" class="stklv-btn" data-k="no">Cancel</button><button type="button" class="stklv-btn stklv-go ' + (d.side === 'sell' ? 'sell' : 'buy') + '" data-k="yes">' + esc(d.go) + '</button></div>' +
-      '<p class="stklv-fine">Real order at your broker. Every attempt is logged. ' + DISCLAIMER + '</p></div>';
+      '<div class="stklv-cf-head"><h2 id="stklv-cf-h">' + esc(d.title) + '</h2><button type="button" class="stklv-x" data-k="no" aria-label="Cancel">×</button></div>' +
+      (d.sub ? '<p class="stklv-cf-sub">' + esc(d.sub) + '</p>' : '') +
+      '<div id="stklv-cf-d">' + (d.lines && d.lines.length ? '<div class="stklv-cf-lines">' + d.lines.map((x) => '<p>' + x + '</p>').join('') + '</div>' : '') +
+      '<dl class="stklv-cf-rows">' + rows.map((r) => '<div><dt>' + esc(r[0]) + '</dt><dd>' + r[1] + '</dd></div>').join('') + '</dl></div>' +
+      (d.dontShow ? '<label class="stklv-cf-ds"><input type="checkbox" data-k="ds"> Don’t show this again</label>' : '') +
+      '<p class="stklv-fine">Real order at your broker. Every attempt is logged. ' + DISCLAIMER + '</p>' +
+      '<div class="stklv-cf-btns"><button type="button" class="stklv-btn" data-k="no">Cancel</button><button type="button" class="stklv-btn stklv-go ' + (d.side === 'sell' ? 'sell' : 'buy') + '" data-k="yes">' + esc(d.go) + '</button></div></div>';
     document.body.appendChild(el);
     const yes = el.querySelector('[data-k=yes]');
-    setTimeout(() => el.querySelector('[data-k=no]').focus(), 30);
-    const k = (e) => { if (e.key === 'Escape') { e.stopPropagation(); closeConfirm(false); } else if (e.key === 'Enter' && !yes.disabled && document.activeElement !== el.querySelector('[data-k=no]')) { e.preventDefault(); e.stopPropagation(); yes.click(); } else e.stopPropagation(); };
+    setTimeout(() => el.querySelector('.stklv-cf-btns [data-k=no]').focus(), 30);
+    const k = (e) => { if (e.key === 'Escape') { e.stopPropagation(); closeConfirm(false); } else if (e.key === 'Enter' && !yes.disabled && !document.activeElement.matches('[data-k=no],[data-k=ds]')) { e.preventDefault(); e.stopPropagation(); yes.click(); } else e.stopPropagation(); };
     document.addEventListener('keydown', k, true);
     el.addEventListener('mousedown', (e) => { if (e.target === el) closeConfirm(false); });
     el.querySelectorAll('[data-k=no]').forEach((b) => b.addEventListener('click', () => closeConfirm(false)));
-    yes.addEventListener('click', () => { if (yes.disabled) return; closeConfirm(true); });
+    yes.addEventListener('click', () => {
+      if (yes.disabled) return;
+      const ds = el.querySelector('[data-k=ds]');
+      if (ds && ds.checked) { try { window.__stkTradeView.set('confirm', false); } catch (e) {} }   // the existing Trade display setting
+      closeConfirm(true);
+    });
     cf = { el, resolve, key: k };
   });
 }
@@ -907,7 +923,7 @@ function sltpPreview(sym, l) {
   const side = Number(p.quantity) > 0 ? 'buy' : 'sell', want = { sl: null, tp: null }; want[role] = l.price;
   const c = CT.mod.sltpCheck({ side }, want, quoteFor(i.code), symDetail(i.code));
   const v = ctPnlOne(i.code, p, l.price);
-  return { pnl: v == null ? '' : money(v, true), err: c.error ? 'Wrong side' : '' };
+  return { pnl: v == null ? '' : moneyU(v), err: c.error ? 'Wrong side' : '' };
 }
 // k 'sl' | 'tp', v = the new level (null = remove it). src 'chart' | 'dock'. -> Promise<{ ok } | { error }>
 export async function setSlTp(posId, k, v, src) {
@@ -929,8 +945,9 @@ export async function setSlTp(posId, k, v, src) {
   const tv = window.__stkTradeView && window.__stkTradeView.get ? window.__stkTradeView.get() : null;
   if (tv && tv.confirm && tv.master) {
     const pnl = want[k] == null ? null : ctPnlOne(code, p, want[k]);
-    const ok = await confirmSheet({ title: want[k] == null ? 'Remove ' + what.toLowerCase() : (cur[k] == null ? 'Set ' : 'Move ') + what.toLowerCase() + ' to ' + lvl, code, side: k === 'tp' ? 'buy' : 'sell', go: want[k] == null ? 'Remove' : (cur[k] == null ? 'Set ' : 'Move ') + what.toLowerCase(),
-      lines: ['Position <b>' + esc(code) + '</b> ' + (side === 'buy' ? 'long ' : 'short ') + lotTxt(Math.abs(Number(p.quantity))) + ' @ ' + pxd(p.averagePrice, tick), cur[k] != null ? 'Now ' + pxd(cur[k], tick) : 'Not set now', want[k] != null ? 'New level <b>' + lvl + '</b>' + (pnl != null ? ' (' + money(pnl, true) + ' at that price)' : '') : 'cTrader removes it'] });
+    const lv0 = (v) => (v == null ? 'None' : pxd(v, tick)), chg = (kk) => (kk === k ? (cur[kk] == null && want[kk] == null ? 'None' : lv0(cur[kk]) + ' → ' + lv0(want[kk])) : lv0(cur[kk]));
+    const ok = await confirmSheet({ title: 'Change stop loss and take profit', sub: code + ' · ' + (side === 'buy' ? 'Buy' : 'Sell') + ' · ' + lotTxt(Math.abs(Number(p.quantity))), code, side: 'buy', go: 'Confirm change', dontShow: true,
+      rows: [['Entry price', pxd(p.averagePrice, tick)], ['Stop loss', esc(chg('sl'))], ['Take profit', esc(chg('tp'))]] });
     if (!ok) return { error: 'Cancelled.' };
   }
   const body = { op: 'sltp', positionId: String(p.positionId), symbolId: Number(p.symbolId) || 0, side, sl: want.sl, tp: want.tp, check: k, bid: q && q.bid, ask: q && q.ask, idemKey: uuid() };
@@ -948,6 +965,8 @@ function dragSlTp(sym, d) {
   if (!pid) return null;
   return setSlTp(pid, k, d.price, 'chart');
 }
+// OWNER STYLE: the ask as a small dark tag on the price scale of the broker's own cTrader chart (the last-price tag is the bid)
+export function quoteTags(sym) { const i = S.acct && S.acct.ct ? infoMt(sym) : null; if (!i || !i.code || !i.map.same) return []; const q = quoteFor(i.code); return q && q.ask > 0 ? [{ price: q.ask, color: '#2a2e39', text: pxd(q.ask, i.tick), kind: 'ask' }] : []; }
 // the chart's position chip asks which handles to show: { posId, sl: has one, tp: has one } | null
 export function posHandles(sym) { const i = S.acct && S.acct.ct ? infoMt(sym) : null; if (!i || !i.code || !i.map.same) return null; const p = ctPosOf(i.code); return p ? { posId: String(p.positionId), sl: Number(p.stopLoss) > 0, tp: Number(p.takeProfit) > 0, side: Number(p.quantity) > 0 ? 'buy' : 'sell', avg: Number(p.averagePrice), qty: Math.abs(Number(p.quantity)) } : null; }
 const MT_NO_SLTP = 'Stop loss and take profit for MetaTrader: set them in MetaTrader for now.';
@@ -1003,8 +1022,8 @@ async function flattenCt(symOrCode) {
   const code = i ? i.code : String(symOrCode || ''); if (!code) { toastAct('Pick the ' + S.acct.mt + ' symbol for this chart first.', 'Choose', () => openSymPicker(P.activeSymbol && P.activeSymbol()), 'error'); return null; }
   const pos = L.netPosition(S.data.positions, code), working = L.workingOrders(S.data.orders, code);
   if (!pos.qty && !working.length) { toast('Nothing to flatten on ' + code + '.', 'info'); return null; }
-  const ok = await confirmSheet({ title: 'Flatten ' + code, code, side: pos.qty > 0 ? 'sell' : 'buy', go: 'Flatten ' + code,
-    lines: ['Symbol <b>' + esc(code) + '</b> (' + esc(S.acct.broker || S.acct.mt) + ')', 'Cancels ' + working.length + ' working order' + (working.length === 1 ? '' : 's') + ', then closes ' + (pos.qty ? (pos.qty > 0 ? 'the long ' : 'the short ') + lotTxt(Math.abs(pos.qty)) : 'nothing more') + ' at market.'] });
+  const ok = await confirmSheet({ title: 'Close position', sub: code + (pos.qty ? ' · ' + (pos.qty > 0 ? 'Buy' : 'Sell') + ' · ' + lotTxt(Math.abs(pos.qty)) : ''), code, side: pos.qty > 0 ? 'sell' : 'buy', go: 'Close ' + code,
+    rows: [['Symbol', esc(code)], ['Position', pos.qty ? (pos.qty > 0 ? 'Long ' : 'Short ') + lotTxt(Math.abs(pos.qty)) : 'None'], ['Working orders', working.length ? working.length + ' (cancelled first)' : 'None'], ['Closes at', 'Market']] });
   if (!ok) return null;
   return write({ op: 'flatten', symbol: code, idemKey: L.flattenKey(S.acct.id, code, pos.qty, String(S.lastOkStart)) }, 'Flatten ' + code);
 }
@@ -1109,7 +1128,8 @@ export async function drag(sym, d) {
     if (S.modifyOk === false) { toast('This broker can’t move an order in place. Change it in MetaTrader.', 'error'); return; }
     const band = L.priceBandError(d.price, i.last); if (band) { toast(band, 'error'); return; }
     const np = Number((Math.round(d.price / i.tick) * i.tick).toFixed(decOf(i.tick)));
-    const ok = await confirmSheet({ title: 'Move ' + sideWord(o.side) + ' ' + lotTxt(o.qty) + ' ' + i.code + ' to ' + pxd(np, i.tick), code: i.code, side: o.side, go: 'Move order', lines: ['Symbol <b>' + esc(i.code) + '</b> (' + esc(i.mt) + ')', 'From ' + pxd(o.price, i.tick) + ' to <b>' + pxd(np, i.tick) + '</b>'] });
+    const ok = await confirmSheet({ title: 'Move order', sub: i.code + ' · ' + (o.side === 'buy' ? 'Buy' : 'Sell') + ' · ' + lotTxt(o.qty) + ' · ' + (kind === 'stop' ? 'Stop' : 'Limit'), code: i.code, side: o.side, go: 'Confirm change',
+      rows: [['Price', pxd(o.price, i.tick) + ' → ' + pxd(np, i.tick)]] });
     if (!ok) return;
     await write(Object.assign({ op: 'modify', orderId: oid, type: kind, symbol: i.code }, kind === 'stop' ? { stopPrice: np } : { limitPrice: np }, { idemKey: uuid() }), 'Move');
     return;
@@ -1342,6 +1362,38 @@ const CSS = `
 .stklv-cf-lines p{ margin:0; font-size:14px; line-height:20px; } .stklv-cf-lines b{ color:var(--ink-0); }
 .stklv-cf-btns{ display:grid; grid-template-columns:1fr 1.4fr; gap:8px; } .stklv-cf-btns .stklv-btn{ height:48px; font-size:15px; }
 .stklv-fine{ margin:0; font-size:12px; line-height:16px; color:var(--ink-3); }
+/* OWNER STYLE (25 Nov): neat, simple confirm card. Neutral border, title + x, one grey sub line, hairline rows label-left / value-right,
+   "Don't show this again", Cancel (quiet) + primary (light on dark, dark on light). TradeZoro tokens + font. */
+#stklv-cf.stklv-card .stklv-cf-box{ width:min(400px,100%); border:1px solid var(--line); border-radius:14px; padding:20px 24px; gap:0; background:var(--bg-1, #16171b); box-shadow:0 16px 48px rgba(0,0,0,.45); }
+.stklv-card .stklv-cf-head{ align-items:center; gap:12px; margin-bottom:8px; }
+.stklv-card .stklv-cf-head h2{ flex:1; min-width:0; font:600 17px/24px var(--font-body, sans-serif); }
+.stklv-card .stklv-x{ flex:none; width:32px; height:32px; margin-right:-8px; background:transparent; color:var(--ink-3); display:inline-flex; align-items:center; justify-content:center; line-height:1; }
+.stklv-card .stklv-x:hover{ background:var(--bg-2); color:var(--ink-0); }
+.stklv-cf-sub{ margin:0 0 8px; font:400 13px/20px var(--font-body, sans-serif); color:var(--ink-3); font-variant-numeric:tabular-nums; }
+.stklv-card .stklv-cf-lines{ padding:8px 0; border-top:1px solid var(--line-soft, var(--line)); }
+.stklv-cf-rows{ margin:0; }
+.stklv-cf-rows > div{ display:flex; align-items:center; justify-content:space-between; gap:16px; min-height:40px; border-top:1px solid var(--line-soft, var(--line)); }
+.stklv-cf-rows > div:last-child{ border-bottom:1px solid var(--line-soft, var(--line)); }
+.stklv-cf-rows dt{ font:400 14px/20px var(--font-body, sans-serif); color:var(--ink-3); white-space:nowrap; }
+.stklv-cf-rows dd{ margin:0; min-width:0; text-align:right; font:500 14px/20px var(--font-body, sans-serif); color:var(--ink-0); font-variant-numeric:tabular-nums; overflow-wrap:anywhere; }
+.stklv-env{ display:inline-flex; align-items:center; height:20px; padding:0 6px; border-radius:4px; vertical-align:1px; background:rgba(242,54,69,.16); color:#f23645; font:600 11px/1 var(--font-body, sans-serif); }
+.stklv-env.demo{ background:var(--bg-2); color:var(--ink-2); }
+.stklv-cf-rows .n{ font-variant-numeric:tabular-nums; }
+.stklv-cf-ds{ display:flex; align-items:center; gap:8px; min-height:40px; margin-top:4px; font:400 13px/20px var(--font-body, sans-serif); color:var(--ink-2); cursor:pointer; }
+.stklv-cf-ds input{ width:16px; height:16px; margin:0; accent-color:var(--ink-0); }
+.stklv-card .stklv-fine{ margin:8px 0 0; }
+.stklv-card .stklv-cf-btns{ display:flex; justify-content:flex-end; gap:8px; margin:16px -24px -20px; padding:16px 24px 20px; border-top:1px solid var(--line-soft, var(--line)); }
+.stklv-card .stklv-cf-btns .stklv-btn{ height:40px; padding:0 16px; border-radius:10px; font:600 14px/20px var(--font-body, sans-serif); }
+.stklv-card .stklv-cf-btns [data-k=no]{ background:var(--bg-2); border-color:transparent; color:var(--ink-0); }
+.stklv-card .stklv-cf-btns .stklv-go,.stklv-card .stklv-cf-btns .stklv-go.buy,.stklv-card .stklv-cf-btns .stklv-go.sell{ background:var(--ink-0); border-color:var(--ink-0); color:var(--bg-0, #0b0b0d); }
+@media (max-width:700px){
+  #stklv-cf.stklv-card .stklv-cf-box{ width:100%; border-radius:20px 20px 0 0; border-width:1px 0 0; padding:8px 16px 0; max-height:92dvh; }
+  .stklv-card .stklv-x{ width:44px; height:44px; margin-right:-12px; }
+  .stklv-card .stklv-cf-btns{ margin:16px -16px 0; padding:12px 16px calc(12px + env(safe-area-inset-bottom)); }
+  .stklv-card .stklv-cf-btns .stklv-btn{ flex:1; height:48px; font-size:15px; }
+  .stklv-cf-rows > div{ min-height:44px; }
+  .stklv-cf-ds{ min-height:44px; }
+}
 .stklv-en .stklv-cf-box{ width:min(480px,100%); gap:16px; padding:24px; }
 .stklv-en-list{ gap:8px; }
 .stklv-en-list ul{ margin:0; padding:0 0 0 20px; display:flex; flex-direction:column; gap:8px; list-style:disc; }
@@ -1400,6 +1452,7 @@ async function ctAllowed() {
 async function loadCt() {
   try {
     CT.mod = CT.mod || await import('./ctrader-trade.js?v=1286');
+    if (!QUO) import('./byo-ctrader.js?v=1286').then((m) => { QUO = m.quoteOf; }).catch(() => {});   // the bid / ask for the SL / TP checks and the ask tag
     window.__stkCt = { open: () => CT.mod.startTradeSignIn(uid).catch((e) => toast(e.message || 'Could not open cTrader.', 'error')), get connected() { return !!CT.acct; }, get link() { return TEST ? CT.link : null; } };
     const c = TEST && TEST.ctCreds ? TEST.ctCreds : await CT.mod.loadTradeCreds();   // test: localhost fixture creds + a mocked socket
     if (!c || !c.access || !c.accountId) { CT.acct = null; return; }
@@ -1499,7 +1552,7 @@ function betaReady() {
 export function mountLive(paperApi, opts) {
   P = paperApi; uid = opts.uid; toastFn = opts.toast || null; isAdmin = !!opts.admin;
   if (!document.getElementById('stklv-css')) { const st = document.createElement('style'); st.id = 'stklv-css'; st.textContent = CSS; document.head.appendChild(st); }
-  P.setLiveHook({ setSlTp, posHandles, fmtPx, mtFor, mtSetSymbol, active, noLiveWhy, lines, chipText, badgeFor, badgeAct, openSymPicker, tickOf, chipX, drag, flattenActive, openTicket, renderHead, renderSummary, renderView, foot, dock, dockTrades, ladder, domState, cancel, flatten, caps, otherNote, openOther, opInfo, placeTicket, kill, killOn, retryEnv, enableLive });
+  P.setLiveHook({ quoteTags, setSlTp, posHandles, fmtPx, mtFor, mtSetSymbol, active, noLiveWhy, lines, chipText, badgeFor, badgeAct, openSymPicker, tickOf, chipX, drag, flattenActive, openTicket, renderHead, renderSummary, renderView, foot, dock, dockTrades, ladder, domState, cancel, flatten, caps, otherNote, openOther, opInfo, placeTicket, kill, killOn, retryEnv, enableLive });
   loadMeta(); loadAccounts();
   ctAllowed().then((ok) => { if (ok) Promise.all([loadCt(), loadB3()]).then(loadAccounts); });   // cTrader + BROKERS 3 trading: admins and beta testers (the servers re-check)
   // Copy trading: admins + beta testers (Owner 23 Nov). The server (functions/connect/finatic/copy.js) re-checks every call.

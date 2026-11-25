@@ -1,6 +1,6 @@
 // Spread store (assets/byo-core.js QUOTES): keys, pip units, the "wider than usual" rule. Sample data. Run: node tools/tests/spread-quotes.test.mjs
 import assert from 'node:assert/strict';
-import { QUOTES } from '../../assets/byo-core.js?v=1290';
+import { QUOTES } from '../../assets/byo-core.js?v=1291';
 
 // cTrader chart + account key are the same instrument
 QUOTES.setPip('CT:NAS100', 0.1);   // a 0.1 pip size fixture (pipPosition 1)

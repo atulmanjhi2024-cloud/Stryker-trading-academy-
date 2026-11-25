@@ -186,6 +186,8 @@ Object.assign(exports, require('./fxRate'));
 Object.assign(exports, require('./replayBars'));
 Object.assign(exports, require('./freeCheckout'));
 Object.assign(exports, require('./referralPoints'));
+{ const rr = require('./referralRewards');   // "Invite friends, get Pro free": referralPing, referralRewardSweep
+  ['referralPing', 'referralRewardSweep'].forEach((n) => { exports[n] = rr[n]; }); }
 Object.assign(exports, require('./xAutopost'));
 Object.assign(exports, require('./accountAdmin'));
 Object.assign(exports, require('./partnerAdmin'));   // Partner programme: partnerAdmin, partnerLeave

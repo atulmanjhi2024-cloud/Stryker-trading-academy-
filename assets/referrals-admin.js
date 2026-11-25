@@ -1,6 +1,41 @@
 // TradeZoro — Admin: Referrals (referrals-admin.html)
 // Depends on: assets/auth.js, assets/progress.js (`db`), assets/admin-guard.js,
-// assets/referrals.js (loadReferralConfig, loadReferralLeaderboard)
+// assets/referrals.js (loadReferralConfig, loadReferralLeaderboard, loadReferralRewardConfig),
+// Pro-day rewards are decided only by functions-src/referralRewards.js (no review queue, Owner 24 Nov); this page
+// edits the numbers in settings/referralRewards and never writes a reward or a student's plan itself.
+
+function loadRewardRules(){
+  return db.collection('settings').doc('referralRewards').get().then((d) => {
+    const x = d.exists ? d.data() : {};
+    return loadReferralRewardConfig().then((c) => {
+      document.getElementById('rr-inviter-days').value = c.inviterDays;
+      document.getElementById('rr-friend-days').value = c.friendDays;
+      document.getElementById('rr-cap').value = c.capDaysPerYear;
+      document.getElementById('rr-active').value = c.activeDaysNeeded;
+      document.getElementById('rr-window').value = c.windowDays;
+      document.getElementById('rr-ipmatch').value = x.ipMatch === 'ignore' ? 'ignore' : 'block';
+      document.getElementById('rr-domains').value = (x.blockedDomains || []).join(', ');
+      document.getElementById('rr-enabled').checked = c.enabled;
+    });
+  });
+}
+
+function saveRewardRules(){
+  const num = (id) => Math.max(0, parseInt(document.getElementById(id).value, 10) || 0);
+  const data = {
+    inviterDays: Math.min(90, num('rr-inviter-days')), friendDays: Math.min(90, num('rr-friend-days')),
+    capDaysPerYear: num('rr-cap'),
+    activeDaysNeeded: Math.min(14, Math.max(1, num('rr-active'))), windowDays: Math.min(60, Math.max(1, num('rr-window'))),
+    ipMatch: document.getElementById('rr-ipmatch').value,
+    blockedDomains: document.getElementById('rr-domains').value.split(',').map((x) => x.trim().toLowerCase()).filter((x) => /^[a-z0-9.-]+\.[a-z]{2,}$/.test(x)),
+    enabled: document.getElementById('rr-enabled').checked
+  };
+  const btn = document.getElementById('rr-save'); btn.disabled = true;
+  return db.collection('settings').doc('referralRewards').set(data, { merge: true })
+    .then(() => { if (typeof showToast === 'function') showToast('success', 'Reward rules saved.'); })
+    .catch((e) => { if (typeof showToast === 'function') showToast('error', e.message || 'Could not save.'); })
+    .finally(() => { btn.disabled = false; });
+}
 
 function renderTopReferrers(list){
   const wrap = document.getElementById('ref-top-referrers-list');
@@ -47,7 +82,7 @@ function renderRecentReferrals(docs){
         '<div style="font-family:var(--font-mono); font-size:11.5px; color:var(--ink-3); margin-top:3px;">' + when + ' · code ' + stkEsc(r.referrerCode || '—') + '</div></div>' +
       '<div style="text-align:right;">' +
         '<div style="font-family:var(--font-mono); font-size:13px; color:#f5c542; font-weight:700;">+' + (r.pointsAwarded || 0) + ' pts</div>' +
-        '<div style="font-family:var(--font-mono); font-size:11px; color:' + statusColor + '; margin-top:3px; text-transform:capitalize;">' + (r.status || 'signed_up').replace('_', ' ') + '</div>' +
+        '<div style="font-family:var(--font-mono); font-size:11px; color:' + statusColor + '; margin-top:3px; text-transform:capitalize;">' + (r.status || 'signed_up').replace('_', ' ') + (r.rewardState ? ' · Pro reward: ' + stkEsc(r.rewardState) + (r.rewardReason ? ' (' + stkEsc(r.rewardReason) + ')' : '') : '') + '</div>' +
       '</div>';
     wrap.appendChild(row);
   });
@@ -92,6 +127,8 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     loadReferralLeaderboard(10).then(renderTopReferrers);
+    loadRewardRules().catch(() => {});
+    document.getElementById('rr-save').addEventListener('click', saveRewardRules);
 
     document.getElementById('save-ref-config-btn').addEventListener('click', () => {
       const errEl = document.getElementById('ref-admin-error');

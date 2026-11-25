@@ -51,7 +51,7 @@ service cloud.firestore {
         'tradingViewGrantedUsername', 'tradingViewGrantedAt', 'role', 'banned',
         'stripeCustomerId', 'stripeSubscriptionId', 'billingProvider',
         'lapsedFromPlan', 'lapsedAtMillis',
-        'partner', 'planSource', 'trialUsedAt', 'trialEndsAt', 'trialProvider', 'trialCancelledAt', 'rithmicBeta', 'demo', 'liveFeed', 'liveFeedBy', 'liveFeedAt', 'liveFeedGrandfathered', 'liveFeedNote', 'liveData', 'marketDataAgreement', 'sanctionsLocked', 'sanctionsLockedAt', 'sanctionsLockReason', 'beta', 'betaSince'];
+        'partner', 'planSource', 'trialUsedAt', 'trialEndsAt', 'trialProvider', 'trialCancelledAt', 'rithmicBeta', 'demo', 'liveFeed', 'liveFeedBy', 'liveFeedAt', 'liveFeedGrandfathered', 'liveFeedNote', 'liveData', 'marketDataAgreement', 'sanctionsLocked', 'sanctionsLockedAt', 'sanctionsLockReason', 'beta', 'betaSince', 'refProDaysBanked'];
     }
     function touchesPrivileged() {
       return request.resource.data.diff(resource.data).affectedKeys().hasAny([
@@ -60,7 +60,7 @@ service cloud.firestore {
         'tradingViewGrantedUsername', 'tradingViewGrantedAt', 'role', 'banned',
         'stripeCustomerId', 'stripeSubscriptionId', 'billingProvider',
         'lapsedFromPlan', 'lapsedAtMillis',
-        'partner', 'planSource', 'trialUsedAt', 'trialEndsAt', 'trialProvider', 'trialCancelledAt', 'rithmicBeta', 'demo', 'liveFeed', 'liveFeedBy', 'liveFeedAt', 'liveFeedGrandfathered', 'liveFeedNote', 'liveData', 'marketDataAgreement', 'sanctionsLocked', 'sanctionsLockedAt', 'sanctionsLockReason', 'beta', 'betaSince'
+        'partner', 'planSource', 'trialUsedAt', 'trialEndsAt', 'trialProvider', 'trialCancelledAt', 'rithmicBeta', 'demo', 'liveFeed', 'liveFeedBy', 'liveFeedAt', 'liveFeedGrandfathered', 'liveFeedNote', 'liveData', 'marketDataAgreement', 'sanctionsLocked', 'sanctionsLockedAt', 'sanctionsLockReason', 'beta', 'betaSince', 'refProDaysBanked'
       ]);
     }
     function createsPrivileged() {
@@ -69,7 +69,7 @@ service cloud.firestore {
         'foundingMember', 'foundingCoupon', 'referralPoints', 'tradingViewAccessGranted',
         'tradingViewGrantedUsername', 'tradingViewGrantedAt', 'role', 'banned',
         'stripeCustomerId', 'stripeSubscriptionId', 'billingProvider',
-        'partner', 'planSource', 'trialUsedAt', 'trialEndsAt', 'trialProvider', 'trialCancelledAt', 'rithmicBeta', 'demo', 'liveFeed', 'liveFeedBy', 'liveFeedAt', 'liveFeedGrandfathered', 'liveFeedNote', 'liveData', 'marketDataAgreement', 'sanctionsLocked', 'sanctionsLockedAt', 'sanctionsLockReason', 'beta', 'betaSince'
+        'partner', 'planSource', 'trialUsedAt', 'trialEndsAt', 'trialProvider', 'trialCancelledAt', 'rithmicBeta', 'demo', 'liveFeed', 'liveFeedBy', 'liveFeedAt', 'liveFeedGrandfathered', 'liveFeedNote', 'liveData', 'marketDataAgreement', 'sanctionsLocked', 'sanctionsLockedAt', 'sanctionsLockReason', 'beta', 'betaSince', 'refProDaysBanked'
       ]);
     }
     // SANCTIONS ATTESTATION (Owner order 09 Nov 2026, assets/geo-attest.js). The member sets residenceCountry
@@ -597,17 +597,37 @@ service cloud.firestore {
       // A referrer may read the rows that name them (the Referrals page lists "people invited"
       // with where('referrerUid','==',uid)); everyone else is still admin-only.
       allow read:   if isAdmin() || (signedIn() && resource.data.referrerUid == request.auth.uid);
+      // Pro-day rewards (functions-src/referralRewards.js): the reward* fields are written ONLY by the
+      // functions, and createdAt must be the server time (the 7-day verification window starts there).
       allow create: if signedIn()
                     && request.resource.data.referredUid == request.auth.uid
-                    && request.resource.data.referrerUid != request.auth.uid;
+                    && request.resource.data.referrerUid != request.auth.uid
+                    && request.resource.data.createdAt == request.time
+                    && !request.resource.data.keys().hasAny(['rewardState', 'rewardReason', 'rewardInviterDays', 'rewardFriendDays', 'rewardCheckedAt']);
       allow update: if isAdmin();
       allow delete: if isAdmin();
     }
     match /referralCodes/{code} {
       allow read:   if true;                 // resolving an invite link, signed out
-      allow create: if signedIn() && request.resource.data.uid == request.auth.uid;
-      allow update, delete: if isAdmin();
+      // name = the owner's public handle (first name or @username, <= 30 chars) shown on the sign-up page
+      // ("You were invited by ..."); never an email.
+      allow create: if signedIn() && request.resource.data.uid == request.auth.uid
+                    && request.resource.data.keys().hasOnly(['uid', 'name'])
+                    && (!('name' in request.resource.data) || (request.resource.data.name is string && request.resource.data.name.size() <= 31));
+      allow update: if isAdmin() || (signedIn() && resource.data.uid == request.auth.uid
+                    && request.resource.data.uid == request.auth.uid
+                    && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name'])
+                    && request.resource.data.name is string && request.resource.data.name.size() <= 31);
+      allow delete: if isAdmin();
     }
+    // "Invite friends, get Pro free" (functions-src/referralRewards.js). One doc per invited account, written
+    // only by the functions (Admin SDK). The inviter and the friend can read their own; admins read all.
+    match /referralRewards/{friendUid} {
+      allow read:  if isAdmin() || (signedIn() && (resource.data.referrerUid == request.auth.uid || resource.data.referredUid == request.auth.uid));
+      allow write: if false;
+    }
+    // Activity-day and hashed device/network signals for the reward checks. Functions only.
+    match /refSignals/{uid} { allow read, write: if false; }
 
     // ---------------------------------------------------------------------
     // Community
@@ -754,7 +774,7 @@ service cloud.firestore {
     // ---------------------------------------------------------------------
     // settings/liveBlocked ({<uid>: true} = that member's live orders are refused, 21 Nov 2026) lists member uids: admins only.
     match /settings/{doc} {
-      allow read:  if doc in ['site', 'logo', 'favicon', 'commerce', 'seo'] || (signedIn() && !(doc in ['liveBlocked', 'betaTesters'])) || isAdmin();
+      allow read:  if doc in ['site', 'logo', 'favicon', 'commerce', 'seo', 'referralRewards'] || (signedIn() && !(doc in ['liveBlocked', 'betaTesters'])) || isAdmin();
       allow write: if isAdmin();
     }
     match /tvSession/{doc}      { allow read, write: if false; }   // functions only

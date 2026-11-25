@@ -45,7 +45,7 @@ function ensureReferralCode(uid, displayName, email){
       return db.runTransaction((tx) => {
         return tx.get(codeRef).then((codeDoc) => {
           if (codeDoc.exists) throw new Error('COLLISION');
-          tx.set(codeRef, { uid: uid });
+          tx.set(codeRef, { uid: uid, name: referralHandle({ displayName: displayName }) });
           tx.set(db.collection('students').doc(uid), { referralCode: code }, { merge: true });
         });
       }).then(() => code).catch((err) => {
@@ -54,6 +54,116 @@ function ensureReferralCode(uid, displayName, email){
       });
     }
     return attempt(5);
+  });
+}
+
+// Public handle shown to an invited friend on the sign-up page ("You were invited by Maya"): the @username when
+// there is one, else the first name. Never an email (referralCodes/* is publicly readable).
+function referralHandle(s){
+  s = s || {};
+  if (s.username) return ('@' + String(s.username)).slice(0, 31);
+  const first = String(s.displayName || '').trim().split(/\s+/)[0];
+  return first && first.toLowerCase() !== 'null' && first.indexOf('@') === -1 ? first.slice(0, 30) : '';
+}
+
+// Codes made before the sign-up page named the inviter have no `name`; the owner fills it in (rules allow only that).
+function syncReferralCodeName(code, student){
+  if (!code || typeof db === 'undefined' || !db) return Promise.resolve();
+  const name = referralHandle(student);
+  if (!name) return Promise.resolve();
+  const ref = db.collection('referralCodes').doc(code);
+  return ref.get().then((d) => {
+    if (d.exists && d.data().name !== name) return ref.set({ name: name }, { merge: true });
+  }).catch(() => {});
+}
+
+// Reward numbers (settings/referralRewards, functions-src/referralRewards.js DEFAULTS). Readable signed out.
+const REFERRAL_REWARD_DEFAULTS = { enabled: true, inviterDays: 5, friendDays: 5, capDaysPerYear: 365, activeDaysNeeded: 2, windowDays: 7 };
+function loadReferralRewardConfig(){
+  const base = Object.assign({}, REFERRAL_REWARD_DEFAULTS);
+  if (typeof db === 'undefined' || !db) return Promise.resolve(base);
+  return db.collection('settings').doc('referralRewards').get()
+    .then((d) => {
+      const x = d.exists ? (d.data() || {}) : {};
+      Object.keys(REFERRAL_REWARD_DEFAULTS).forEach((k) => {
+        if (k === 'enabled') { if (x.enabled === false) base.enabled = false; return; }
+        const n = Math.floor(Number(x[k])); if (Number.isFinite(n) && n >= 0) base[k] = n;
+      });
+      return base;
+    })
+    .catch(() => base);
+}
+
+// ---- Activity ping (server-side reward checks) ---------------------------------------------------------------
+// Once per UTC day, members who invite or were invited tell referralPing they were here. The function records the
+// day plus salted hashes of: a random id kept in this browser, a coarse browser fingerprint and the network address.
+// That is how "active on 2 different days" and "not the same device as the inviter" are checked. Fire and forget.
+function referralDeviceId(){
+  try {
+    let id = localStorage.getItem('tz_dev_id');
+    if (!id || !/^[A-Za-z0-9_-]{8,64}$/.test(id)) {
+      const a = new Uint8Array(16); (window.crypto || {}).getRandomValues ? crypto.getRandomValues(a) : a.forEach((_, i) => { a[i] = Math.random() * 256; });
+      id = Array.from(a, (b) => ('0' + b.toString(16)).slice(-2)).join('');
+      localStorage.setItem('tz_dev_id', id);
+    }
+    return id;
+  } catch (e) { return ''; }
+}
+function referralCoarseFingerprint(){
+  try {
+    const parts = [navigator.userAgent, screen.width + 'x' + screen.height, window.devicePixelRatio,
+      (Intl.DateTimeFormat().resolvedOptions().timeZone || ''), navigator.language, navigator.hardwareConcurrency || 0];
+    let h = 2166136261;
+    const str = parts.join('|');
+    for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619) >>> 0; }
+    return h.toString(36);
+  } catch (e) { return ''; }
+}
+function referralActivityPing(uid, studentData){
+  const s = studentData || {};
+  if (!uid || !(s.referralCode || s.referredBy || s.pendingReferralCode)) return;
+  const day = new Date().toISOString().slice(0, 10);
+  const key = 'tz_ref_ping_' + uid;
+  try { if (localStorage.getItem(key) === day) return; } catch (e) { /* no storage: ping anyway */ }
+  if (typeof loadFunctionsSdk !== 'function' || typeof firebase === 'undefined') return;
+  loadFunctionsSdk()
+    .then(() => firebase.app().functions('us-central1').httpsCallable('referralPing')({ dev: referralDeviceId(), fp: referralCoarseFingerprint() }))
+    .then(() => { try { localStorage.setItem(key, day); } catch (e) {} })
+    .catch(() => { /* not deployed yet / offline: try again next load */ });
+}
+
+// ---- One-time nudge after a member's 3rd active day -----------------------------------------------------------
+// Small card low on the screen, dismissable, shown once per account, never on chart / data pages.
+const REFERRAL_NUDGE_NEVER = /^\/(charts|gex|replay|backtests|terminal|overlay|stream-overlay|referrals|checkout|signup|login|global-monitor|market-map)(\.html)?$/;
+function referralMaybeNudge(uid){
+  if (!uid || document.getElementById('ref-nudge')) return;
+  if (REFERRAL_NUDGE_NEVER.test(location.pathname) || /-admin(\.html)?$/.test(location.pathname)) return;
+  if (document.querySelector('[data-no-ref-nudge], .chart-root, #chart-root')) return;
+  const doneKey = 'tz_ref_nudge_done_' + uid, daysKey = 'tz_ref_days_' + uid;
+  let days = [];
+  try {
+    if (localStorage.getItem(doneKey)) return;
+    days = JSON.parse(localStorage.getItem(daysKey) || '[]');
+    if (!Array.isArray(days)) days = [];
+    const today = new Date().toISOString().slice(0, 10);
+    if (days.indexOf(today) === -1) { days.push(today); days = days.slice(-5); localStorage.setItem(daysKey, JSON.stringify(days)); }
+  } catch (e) { return; }
+  if (days.length < 3) return;
+  loadReferralRewardConfig().then((cfg) => {
+    if (!cfg.enabled || document.getElementById('ref-nudge')) return;
+    // Never stack on the cookie notice (same corner): wait for a later page load.
+    if (document.querySelector('.tzc.on')) return;
+    const el = document.createElement('aside');
+    el.id = 'ref-nudge'; el.className = 'ref-nudge'; el.setAttribute('aria-label', 'Invite friends');
+    el.innerHTML =
+      '<span class="ref-nudge-ic" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="8" width="18" height="4" rx="1"/><path d="M12 8v13M19 12v9H5v-9"/><path d="M7.5 8a2.5 2.5 0 0 1 0-5C11 3 12 8 12 8s1-5 4.5-5a2.5 2.5 0 0 1 0 5"/></svg></span>' +
+      '<span class="ref-nudge-txt"><b>Invite friends, get Pro free</b><span>You and each friend get ' + cfg.inviterDays + ' days of Pro.</span></span>' +
+      '<a class="btn btn-primary btn-sm ref-nudge-go" href="referrals.html">Invite</a>' +
+      '<button type="button" class="ref-nudge-x" aria-label="Dismiss"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button>';
+    const done = () => { try { localStorage.setItem(doneKey, '1'); } catch (e) {} el.remove(); };
+    el.querySelector('.ref-nudge-x').addEventListener('click', done);
+    el.querySelector('.ref-nudge-go').addEventListener('click', () => { try { localStorage.setItem(doneKey, '1'); } catch (e) {} });
+    document.body.appendChild(el);
   });
 }
 
@@ -160,6 +270,8 @@ function processPendingReferralForNewStudent(newUid, newDisplayName, newEmail){
 // code as part of the same write that records referredBy, and bails
 // immediately if there is nothing to do.
 function processPendingReferralIfReady(uid, studentData){
+  // Runs on every signed-in page load (progress.js), so the reward ping and the one-time nudge hang off it too.
+  try { referralActivityPing(uid, studentData); referralMaybeNudge(uid); } catch (e) { /* never block */ }
   if (typeof db === 'undefined' || !db) return Promise.resolve(null);
   if (typeof auth === 'undefined' || !auth || !auth.currentUser) return Promise.resolve(null);
 
@@ -326,7 +438,8 @@ function loadReferralLeaderboard(limitCount){
       const list = [];
       snap.forEach((doc) => {
         const d = doc.data();
-        if (d.referralPoints > 0) list.push({ uid: doc.id, name: cleanReferredName(d.displayName) || (d.email ? d.email.split('@')[0] : 'Trader'), points: d.referralPoints || 0, plan: d.plan || null, photoURL: d.photoURL || null, customPhotoURL: d.customPhotoURL || null, avatarSeed: d.avatarSeed || null });
+        // Handles only (Owner 24 Nov): @username or first name, never an email or a full name.
+        if (d.referralPoints > 0) list.push({ uid: doc.id, name: referralHandle(d) || 'Trader', points: d.referralPoints || 0, plan: d.plan || null, photoURL: d.photoURL || null, customPhotoURL: d.customPhotoURL || null, avatarSeed: d.avatarSeed || null });
       });
       return list;
     })

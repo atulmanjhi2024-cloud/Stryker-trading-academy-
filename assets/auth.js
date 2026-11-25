@@ -288,6 +288,41 @@ function routeAfterAuth(){
   }, 400);
 }
 
+// "You were invited by Maya: you'll get 5 days of Pro free" on the sign-up page when ?ref= is present (Owner 24 Nov).
+// referralCodes/{code}.name is the inviter's public handle (never an email); settings/referralRewards holds the days.
+// Both are publicly readable. Any failure = no note; sign-up itself never depends on it.
+function showInvitedByNote(code) {
+  const box = document.querySelector('.auth-box');
+  const form = document.getElementById('signup-form');
+  if (!code || !box || !form || document.getElementById('signup-invited') || typeof db === 'undefined' || !db) return;
+  if (!/^[A-Za-z0-9_-]{2,40}$/.test(code)) return;
+  Promise.all([
+    db.collection('referralCodes').doc(code).get(),
+    db.collection('settings').doc('referralRewards').get().catch(() => null)
+  ]).then(([c, s]) => {
+    if (!c.exists) return;
+    const cfg = (s && s.exists) ? (s.data() || {}) : {};
+    if (cfg.enabled === false) return;
+    const n = Math.floor(Number(cfg.friendDays));
+    const days = Number.isFinite(n) && n > 0 ? n : 5;
+    const who = String((c.data() || {}).name || '').trim().slice(0, 31);
+    const note = document.createElement('div');
+    note.id = 'signup-invited';
+    note.className = 'auth-invite';
+    note.setAttribute('role', 'status');
+    const icon = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="8" width="18" height="4" rx="1"/><path d="M12 8v13M19 12v9H5v-9"/><path d="M7.5 8a2.5 2.5 0 0 1 0-5C11 3 12 8 12 8s1-5 4.5-5a2.5 2.5 0 0 1 0 5"/></svg>';
+    const txt = document.createElement('span');
+    const b = document.createElement('b');
+    b.textContent = who ? 'You were invited by ' + who + '.' : 'You were invited by a friend.';
+    txt.appendChild(b);
+    txt.appendChild(document.createTextNode(' Join and you\'ll get ' + days + ' days of Pro free.'));
+    note.innerHTML = icon;
+    note.appendChild(txt);
+    const social = box.querySelector('.social-row');
+    box.insertBefore(note, social || form);
+  }).catch(() => {});
+}
+
 document.addEventListener('DOMContentLoaded', () => {
 
   // Capture a ?ref= code the moment it appears in the URL, before anything
@@ -372,6 +407,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const urlRef = new URLSearchParams(window.location.search).get('ref');
       if (urlRef) referralField.value = urlRef;
     }
+    showInvitedByNote(new URLSearchParams(window.location.search).get('ref'));
 
     signupForm.addEventListener('submit', (e) => {
       e.preventDefault();

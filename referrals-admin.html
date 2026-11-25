@@ -194,7 +194,7 @@
     <div class="dash-topbar">
       <div>
         <h1>Referrals</h1>
-        <p>Invite/referral analytics, and the point values awarded per signup and conversion.</p>
+        <p>Invite analytics, the Pro-day reward rules and the leaderboard point values.</p>
       </div>
     </div>
 
@@ -214,6 +214,27 @@
         <div class="stat-val" id="refstat-conversion-rate">—</div>
         <div class="stat-label">Invite → plan conversion rate</div>
       </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head"><h2>Pro-day reward rules</h2><span class="refx-meta">settings/referralRewards</span></div>
+      <p class="refx-empty" style="margin-bottom:12px;">Checked once a day on the server. Every invite that passes is granted straight away; there is no review queue.</p>
+      <div class="form-row-2">
+        <div class="field" style="margin-bottom:0;"><label for="rr-inviter-days">Pro days for the inviter</label><input type="number" id="rr-inviter-days" min="0" max="90" step="1"></div>
+        <div class="field" style="margin-bottom:0;"><label for="rr-friend-days">Pro days for the friend</label><input type="number" id="rr-friend-days" min="0" max="90" step="1"></div>
+      </div>
+      <div class="form-row-2">
+        <div class="field" style="margin-bottom:0;"><label for="rr-cap">Max Pro days one member can earn, rolling 12 months</label><input type="number" id="rr-cap" min="0" step="1"></div>
+        <div class="field" style="margin-bottom:0;"><label for="rr-active">Active days needed</label><input type="number" id="rr-active" min="1" max="14" step="1"></div>
+      </div>
+      <div class="form-row-2">
+        <div class="field" style="margin-bottom:0;"><label for="rr-window">Within the first N days</label><input type="number" id="rr-window" min="1" max="60" step="1"></div>
+        <div class="field" style="margin-bottom:0;"><label for="rr-ipmatch">Friend on the inviter's network</label>
+          <select id="rr-ipmatch"><option value="block">Not eligible</option><option value="ignore">Allow</option></select></div>
+      </div>
+      <div class="field"><label for="rr-domains">Extra blocked email domains (comma separated)</label><input type="text" id="rr-domains" placeholder="e.g. newtrash.io"></div>
+      <div class="field" style="margin-top:4px;"><label><input type="checkbox" id="rr-enabled"> Pro-day rewards on</label></div>
+      <button class="btn btn-primary btn-sm" id="rr-save" style="margin-top:10px;">Save reward rules</button>
     </div>
 
     <div class="panel">

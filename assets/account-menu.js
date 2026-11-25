@@ -29,6 +29,7 @@
     }
   ];
 
+  var INVITE_ICON = '<rect x="3" y="8" width="18" height="4" rx="1"/><path d="M12 8v13M19 12v9H5v-9"/><path d="M7.5 8a2.5 2.5 0 0 1 0-5C11 3 12 8 12 8s1-5 4.5-5a2.5 2.5 0 0 1 0 5"/>';
   var SIGNOUT_ICON = '<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/>';
 
   function esc(s){
@@ -69,6 +70,11 @@
             '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" ' +
             'stroke-width="1.9">' + it.icon + '</svg>' + it.label + '</a>';
         }).join('') +
+        // "Invite friends, get Pro free" (Owner 24 Nov): one quiet entry, the reward page does the explaining.
+        '<a href="referrals.html" class="account-item account-item-invite" role="menuitem">' +
+          '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" ' +
+          'stroke-linecap="round" stroke-linejoin="round">' + INVITE_ICON + '</svg>Invite friends, get Pro free' +
+        '</a>' +
         // Appearance sits in the account menu because that is where people
         // look for "my settings for me" — and it is one tap from anywhere.
         (typeof strykerThemeToggleHtml === 'function'

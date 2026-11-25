@@ -5,7 +5,7 @@
 <meta name="stryker-build" content="1265">
 <meta name="robots" content="noindex, nofollow">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Invite & Earn — TradeZoro</title>
+<title>Invite friends, get Pro free — TradeZoro</title>
 <link rel="preload" href="assets/fonts/archivo-latin-variable.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="preload" href="assets/fonts/archivo-tnum-latin-variable.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="assets/style.css?v=1265">
@@ -143,55 +143,78 @@
   <main class="dash-main" id="main" tabindex="-1">
     <div class="dash-topbar">
       <div>
-        <h1>Invite &amp; earn</h1>
-        <p>Share your link, earn points for every trader who joins — and see how you rank.</p>
+        <h1>Invite friends, get Pro free</h1>
+        <p>Share your link. When a friend joins and settles in, you both get <span data-rx="friendDays">5</span> days of Pro.</p>
       </div>
     </div>
 
-    <div class="panel">
-      <div class="panel-head"><h2>Your invite link</h2></div>
-      <div class="auth-error" id="referral-error"></div>
-      <p style="color:var(--ink-3); font-size:13.5px; margin-bottom:14px;">Anyone who signs up through this link is credited to you automatically.</p>
-      <div class="form-row-2" style="align-items:flex-end;">
-        <div class="field" style="margin-bottom:0;">
-          <label for="referral-link-display">Link</label>
-          <input type="text" id="referral-link-display" readonly style="font-family:var(--font-mono); font-size:13px;">
+    <div class="auth-error" id="referral-error"></div>
+
+    <section class="panel refx-share" aria-labelledby="refx-share-h">
+      <div class="panel-head"><h2 id="refx-share-h">Your invite link</h2></div>
+      <div class="refx-linkrow">
+        <label class="sr-only" for="referral-link-display">Your invite link</label>
+        <input type="text" id="referral-link-display" class="refx-link" readonly value="" aria-describedby="refx-code-line">
+        <div class="refx-linkbtns">
+          <button type="button" class="btn btn-primary refx-btn" id="referral-copy-btn">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>
+            <span>Copy link</span>
+          </button>
+          <button type="button" class="btn btn-secondary refx-btn" id="referral-native-share" hidden>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12M7 8l5-5 5 5"/><path d="M5 13v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6"/></svg>
+            <span>Share</span>
+          </button>
         </div>
-        <button class="btn btn-primary btn-sm" id="referral-copy-btn" style="height:44px;">Copy link</button>
       </div>
-      <p style="color:var(--ink-3); font-size:12.5px; margin-top:10px; margin-bottom:0;">Your code: <span id="referral-code-display" style="font-family:var(--font-mono); color:var(--ink-0);">—</span></p>
+      <p class="refx-code" id="refx-code-line">Code <span id="referral-code-display" class="refx-code-val">—</span>
+        <button type="button" class="refx-code-copy" id="referral-code-copy" aria-label="Copy code"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg></button>
+      </p>
+      <div class="refx-socials" role="group" aria-label="Share on">
+        <a class="refx-soc" id="refx-share-x" target="_blank" rel="noopener" href="#"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg><span>X</span></a>
+        <a class="refx-soc" id="refx-share-wa" target="_blank" rel="noopener" href="#"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 20.5l1.3-4.2A8.5 8.5 0 1 1 8 19.4z"/><path d="M9 8.5c0 3.5 3 6.5 6.5 6.5l1-1.6-2-1-1 .9a5 5 0 0 1-2.8-2.8l.9-1-1-2z"/></svg><span>WhatsApp</span></a>
+        <a class="refx-soc" id="refx-share-tg" target="_blank" rel="noopener" href="#"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 4L3 11.2l6 2.2 2.2 6.6 3.3-4.3 4.7 3.6z"/><path d="M9 13.4L21 4"/></svg><span>Telegram</span></a>
+        <a class="refx-soc" id="refx-share-rd" target="_blank" rel="noopener" href="#"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><ellipse cx="12" cy="14.5" rx="8" ry="5.5"/><circle cx="18.5" cy="5" r="1.5"/><path d="M12 9l1.2-5 5.3 1"/><path d="M9.5 16.5c1.5 1 3.5 1 5 0"/><circle cx="9" cy="13.5" r=".6" fill="currentColor"/><circle cx="15" cy="13.5" r=".6" fill="currentColor"/></svg><span>Reddit</span></a>
+      </div>
+
+      <ol class="refx-steps">
+        <li><span class="refx-step-n">1</span><span><b>Share your link</b><span>Copy it or send it from here.</span></span></li>
+        <li><span class="refx-step-n">2</span><span><b>Your friend joins</b><span>Confirms their email and uses TradeZoro on <span data-rx="activeDaysNeeded">2</span> days in their first <span data-rx="windowDays">7</span>.</span></span></li>
+        <li><span class="refx-step-n">3</span><span><b>You both get Pro</b><span>+<span data-rx="inviterDays">5</span> days for you, +<span data-rx="friendDays">5</span> days for them. Pro adds the live futures order book.</span></span></li>
+      </ol>
+    </section>
+
+    <div class="stat-grid-3 refx-stats">
+      <div class="stat-card">
+        <div class="stat-val" id="refx-verified">—</div>
+        <div class="stat-label">Verified friends</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-val" id="refx-days">—</div>
+        <div class="stat-label">Pro days earned</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-val" id="refx-pending">—</div>
+        <div class="stat-label">Pending</div>
+      </div>
     </div>
 
-    <div class="stat-grid-3">
-      <div class="stat-card">
-        <div class="stat-val" id="referral-total-points">—</div>
-        <div class="stat-label">Total points</div>
-      </div>
-      <div class="stat-card">
-        <div class="stat-val" id="referral-total-invites">—</div>
-        <div class="stat-label">People invited</div>
-      </div>
-      <div class="stat-card">
-        <div class="stat-val" id="referral-rank">—</div>
-        <div class="stat-label">Your rank</div>
-      </div>
-    </div>
-
-    <div class="panel">
+    <section class="panel" aria-labelledby="refx-inv-h">
       <div class="panel-head">
-        <h2>Your invites</h2>
-        <span id="referral-invite-count" style="font-family:var(--font-mono); font-size:12px; color:var(--ink-3);"></span>
+        <h2 id="refx-inv-h">Your invites</h2>
+        <span id="referral-invite-count" class="refx-meta"></span>
       </div>
       <div id="referral-invite-list"><div data-skel="rows" data-n="4" data-cols="3"></div></div>
-    </div>
+    </section>
 
-    <div class="panel">
+    <section class="panel" aria-labelledby="refx-lb-h">
       <div class="panel-head">
-        <h2>Leaderboard</h2>
-        <span style="font-family:var(--font-mono); font-size:12px; color:var(--ink-3);">top invite points</span>
+        <h2 id="refx-lb-h">Leaderboard</h2>
+        <span class="refx-meta">Your rank <b id="referral-rank">—</b> · <span id="referral-total-points">0</span> pts</span>
       </div>
       <div id="referral-leaderboard"><div data-skel="rows" data-n="5" data-cols="3"></div></div>
-    </div>
+    </section>
+
+    <p class="refx-fine">We check new invites within 2 days of a friend's first <span data-rx="windowDays">7</span> days. One reward per new account. Same device or network, throwaway email addresses and self-invites don't count. Up to <span data-rx="capDaysPerYear">365</span> Pro days a year from invites. If you already pay for Pro, your earned days are saved on your account. Education only. Not financial advice.</p>
   </main>
 </div>
 

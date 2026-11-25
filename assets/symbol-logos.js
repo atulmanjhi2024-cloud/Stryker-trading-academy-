@@ -20,7 +20,9 @@ load();
 
 const num = (txt, fill, fs) => '<circle cx="12" cy="12" r="12" fill="' + fill + '"/><text x="12" y="12" text-anchor="middle" dominant-baseline="central" font-family="-apple-system,BlinkMacSystemFont,Roboto,Segoe UI,sans-serif" font-weight="700" font-size="' + fs + '" fill="#fff">' + txt + '</text>';
 const disc = (fill, inner) => '<circle cx="12" cy="12" r="12" fill="' + fill + '"/>' + inner;
-const IDX = { sp: num('500', '#d6313a', 8.6), ndx: num('100', '#0a8ea0', 8.6), dow: num('30', '#2f5fd0', 10.5), rut: num('2000', '#c9791a', 7.2) };
+// index marks (Owner 25 Nov: proper Nasdaq / S&P / Dow marks, not number badges); drawn here, nothing copied. Russell keeps its number.
+const IDX = { sp: num('S&amp;P', '#d6313a', 8.4), ndx: disc('#0d2a4c', '<path d="M5.6 17.6 9.4 6.4h3.1L8.7 17.6zM15.3 17.6l3.8-11.2h-3.1l-3.8 11.2z" fill="#1fa8e0"/><path d="M11.2 8.2l2.6 8.4" stroke="#1fa8e0" stroke-width="2.3"/>'),
+  dow: disc('#123a7a', '<text x="12" y="12.4" text-anchor="middle" dominant-baseline="central" font-family="Georgia,Times New Roman,serif" font-weight="700" font-size="10.5" fill="#fff">DJ</text><path d="M6.5 17.2h11" stroke="#7fb2ff" stroke-width="1"/>'), rut: num('2000', '#c9791a', 7.2) };
 const GL = {
   vix: disc('#7a4fd1', '<path d="M4.5 13h3l2-5 3.5 9 2.5-6 1.2 2h3" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>'),
   oil: disc('#262a33', '<path d="M12 4.6c3.2 3.7 4.8 6.2 4.8 8.5a4.8 4.8 0 0 1-9.6 0c0-2.3 1.6-4.8 4.8-8.5z" fill="#f5a623"/><path d="M9.6 13.6a2.5 2.5 0 0 0 2 2.4" fill="none" stroke="#262a33" stroke-width="1.3" stroke-linecap="round"/>'),
@@ -41,7 +43,7 @@ put('CL MCL QM BZ RB HO', GL.oil); put('NG MNG QG', GL.gas);
 put('ZB ZN ZF ZT UB TN ZQ SR3', GL.bond); put('ZC ZS ZW ZL ZM KE ZO', GL.grain); put('VX VXM', GL.vix);
 put('6E M6E E7', 'fx:EURUSD'); put('6B M6B', 'fx:GBPUSD'); put('6J', 'fx:JPYUSD'); put('6A M6A', 'fx:AUDUSD'); put('6C', 'fx:CADUSD'); put('6S', 'fx:CHFUSD'); put('6N', 'fx:NZDUSD'); put('6M', 'fx:MXNUSD');
 put('BTC MBT', 'c:btc'); put('ETH MET', 'c:eth');
-const INDEX = { SPX: IDX.sp, SPXW: IDX.sp, GSPC: IDX.sp, NDX: IDX.ndx, IXIC: IDX.ndx, DJI: IDX.dow, DJIA: IDX.dow, US30: IDX.dow, RUT: IDX.rut, VIX: GL.vix, VVIX: GL.vix, NIFTY: GL.nifty, NIFTY50: GL.nifty, BANKNIFTY: GL.bank, NIFTYBANK: GL.bank };
+const INDEX = { SPX: IDX.sp, SPXW: IDX.sp, GSPC: IDX.sp, NDX: IDX.ndx, IXIC: IDX.ndx, DJI: IDX.dow, DJIA: IDX.dow, US30: IDX.dow, NAS100: IDX.ndx, US100: IDX.ndx, USTEC: IDX.ndx, SPX500: IDX.sp, US500: IDX.sp, RUT: IDX.rut, VIX: GL.vix, VVIX: GL.vix, NIFTY: GL.nifty, NIFTY50: GL.nifty, BANKNIFTY: GL.bank, NIFTYBANK: GL.bank };
 const FUT_ROOTS = Object.keys(FUT).sort((a, b) => b.length - a.length);
 // fund issuers: ticker -> logo file (issuer mark). Not listed -> description, then the initials badge.
 const ETF = {};
@@ -146,7 +148,8 @@ export function symLogo(prefix, ticker, desc, type, size = 36) {
 // "binance:BTCUSDT" / "futures:ES1!" / "fx:EURUSD" / "stocks:NASDAQ:AAPL" / "idx:SPY"
 export function symLogoOf(sym, size = 36, desc, type) {
   const m = /^([^:]+):(.*)$/.exec(String(sym || '')), ct = m && /^byo$/i.test(m[1]) && /^CT:/i.test(m[2]);   // byo:CT:<broker name>: read the kind from its shape
-  const pre = ct ? '' : m ? m[1] : '', t = ct ? m[2].slice(3) : m ? m[2] : String(sym || '');
+  const t = ct ? m[2].slice(3) : m ? m[2] : String(sym || '');
+  const pre = ct ? (/^[A-Z0-9]{2,6}USDT?$/i.test(t) && !fxMark(t, 8) && !INDEX[t.toUpperCase()] ? 'binance' : '') : m ? m[1] : '';   // a cTrader crypto CFD (BTCUSD) -> its coin
   return symLogo(pre, t, desc, type, size);
 }
 export const logoReady = () => load();

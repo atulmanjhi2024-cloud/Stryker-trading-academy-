@@ -4,7 +4,7 @@
 //     testers, so members without access never see a trading source): cTrader (the account's symbol list + descriptions), MetaTrader
 //     (the picked account's schema / positions list; else the usual names), Finatic brokers (futures roots, front months);
 //   - "Connect your own data" feeds (assets/byo-core.js connectedIds): the symbols each adapter can serve.
-// Opening a broker symbol opens OUR chart for the same instrument (mapCode) and, for MetaTrader / cTrader, remembers the broker symbol
+// Opening a broker symbol opens OUR chart for the same instrument (mapCode; cTrader: the broker's own instrument chart instead) and, for MetaTrader / cTrader, remembers the broker symbol
 // for that account (chart-live mtRemember = the same map the trade badge's picker writes), so trading on that chart needs no pick step.
 // Reads only: never places, changes or cancels an order. Education only. Not financial advice.
 import * as L from './chart-live-core.js?v=1273';
@@ -78,11 +78,12 @@ export async function loadSymbols(src, find) {
   if (src.kind === 'ct' || src.kind === 'mt') {
     const lv = window.__stkLive; let list = [];
     try { list = lv && lv.srcSymbols ? await lv.srcSymbols(src.id) : []; } catch (e) { list = []; }
-    // cTrader: a symbol with no TradeZoro chart charts from the account's own prices (byo:CT:<name>, assets/byo-ctrader.js ctacct)
-    const own = (code, d) => (!d && src.kind === 'ct' ? 'byo:CT:' + code : '');
-    if (list.length) return { rows: list.map((x) => { const m = mapCode(x.code), d = m && target(m.charts); return row(x.code, x.desc, m, d, own(x.code, d)); }).sort((a, b) => a.cls.localeCompare(b.cls) || a.code.localeCompare(b.code)), note: '' };
+    // cTrader (Owner 25 Nov): EVERY broker symbol charts that broker instrument from the account's own prices (byo:CT:<name>,
+    // assets/byo-ctrader.js ctacct), never our futures chart (NAS100 is a CFD, not NQ1!); d stays only for the "Also on" link + icon
+    const own = (code) => (src.kind === 'ct' ? 'byo:CT:' + code : '');
+    if (list.length) return { rows: list.map((x) => { const m = mapCode(x.code), d = m && target(m.charts); return row(x.code, x.desc, m, d, own(x.code)); }).sort((a, b) => a.cls.localeCompare(b.cls) || a.code.localeCompare(b.code)), note: '' };
     const seen = new Set(), rows = [];
-    for (const s of USUAL) { const k = L.mtChartKey(s); if (!k) continue; for (const c of k.cands.slice(0, k.key.length === 6 ? 1 : 4)) { if (seen.has(c)) continue; seen.add(c); const m = mapCode(c), d = m && target(m.charts); rows.push(row(c, '', m, d, own(c, d))); } }
+    for (const s of USUAL) { const k = L.mtChartKey(s); if (!k) continue; for (const c of k.cands.slice(0, k.key.length === 6 ? 1 : 4)) { if (seen.has(c)) continue; seen.add(c); const m = mapCode(c), d = m && target(m.charts); rows.push(row(c, '', m, d, own(c))); } }
     return { rows, note: src.kind === 'ct' ? 'Your cTrader symbol list could not be loaded right now; showing the usual names. Sign in to cTrader again from the Trade menu if this stays.' : 'MetaTrader doesn’t share its full list; showing the usual names.' };
   }
   if (src.kind === 'fin') {

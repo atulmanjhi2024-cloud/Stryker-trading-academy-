@@ -21,6 +21,7 @@ let fail = 0;
 const check = (ok, msg, x) => { if (!ok) fail++; console.log((ok ? 'PASS ' : 'FAIL ') + msg + (!ok && x !== undefined ? ' ' + JSON.stringify(x).slice(0, 600) : '')); };
 // extra cTrader symbols (Sample data): crypto / index / energy / forex pairs with no TradeZoro chart / a stock CFD
 const EXTRA = [{ symbolId: 7, symbolName: 'BTCUSD', digits: 2, desc: 'Bitcoin vs US Dollar' }, { symbolId: 8, symbolName: 'US30', digits: 2, desc: 'Wall Street 30' }, { symbolId: 9, symbolName: 'WTI', digits: 3, desc: 'US Crude Oil' },
+  { symbolId: 13, symbolName: 'NAS100', digits: 2, desc: 'Nasdaq 100 Index' }, { symbolId: 14, symbolName: 'SPX500', digits: 2, desc: 'S&P 500 Index' },
   { symbolId: 10, symbolName: 'AUDCAD', digits: 5, desc: 'Australian Dollar vs Canadian Dollar' }, { symbolId: 11, symbolName: 'AUDCHF', digits: 5, desc: 'Australian Dollar vs Swiss Franc' }, { symbolId: 12, symbolName: 'AAPL.US', digits: 2, desc: 'Apple Inc (CFD)' }];
 const ACC = '123e4567-e89b-12d3-a456-426614174000', MT = '223e4567-e89b-12d3-a456-426614174001', US = '0aaa1111-2222-3333-4444-555566667777';
 
@@ -119,7 +120,7 @@ async function desktop(b, theme) {
   check(/cTrader/.test(l.chip) && l.ph === 'Search cTrader symbols', tag + ': chip shows cTrader, placeholder "Search cTrader symbols"', [l.chip, l.ph]);
   check(/cTrader\s+Demo …234/.test(l.head) && /6 symbols/.test(l.head), tag + ': header "cTrader Demo …234" + "6 symbols"', l.head);
   check(l.rows.length === 6 && l.groups.includes('Indices') && l.groups.includes('Forex') && l.groups.includes('Metals'), tag + ': 6 symbols grouped by asset class', [l.rows.length, l.groups]);
-  check(l.rows.some((x) => x.code === 'USTEC' && x.desc === 'US Tech 100 Index (alt)' && x.to === 'NQ1!'), tag + ': USTEC row: broker description + our chart NQ1!', l.rows);
+  check(l.rows.some((x) => x.code === 'USTEC' && x.desc === 'US Tech 100 Index (alt)' && x.to === 'Broker prices'), tag + ': USTEC row: broker description + charts from the broker\'s own prices (Owner 25 Nov, never NQ1!)', l.rows);
   check(l.tabs.join() === 'All,Forex,Indices,Metals', tag + ': tabs become the broker\'s classes', l.tabs);
   check(!/Bid|Today/.test(l.head), tag + ': no price columns (no streamed prices, no fake numbers)');
   await p.waitForFunction(() => document.querySelectorAll('.stkss-kv-r').length >= 4, null, { timeout: 8000 }).catch(() => {});
@@ -130,7 +131,7 @@ async function desktop(b, theme) {
   await p.screenshot({ path: OUT + '/ctrader-' + tag + '.png' });
   await p.click('.stkss-tab[data-tab="Indices"]'); await sleep(200);
   l = await list(p);
-  check(l.rows.length === 4 && l.rows.every((x) => x.to === 'NQ1!'), tag + ': Indices tab filters within the broker', l.rows);
+  check(l.rows.length === 4 && l.rows.every((x) => x.to === 'Broker prices'), tag + ': Indices tab filters within the broker', l.rows);
   await p.click('.stkss-tab[data-tab="all"]'); await sleep(150);
   // search within the source + keyboard
   await p.focus('.stkss-input'); await p.keyboard.type('TEC'); await sleep(250);
@@ -142,7 +143,7 @@ async function desktop(b, theme) {
   check(/NAS100\.cash/.test(l.side) && /Open on the active chart/.test(l.side), tag + ': details pane shows the target chart', l.side);
   await p.keyboard.press('Enter'); await sleep(1500);
   const after = await p.evaluate(() => ({ sym: window.STRYKER_VELA.active.symbol, open: window.__stkSearch.isOpen(), map: JSON.parse(localStorage.getItem('stryker_mt_map_u1') || '{}') }));
-  check(/NQ1!/.test(after.sym) && !after.open, tag + ': Enter on NAS100.cash opens our NQ1! chart', after.sym);
+  check(/^byo:CT:NAS100\.?cash$/i.test(after.sym) && !after.open, tag + ': Enter on NAS100.cash opens the broker\'s own NAS100.cash chart, not NQ1!', after.sym);
   check(after.map['ct-77'] && after.map['ct-77'].NDX === 'NAS100.cash', tag + ': NAS100.cash remembered for NDX on the cTrader account', after.map);
   // MetaTrader: no shared list -> usual names + note
   await openSearch(p);
@@ -198,11 +199,11 @@ async function brokersyms(b, theme, w = 1440) {
       box: b && [Math.round(b.width), Math.round(b.height)], cOff: b && g ? Math.round(Math.max(Math.abs((b.left + b.width / 2) - (g.left + g.width / 2)), Math.abs((b.top + b.height / 2) - (g.top + g.height / 2))) * 10) / 10 : 99,
       rowOff: (() => { const rb = r.getBoundingClientRect(), cy = (x) => x.top + x.height / 2; return Math.round(Math.max(...[b, r.querySelector('.stkss-tk').getBoundingClientRect(), r.querySelector('.stkss-sd').getBoundingClientRect(), r.querySelector('.stkss-to').getBoundingClientRect()].map((x) => Math.abs(cy(x) - cy(rb)))) * 10) / 10; })() }; }));
   console.log('ROWS ' + tag + ' ' + JSON.stringify(rows.map((r) => r.code + ':' + r.kind + ':' + r.to)));
-  check(rows.length === 12 && rows.every((r) => r.kind !== 'none' && r.kind !== 'initials' && r.loaded), tag + ': every broker row has a symbol icon (img / svg / flags), none fall back to initials', rows.filter((r) => r.kind === 'none' || r.kind === 'initials' || !r.loaded));
+  check(rows.length === 14 && rows.every((r) => r.kind !== 'none' && r.kind !== 'initials' && r.loaded), tag + ': every broker row has a symbol icon (img / svg / flags), none fall back to initials', rows.filter((r) => r.kind === 'none' || r.kind === 'initials' || !r.loaded));
   const by = Object.fromEntries(rows.map((r) => [r.code, r]));
   check(by.BTCUSD.kind === 'img' && by.US30.kind === 'svg' && by.WTI.kind === 'svg' && by.AUDCAD.kind === 'svg' && by.XAUUSD.kind === 'svg' && by['AAPL.US'].kind === 'img', tag + ': BTC coin, Dow mark, oil drop, AUD/CAD flags, gold, Apple logo', by);
   check(rows.every((r) => r.box[0] === 36 && r.box[1] === 36 && r.cOff <= 1 && r.rowOff <= 1), tag + ': icons 36 px like the main list, centred, one row centre (1 px)', rows.map((r) => [r.code, r.box, r.cOff, r.rowOff]));
-  check(rows.every((r) => r.to && r.to !== 'No chart yet') && by.AUDCAD.to === 'Broker prices' && by.US30.to === 'YM1!', tag + ': "Opens chart" shows our symbol or "Broker prices", never "No chart yet"', rows.map((r) => r.code + '=' + r.to));
+  check(rows.every((r) => r.to && r.to !== 'No chart yet') && rows.every((r) => r.to === 'Broker prices'), tag + ': "Opens chart" says "Broker prices" for every cTrader symbol (never YM1! / NQ1!, never "No chart yet")', rows.map((r) => r.code + '=' + r.to));
   const al = await align(p); check(ok1(al), tag + ': header / rows / columns aligned, no horizontal scroll', al);
   await p.screenshot({ path: OUT + '/brokersyms-' + w + '-' + theme + '.png' });
   // AUDCAD: details pane header icon + opens a chart from the broker's prices
@@ -218,6 +219,44 @@ async function brokersyms(b, theme, w = 1440) {
   const M = await p.evaluate(() => ({ bars: window.__ctM.bars || 0, orders: window.__ctM.sent.filter((m) => [2106, 2107, 2108, 2109, 2110, 2111].includes(m.payloadType)).length }));
   check(M.bars > 0 && M.orders === 0, tag + ': bars came from GetTrendbars on the data relay; no order frames', M);
   await p.screenshot({ path: OUT + '/brokersyms-chart-' + w + '-' + theme + '.png' });
+  check(!errors.length, tag + ': no page errors', errors);
+  await ctx.close();
+}
+// Owner 25 Nov (2nd report): in the broker view EVERY broker symbol opens THAT broker's instrument chart from its own prices. NAS100 ->
+// byo:CT:NAS100 ("NAS100 · via cTrader"), never NQ1!; US30 never YM1!; XAUUSD the broker's gold. Orders from that chart go to NAS100.
+// Index rows carry the drawn index marks (Nasdaq / S&P / Dow), never the "100" / "500" / "30" number badges. Fixture bars, no orders.
+async function brokerown(b, theme, w = 1440) {
+  const tag = 'own-' + w + '-' + theme;
+  const { ctx, p, errors } = await open(b, { w, h: w < 600 ? 844 : 900, mobile: w < 600, theme, extra: true });
+  const mark = (sel) => p.evaluate((sel) => { const s = document.querySelector(sel); if (!s) return null; const t = s.querySelector('svg text'); return { svg: !!s.querySelector('svg'), text: t ? t.textContent : '', path: !!s.querySelector('svg path') }; }, sel);
+  for (const [code, re, bad, mk] of [['NAS100', /NAS100/, /\bNQ/, (m) => m && m.svg && m.path && !m.text], ['US30', /US30/, /\bYM/, (m) => m && m.svg && m.text === 'DJ'], ['XAUUSD', /XAUUSD/, /\bGC1/, () => true], ['SPX500', /SPX500/, /\bES1/, (m) => m && m.svg && m.text === 'S&P']]) {
+    await openSearch(p); await pickSrc(p, 'ct-77');
+    await p.focus('.stkss-input'); await p.keyboard.type(code); await sleep(400);
+    const row = await p.evaluate((c) => { const r = document.querySelector('.stkss-row-src[data-code="' + c + '"]'); return r ? { to: r.querySelector('.stkss-to').textContent, side: document.querySelector('.stkss-side').innerText } : null; }, code);
+    const m = await mark('.stkss-row-src[data-code="' + code + '"] .slg');
+    check(row && row.to === 'Broker prices' && !bad.test(row.to), tag + ': ' + code + ' row says "Broker prices"', row);
+    check(mk(m), tag + ': ' + code + ' row icon is the index mark / its own icon, not a number badge', m);
+    check(row && new RegExp('Chart\\s*' + code + '\\s*Open on the active chart · prices from cTrader').test(row.side) && (code === 'XAUUSD' || /Also on\s*(NQ1!|YM1!|ES1!)/.test(row.side)), tag + ': ' + code + ' details pane: Chart = ' + code + ', the futures only as "Also on"', row && row.side);
+    if (code === 'NAS100' && w >= 1000) await p.screenshot({ path: OUT + '/own-nas100-' + w + '-' + theme + '.png' });
+    if (code === 'US30' && w < 600) await p.screenshot({ path: OUT + '/own-us30-' + w + '-' + theme + '.png' });
+    await p.click('.stkss-row-src[data-code="' + code + '"]');
+    await p.waitForFunction((c) => { try { const R = window.__stkAxisTags.rendererOf(window.__stkAxisTags.cellsOf()[0]); return new RegExp('CT:' + c + '$', 'i').test(window.STRYKER_VELA.active.symbol) && R.scene.bars.length > 50; } catch (e) { return false; } }, code, { timeout: 20000 }).catch(() => {});
+    await sleep(500);
+    const ch = await p.evaluate(() => ({ sym: window.STRYKER_VELA.active.symbol, head: ((document.querySelector('.vela-widget-symbol') || {}).textContent || '') + ' | ' + ((document.querySelector('.vela-statusline .vela-sl-symbol') || {}).textContent || '') + ' ' + ((document.querySelector('.vela-statusline .vela-sl-meta') || {}).textContent || ''), open: window.__stkSearch.isOpen(), wm: (document.querySelector('.vela-watermark') || {}).textContent || '', mb: (document.querySelector('.vela-mb-symbol') || {}).textContent || '', hm: (() => { const s = document.querySelector('.vela-widget-symbol .slg'); return s ? { svg: !!s.querySelector('svg'), text: (s.querySelector('svg text') || {}).textContent || '', path: !!s.querySelector('svg path'), img: !!s.querySelector('img') } : null; })() }));
+    check(!ch.open && new RegExp('^byo:CT:' + code + '$', 'i').test(ch.sym) && re.test(ch.head) && !bad.test(ch.head), tag + ': click ' + code + ' -> chart is the broker instrument, header has ' + code + ', not the future', ch);
+    if (code === 'NAS100') {
+      check(mk(ch.hm), tag + ': chart header icon for NAS100 is the Nasdaq mark', ch.hm);
+      check(/^\s*NAS100\s*\|\s*NAS100\b.*cTrader/.test(ch.head) && !/CT:|BYO/.test(ch.head) && !/CT:/.test(ch.wm + ch.mb),  tag + ': header reads "NAS100" and the legend "NAS100 · cTrader" (no CT: / BYO)', ch.head);
+      // orders from this chart go to NAS100 on the cTrader account (read the mapping only; nothing is sent)
+      const t = await p.evaluate(async () => { const v = /\?v=(\d+)/.exec(performance.getEntriesByType('resource').map((e) => e.name).find((n) => /\/assets\/chart-[a-z-]+\.js\?v=\d+/.test(n)))[1]; const L = await import('/assets/chart-live.js?v=' + v); const S = window.__stkLive.state, keep = S.acct; S.acct = S.accounts.find((a) => a.ct); const m = L.mtFor(window.STRYKER_VELA.active.symbol), a = L.badgeAct(window.STRYKER_VELA.active.symbol), nq = L.mtFor('CME:NQ1!'); S.acct = keep; return { sym: m && m.sym, same: m && m.same, act: a, nq: nq && nq.key }; });
+      check(t.sym === 'NAS100' && t.same === true && t.act === '' && t.nq === 'NDX', tag + ': trading on the NAS100 chart uses NAS100 (broker prices), no picker; an NQ1! chart keeps today\'s mapping', t);
+      await p.screenshot({ path: OUT + '/own-nas100-chart-' + w + '-' + theme + '.png' });
+    }
+  }
+  const al = await (async () => { await openSearch(p); await pickSrc(p, 'ct-77'); await sleep(300); return align(p); })();
+  check(ok1(al), tag + ': rows / columns aligned, no horizontal scroll', al);
+  const M = await p.evaluate(() => window.__ctM.sent.filter((m) => [2106, 2107, 2108, 2109, 2110, 2111].includes(m.payloadType)).length);
+  check(M === 0, tag + ': no order frames', M);
   check(!errors.length, tag + ': no page errors', errors);
   await ctx.close();
 }
@@ -273,6 +312,7 @@ async function widths(b) {   // the tab row stays one row with the chip at 1280 
     if (!only || only === 'm') await member(b);
     if (!only || only === 'p') { await phone(b, 390, 'dark'); await phone(b, 390, 'light'); await phone(b, 412, 'dark'); }
     if (!only || only === 'w') await widths(b);
+    if (!only || only === 'o') { await brokerown(b, 'dark'); await brokerown(b, 'light'); await brokerown(b, 'dark', 390); }
     if (!only || only === 's') { await brokersyms(b, 'dark'); await brokersyms(b, 'light'); await brokersyms(b, 'dark', 390); }
   } catch (e) { fail++; console.log('FAIL crashed ' + (e && e.stack || e)); }
   await b.close();

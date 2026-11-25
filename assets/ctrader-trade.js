@@ -89,7 +89,7 @@ export function mapReconcile(pl, names, details) {
   });
   const orders = (pl.order || []).filter((o) => o && o.tradeData && !o.closingOrder).map((o) => {
     const td = o.tradeData, ty = String(o.orderType) === '3' || /STOP/i.test(String(o.orderType)) ? 'stop' : String(o.orderType) === '2' || /LIMIT/i.test(String(o.orderType)) ? 'limit' : 'market';
-    return { orderId: String(o.orderId), status: 'WORKING', orderType: ty, symbolId: n(td.symbolId), legs: [{ symbol: nm(td.symbolId), side: side(td.tradeSide), quantity: lots(td.volume, td.symbolId), limitPrice: o.limitPrice, stopPrice: o.stopPrice }] };
+    return { orderId: String(o.orderId), status: 'WORKING', orderType: ty, symbolId: n(td.symbolId), stopLoss: o.stopLoss, takeProfit: o.takeProfit, legs: [{ symbol: nm(td.symbolId), side: side(td.tradeSide), quantity: lots(td.volume, td.symbolId), limitPrice: o.limitPrice, stopPrice: o.stopPrice }] };
   });
   return { positions, orders };
 }
@@ -183,7 +183,7 @@ export function answerOf(m) {
 export class TradeLink {
   constructor(creds, d) {
     this.c = creds; this.d = d || {}; this.ws = null; this.ready = null; this.pend = new Map(); this.n = 0; this.ka = null; this.dead = false;
-    this.names = new Map(); this.byName = new Map(); this.descs = new Map(); this.base = new Map(); this.details = new Map(); this.gates = null; this.gatesP = new Promise((r) => { this.gatesR = r; }); this.writing = null; this.onEvent = null; this.capLots = 10;
+    this.names = new Map(); this.byName = new Map(); this.descs = new Map(); this.base = new Map(); this.quote = new Map(); this.details = new Map(); this.gates = null; this.gatesP = new Promise((r) => { this.gatesR = r; }); this.writing = null; this.onEvent = null; this.capLots = 10;
     this.wts = []; this.watch = new Map(); this.reopenN = 0; this.detP = new Map();   // FASTORDER: write times, fill watchers, reopen backoff, details in flight
   }
   url() { const loc = this.d.location || globalThis.location; return (loc.protocol === 'https:' ? 'wss:' : 'ws:') + '//' + loc.host + TT.WS + '?account=' + encodeURIComponent(this.c.accountId) + '&env=' + (this.c.isLive ? 'live' : 'demo'); }
@@ -218,7 +218,7 @@ export class TradeLink {
       const r = await this.send(2102, { ctidTraderAccountId: n(this.c.accountId), accessToken: at });
       if (r.payloadType !== 2103) throw fail('cTrader refused the sign-in. Tap Allow trading again.', { status: 401, reconnect: true });
       const s = await this.send(2114, { ctidTraderAccountId: n(this.c.accountId) });   // not call(): that awaits open() = this promise
-      for (const x of (s.payload && s.payload.symbol) || []) { const y = sym(x); if (y.name && x.enabled !== false) { this.names.set(y.id, y.name); if (!this.byName.has(y.name.toUpperCase())) this.byName.set(y.name.toUpperCase(), y.id); if (x.description) this.descs.set(y.name.toUpperCase(), String(x.description).trim()); if (x.baseAssetId) this.base.set(y.name.toUpperCase(), n(x.baseAssetId)); } }
+      for (const x of (s.payload && s.payload.symbol) || []) { const y = sym(x); if (y.name && x.enabled !== false) { this.names.set(y.id, y.name); if (!this.byName.has(y.name.toUpperCase())) this.byName.set(y.name.toUpperCase(), y.id); if (x.description) this.descs.set(y.name.toUpperCase(), String(x.description).trim()); if (x.baseAssetId) this.base.set(y.name.toUpperCase(), n(x.baseAssetId)); if (x.quoteAssetId) this.quote.set(y.name.toUpperCase(), n(x.quoteAssetId)); } }
       this.reopenN = 0;
       // a reopened socket: the relay checks sizes against what IT learned, so ask again now (in the background) for the symbols
       // this page already used, instead of on the next click

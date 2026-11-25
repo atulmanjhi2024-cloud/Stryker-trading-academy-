@@ -485,7 +485,7 @@ export function mountSearch(ws, o = {}) {
   // a broker row: logo + symbol · description · our chart for it, or "Broker prices" when it charts from the broker's own prices (no prices
   // in the list: the brokers here don't stream them to the search, no made-up numbers)
   const ownPx = (r) => /^byo:CT:/.test(r.sym || '');
-  const srcTo = (r) => (r.d ? r.d.ticker : ownPx(r) ? 'Broker prices' : r.sym ? r.sym.replace(/^byo:/, '') : '');
+  const srcTo = (r) => (ownPx(r) ? 'Broker prices' : r.d ? r.d.ticker : r.sym ? r.sym.replace(/^byo:/, '') : '');
   const srcLogo = (r, size) => { const a = SRCM ? SRCM.iconOf(r) : ['', r.code, r.desc, '']; return symLogo(a[0], a[1], a[2], a[3], size); };
   function srcRowEl(d, i) {
     const r = d.__src, to = srcTo(r);
@@ -646,13 +646,15 @@ export function mountSearch(ws, o = {}) {
         if (sideKey !== want) return; kv.removeAttribute('aria-busy'); if (!rows.length) { kv.remove(); return; }
         for (const [k, v] of rows) kv.append(el('div', { class: 'stkss-kv-r' }, [el('dt', { text: k }), el('dd', { text: v })])); })();
     }
-    const target = r.d || (ownPx(r) ? { ticker: r.code, description: 'prices from ' + src.name, __sym: r.sym } : r.sym ? { ticker: r.sym.replace(/^byo:/, ''), description: '', __sym: r.sym } : null);
+    const target = ownPx(r) ? { ticker: r.code, description: 'prices from ' + src.name, __sym: r.sym } : r.d || (r.sym ? { ticker: r.sym.replace(/^byo:/, ''), description: '', __sym: r.sym } : null);
     if (!target) { side.appendChild(el('p', { class: 'stkss-note stkss-note-x', role: 'status', text: 'Charting for ' + r.code + ' isn’t available yet.' })); return; }
     const l = el('div', { class: 'stkss-slist' });
     l.appendChild(sideRow(target.ticker, 'Open on the active chart' + (target.description ? ' · ' + target.description : ''), [], symFor(d), d));
     side.appendChild(el('h3', { class: 'stkss-sec-h', text: 'Chart' })); side.appendChild(l);
-    if (ownPx(r)) side.appendChild(sideNote('No TradeZoro chart for ' + r.code + ', so it charts from your ' + src.name + ' account\u2019s own prices while it is connected.'));
-    else if (r.key && (S.src.kind === 'ct' || S.src.kind === 'mt')) side.appendChild(sideNote('Trading on this chart uses ' + r.code + ' on this account.'));
+    if (ownPx(r)) {
+      side.appendChild(sideNote(r.code + ' charts from your ' + src.name + ' account\u2019s own prices while it is connected. Trading on this chart uses ' + r.code + '.'));
+      if (r.d) { side.appendChild(el('h3', { class: 'stkss-sec-h', text: 'Also on' })); const a = el('div', { class: 'stkss-slist' }); a.appendChild(sideRow(r.d.ticker, r.d.description || '', [], symFor(r.d), r.d)); side.appendChild(a); }
+    } else if (r.key && (S.src.kind === 'ct' || S.src.kind === 'mt')) side.appendChild(sideNote('Trading on this chart uses ' + r.code + ' on this account.'));
     else if (S.src.kind === 'byo') side.appendChild(sideNote('Prices come from your ' + S.src.name + ' feed while it is connected.'));
   }
   function sideInfo(d) {
@@ -673,13 +675,13 @@ export function mountSearch(ws, o = {}) {
     close();
     try { ws.active.setSymbol(sym); } catch (e) { console.warn('TradeZoro search: open', e); if (o.toast) o.toast('Could not open ' + d.ticker + '.', 'error'); }
   }
-  // a broker / feed symbol: OUR chart for the same instrument, and the broker symbol remembered for that account (trading needs no pick)
+  // a broker / feed symbol: OUR chart for the same instrument (cTrader: the broker's own instrument chart), and the broker symbol remembered for that account (trading needs no pick)
   async function pickSrc(d) {
-    const r = d.__src, src = S.src, target = r.d ? symOf(r.d) : r.sym;
+    const r = d.__src, src = S.src, target = ownPx(r) ? r.sym : r.d ? symOf(r.d) : r.sym;
     if (!target) { renderSide(d); if (o.toast) o.toast('Charting for ' + r.code + ' isn’t available yet.', 'info'); return; }
     try { const m = await srcMod(); m.remember(src, r); } catch (e) {}
     if (ownPx(r)) { try { const lv = window.__stkLive; if (lv && lv.ctFeed) await lv.ctFeed(); } catch (e) {} }   // the account's feed is registered before the chart asks
-    if (r.d) addRecent(r.d);
+    if (r.d && !ownPx(r)) addRecent(r.d);
     close();
     try { ws.active.setSymbol(target); } catch (e) { console.warn('TradeZoro search: open', e); if (o.toast) o.toast('Could not open ' + r.code + '.', 'error'); }
   }

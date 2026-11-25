@@ -104,6 +104,21 @@ export function mountVenueLogos(ws) {
   document.querySelectorAll('.vela-sp-row').forEach(decorateRow);
 
   const activeSym = () => { try { return ws.active.symbol || ''; } catch (e) { return ''; } };
+  // a cTrader instrument chart (byo:CT:NAS100, symbol search broker view): the engine prints "CT:NAS100 · BYO"; show "NAS100 · cTrader"
+  // in the top bar, phone bar, legend (every cell) and the watermark
+  const ctName = (sym) => { const m = /^byo:CT:(.+)$/i.exec(sym); return m ? m[1] : ''; };
+  const CT_TXT = /^(\s*)CT:(?=[A-Z0-9])/i;
+  const relabel = () => {
+    document.querySelectorAll('.vela-widget-symbol, .vela-mb-symbol, .vela-sl-symbol, .vela-watermark, .vela-watermark *').forEach((e) => e.childNodes.forEach((n) => {
+      if (n.nodeType !== 3 || !CT_TXT.test(n.data)) return;
+      n.data = n.data.replace(CT_TXT, '$1');
+      if (e.classList.contains('vela-sl-symbol')) e.dataset.ct = e.textContent;
+    }));
+    document.querySelectorAll('.vela-sl-symbol[data-ct]').forEach((e) => {   // the engine rewrites the meta on its own (timeframe change)
+      const m = e.parentNode && e.parentNode.querySelector('.vela-sl-meta');
+      if (e.dataset.ct === e.textContent && m && /\bBYO\b/.test(m.textContent)) m.textContent = m.textContent.replace(/\bBYO\b/, 'cTrader');
+    });
+  };
   // chart header symbol button: the mark sits before the text; re-applied when Vela rewrites the button
   const paintHeader = () => {
     document.querySelectorAll('.vela-widget-symbol').forEach((b) => {
@@ -118,18 +133,18 @@ export function mountVenueLogos(ws) {
       b.classList.add('has-vlogo'); b.insertBefore(c, b.firstChild);
     });
   };
-  paintHeader();
+  paintHeader(); relabel();
   // status-line avatar (chart legend line, every multi-chart cell): the engine draws initials on a coloured disc; swap in the symbol logo
   const paintAvatars = () => document.querySelectorAll('.vela-statusline .vela-sl-avatar').forEach((a) => {
     const row = a.closest('.vela-statusline'), t = ((row.querySelector('.vela-sl-symbol') || {}).textContent || '').trim();
     let sym = activeSym(); if (!t) return;
-    if (sym.replace(/^[^:]+:/, '') !== t) sym = t;
+    if (sym.replace(/^[^:]+:/, '') !== t && ctName(sym) !== t) sym = t;
     if (a.firstElementChild && a.firstElementChild.dataset.s === sym) return;
     const l = symLogoOf(sym, 18); l.dataset.s = sym;   // kept inside the engine's own avatar span (the engine swaps that span on symbol change)
     a.style.background = 'none'; a.replaceChildren(l);
   });
   paintAvatars();
-  new MutationObserver(paintAvatars).observe(document.body, { childList: true, subtree: true });
+  new MutationObserver(() => { paintAvatars(); relabel(); }).observe(document.body, { childList: true, subtree: true });
   try { ws.on('state:changed', paintHeader); } catch (e) {}
   const hdr = document.querySelector('.vela-widget-symbol');
   if (hdr) new MutationObserver(paintHeader).observe(hdr, { childList: true });

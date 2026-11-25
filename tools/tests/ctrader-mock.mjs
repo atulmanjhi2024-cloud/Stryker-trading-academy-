@@ -53,7 +53,7 @@ export function makeWS(M, { now = () => Date.now() } = {}) {
       if (t === 2149) return this.relay.onUp(JSON.stringify({ payloadType: 2150, clientMsgId: m.clientMsgId, payload: { permissionScope: M.scope, ctidTraderAccount: [{ ctidTraderAccountId: ACC, isLive: false, traderLogin: 5551234 }] } }));
       if (t === 2102) return R(2103, {});
       const all = SYMS.concat(M.extra || []);
-      if (t === 2114) return R(2115, { symbol: all.map((s) => ({ symbolId: s.symbolId, symbolName: s.symbolName, description: s.desc || DESC[s.symbolName.toUpperCase()], baseAssetId: s.symbolName === 'EURUSD' ? 2 : undefined, enabled: true })) });
+      if (t === 2114) return R(2115, { symbol: all.map((s) => ({ symbolId: s.symbolId, symbolName: s.symbolName, description: s.desc || DESC[s.symbolName.toUpperCase()], baseAssetId: s.symbolName === 'EURUSD' ? 2 : undefined, quoteAssetId: 1, enabled: true })) });
       if (t === 2116) return R(2117, { symbol: all.filter((s) => p.symbolId.includes(s.symbolId)).map(DETAIL) });
       if (t === 2137) {   // Sample data trendbars: a gentle wave around 0.90000 (prices in 1/100000)
         const per = { 1: 1, 5: 5, 7: 15, 8: 30, 9: 60, 10: 240, 12: 1440 }[p.period] || 60, n = Math.min(p.count || 300, 300), end = Math.floor((p.toTimestamp || now()) / 60000 / per) * per;
@@ -79,7 +79,7 @@ export function makeWS(M, { now = () => Date.now() } = {}) {
             M.positions.push(pos);
             return R(2126, { executionType: 3, order: { orderId: id, orderStatus: 2, clientOrderId: p.clientOrderId, tradeData: pos.tradeData }, position: pos });
           }
-          const o = { orderId: id, orderStatus: 1, orderType: p.orderType, limitPrice: p.limitPrice, stopPrice: p.stopPrice, tradeData: { symbolId: p.symbolId, volume: p.volume, tradeSide: p.tradeSide, label: p.label } };
+          const o = { orderId: id, orderStatus: 1, orderType: p.orderType, limitPrice: p.limitPrice, stopPrice: p.stopPrice, stopLoss: p.stopLoss, takeProfit: p.takeProfit, tradeData: { symbolId: p.symbolId, volume: p.volume, tradeSide: p.tradeSide, label: p.label } };
           M.orders.push(o); return R(2126, { executionType: 2, order: o });
         }
         if (t === 2108) { const o = M.orders.find((x) => x.orderId === p.orderId); M.orders = M.orders.filter((x) => x.orderId !== p.orderId); return R(2126, { executionType: 5, order: { ...o, orderStatus: 5 } }); }

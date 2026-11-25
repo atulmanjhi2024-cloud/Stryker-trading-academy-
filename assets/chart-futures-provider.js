@@ -20,6 +20,7 @@ import { rtReady, rtHeadersReady, rtToken, isRealtimeAdmin, rtOnChange, rtSecsLe
 import { hubLive, hubCovers } from './live-source.js?v=1272';
 import { teWanted, teGetBars, teSubscribe } from './chart-tick-engine.js?v=1272';   // TICK ENGINE (one candle source, behind TICK_ENGINE / ?engine=0)
 import { noteExch, feedKey } from './chart-latency-core.js?v=1272';   // connection chip: the bridge heartbeat's edge clock -> arrival (assets/chart-latency.js)
+import { parseMonth, label as monthLabel, setFeed, isLiveMonth } from './fut-months.js?v=1272';   // CONTRACT MONTHS (25 Nov): 'MESZ2026' charts its own series
 
 const API = '/api/chart/bars/';
 const STREAM_API = '/api/chart/stream/';
@@ -185,8 +186,14 @@ function normTf(tf) {
   return SUPPORTED.includes(tf) ? tf : (TF_NORMALIZE[tf] || null);
 }
 function rootOf(ticker) {
-  const r = String(ticker || '').trim().toUpperCase().replace(/^[A-Z]+:/, '').replace(/1!$/, '');
-  return Object.prototype.hasOwnProperty.call(SYMBOLS, r) ? r : null;
+  const r = String(ticker || '').trim().toUpperCase().replace(/^[A-Z_]+:/, '').replace(/1!$/, '');
+  if (Object.prototype.hasOwnProperty.call(SYMBOLS, r)) return r;
+  const m = parseMonth(r); return m && SYMBOLS[m.root] ? m.code : null;   // a month: its own key ('MESZ2026'), own pages, own cache entries
+}
+// CONTRACT MONTHS: the contract feed (expiries + which month the live feed is on), loaded once per page (memoised 1 h in chart-symbol-info.js)
+let feedP = null;
+export function loadMonthFeed() {
+  return feedP || (feedP = import('./chart-symbol-info.js?v=1272').then((m) => m.getInfo()).then((d) => { setFeed(d && d.syms); return d; }).catch(() => { feedP = null; return null; }));
 }
 // SPX / QQQ ... (also "CBOE:SPX", "^SPX"): the quote-only symbols of the Tick-stream hub, or null
 function quoteKey(ticker) {
@@ -223,7 +230,8 @@ function snapTick(p, tick) {
   return Number((Math.round(p / tick) * tick).toFixed(Math.min(8, decimalsOf(tick) + 1)));
 }
 function tickOfKey(key) {
-  return SYMBOLS[key] ? SYMBOLS[key][3] : 0;   // futures only; forex keeps its own precision
+  const k = SYMBOLS[key] ? key : (parseMonth(key) || {}).root;
+  return SYMBOLS[k] ? SYMBOLS[k][3] : 0;   // futures only; forex keeps its own precision
 }
 const toBar = (r, tick) => ({ time: r[0] * 1000, open: snapTick(r[1], tick), high: snapTick(r[2], tick), low: snapTick(r[3], tick), close: snapTick(r[4], tick), volume: r[5] });
 
@@ -283,15 +291,17 @@ export class FuturesProvider {
   }
 
   async getSymbolInfo(ticker) {
-    const root = rootOf(ticker);
-    if (!root) return undefined;
+    const key = rootOf(ticker);
+    if (!key) return undefined;
+    const mo = SYMBOLS[key] ? null : parseMonth(key), root = mo ? mo.root : key;
     const [description, exchange, market, tick, pointvalue] = SYMBOLS[root];
     return {
-      ticker: `${root}1!`,
-      tickerid: `${exchange}:${root}1!`,
+      ticker: mo ? mo.code : `${root}1!`,
+      tickerid: `${exchange}:${mo ? mo.code : root + '1!'}`,
       prefix: exchange,
       root,
-      description,
+      ...(mo ? { contract: mo.code, contractMonth: monthLabel(mo) } : {}),
+      description: mo ? description + ' · ' + monthLabel(mo) : description,
       type: 'futures',
       market,
       currency: 'USD',
@@ -446,12 +456,28 @@ export class FuturesProvider {
   subscribe(ticker, timeframe, onBar) {
     const root = this.keyOf(ticker) || quoteKey(ticker);
     const tf = normTf(timeframe);
+    const mo = this.info().name === 'futures' && root && !SYMBOLS[root] ? parseMonth(root) : null;
+    if (mo && tf) return this.monthSubscribe(ticker, timeframe, onBar, mo, tf);
     if (this.info().name === 'futures' && root && tf) {   // TICK ENGINE: decided once the sign-in answer is in; the old path otherwise
       let stop = null, dead = false;
       teWanted(root, tf).then((on) => { if (!dead) stop = on ? teSubscribe(root, tf, onBar, () => this.subscribeOld(ticker, timeframe, onBar, root, tf)) : this.subscribeOld(ticker, timeframe, onBar, root, tf); }).catch(() => { if (!dead) stop = this.subscribeOld(ticker, timeframe, onBar, root, tf); });
       return () => { dead = true; if (stop) stop(); };
     }
     return this.subscribeOld(ticker, timeframe, onBar, root, tf);
+  }
+  // A CONTRACT MONTH chart. Its candles are its own series (delayed, polled). The live tick feed is keyed by ROOT and follows the
+  // front month, so it moves this chart ONLY while this month is the one that feed is on (fut-months.js isLiveMonth: the feed's
+  // front and the roll rule agree); every other month stays on its own delayed series, never another month's ticks.
+  // Who gets live ticks is the hub's call, exactly as for the continuous chart (hubSubscribe -> liveVisible / /ts-live tier).
+  monthSubscribe(ticker, timeframe, onBar, mo, tf) {
+    let stopped = false, stop = null;
+    const plain = () => this.pollSubscribe(ticker, timeframe, onBar, FALLBACK_POLL_MS * 5);
+    loadMonthFeed().then(() => {
+      if (stopped) return;
+      const live = isLiveMonth(mo) && hubLive() && hubCovers(mo.root) && MIN_HUB_TFS.includes(tf) && typeof location !== 'undefined';
+      stop = live ? this.hubSubscribe(ticker, timeframe, onBar, mo.root, tf) : plain();
+    });
+    return () => { stopped = true; if (stop) stop(); };
   }
   subscribeOld(ticker, timeframe, onBar, root, tf) {
     // LIVE_SOURCE 'hub' (assets/live-source.js, default): every root the hub covers streams from the hub, never from /api/chart/stream.
@@ -724,6 +750,7 @@ export class FuturesProvider {
   }
 }
 FuturesProvider.INSIGHTSENTRY_ROOTS = INSIGHTSENTRY_ROOTS;
+FuturesProvider.loadMonthFeed = loadMonthFeed;
 
 // Warm the shared page memo for a symbol the member is likely to open next (a hovered watchlist or
 // symbol-search row, the Owner's contracts at idle). Same pages and URLs the chart itself reads, so
@@ -887,16 +914,7 @@ export class IdxProvider extends FuturesProvider {
     const k = quoteKey(ticker);
     let known = null, liveT = 0;
     const live = () => !!(window.__stkL2Live && window.__stkL2Live.has(k));
-    // QQQ "a full candle behind" (Discord 24 Nov): off the live lane (the hub refused, e.g. while the server could not confirm the
-    // member) the forming minute comes from the poll, and the server's newest row is ONE price (o = h = l = c, volume 0). Taken as is,
-    // each poll redrew the forming candle as a dash at the newest price, so it only took shape when the minute closed. A flat row for
-    // the candle the chart already has is folded in (open kept, high / low widened); a real bar (any range or volume) replaces it.
-    const poll = (b) => {
-      if (live() && b.time <= liveT) return;
-      if (known && known.time === b.time && b.open === b.high && b.high === b.low && b.low === b.close && !b.volume) b = { time: b.time, open: known.open, high: Math.max(known.high, b.close), low: Math.min(known.low, b.close), close: b.close, volume: known.volume };
-      if (!known || b.time >= known.time) known = b;   // each poll hands the closed minute AND the forming one: known stays the newest
-      onBar(b);
-    };
+    const poll = (b) => { if (live() && b.time <= liveT) return; known = b; onBar(b); };
     this.hubBar = (b) => {
       liveT = Math.max(liveT, b.time);
       if (known && known.time === b.time) b = { time: b.time, open: known.open, high: Math.max(known.high, b.high), low: Math.min(known.low, b.low), close: b.close, volume: known.volume };

@@ -5,7 +5,7 @@
 // Protections copied from /api/gex/candles: edge cache, last-good fallback, in-flight de-dupe,
 // upstream timeout. An out-of-range page (older than Yahoo keeps, or in the future) is [] not an error.
 import { isRealtimeToken, bearerOf, RT_DELAY_S } from '../_rt.js';
-import { DEEP_HISTORY, globexOpen, TIMEFRAMES, INSIGHTSENTRY_CODES, isNonCme, normSym, normTf, pageOf, fetchPage, mergeTail, ttlFor, OutOfRange, fetchRecorderTail, TAIL_SYMS, bucketTail } from '../_bars.js';
+import { DEEP_HISTORY, globexOpen, TIMEFRAMES, INSIGHTSENTRY_CODES, isNonCme, normSym, normTf, pageOf, fetchPage, mergeTail, ttlFor, OutOfRange, fetchRecorderTail, TAIL_SYMS, bucketTail, isMonthSym } from '../_bars.js';
 
 const VERSION = 1;   // the cache key adds 'deep' while DEEP_HISTORY is on: old pages cached empty for a day by the old source are not reused
 const inflight = new Map();
@@ -143,6 +143,9 @@ export async function onRequestGet(ctx) {
     out.headers.set('cache-control', 'private, max-age=10');
     try {
       const body = await out.json();
+      // a contract month (MESZ2026): its own delayed exchange series, no live tail laid over it (ctx.noTail / serve), so never "real-time".
+      // An entitled member's live candle on the front month comes from the tick hub in the browser, not from these bars.
+      if (isMonthSym(sym)) { body.rt = false; out.headers.set('x-tz-rt', '0'); const h = new Headers(out.headers); h.delete('content-length'); h.delete('content-encoding'); return new Response(JSON.stringify(body), { status: 200, headers: h }); }
       // honest even for an admin: the InsightSentry tail can fail (upstream refusing extra sockets), leaving only
       // Yahoo rows ~10 min old. Then rt is 'lag', the answer is not kept, and the browser re-asks at once.
       const nowS = Math.floor(Date.now() / 1000), u = new URL(ctx.request.url);

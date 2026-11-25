@@ -3,18 +3,21 @@
 // WHY (Owner bug 17 Nov): the chart can hold the same futures market under several names:
 //   'futures:NQ1!'            our provider form (search, watchlist, templates)
 //   'CME:NQ1!', 'CME_MINI:MNQ1!', 'CBOT:ZN1!', 'CBOT_MINI:YM1!', 'COMEX:GC1!', 'NYMEX:CL1!' ...   exchange form (phone, typed, Pine input.symbol)
-//   'MNQZ6', 'CME_MINI:MNQZ2026', 'NQH27'   a contract month instead of the continuous contract
+//   'MNQZ6', 'CME_MINI:MNQZ2026', 'NQH27'   a contract month, folded to the continuous contract (unchanged)
+//   'futures:MNQZ2026'                     the canonical CONTRACT-MONTH chart symbol (25 Nov): stays that month (assets/fut-months.js)
 //   'NQ1!'                     bare continuous ticker
 //   'rithmic:NQ1!'             the member's own Rithmic feed (paper / live keys)
 // Modules that only tested `provider === 'futures'` silently did nothing for the other forms (the DOM said "Open a crypto or
 // futures chart" on an MNQ chart). Every module now asks this file instead.
 //
 //   isFutures(sym)    -> true for any form above
-//   normFutures(sym)  -> 'futures:MNQ1!' for any form above; any other symbol is returned UNCHANGED (crypto, stocks, fx ...)
-//   futRoot(sym)      -> 'MNQ' (the contract root), '' when not futures
-//   splitSym(sym)     -> [provider, ticker] with futures folded to ['futures', 'MNQ1!'] (lower-case provider)
+//   normFutures(sym)  -> 'futures:MNQ1!' for any form above except 'futures:MNQZ2026' (kept); any other symbol is returned UNCHANGED
+//   futRoot(sym)      -> 'MNQ' (the contract root, month or not), '' when not futures
+//   monthOfSym(sym)   -> the contract month ({ root, code:'MNQZ2026', ... } from fut-months.js parseMonth) or null (continuous / not futures)
+//   splitSym(sym)     -> [provider, ticker] with futures folded to ['futures', 'MNQ1!'] / ['futures', 'MNQZ2026'] (lower-case provider)
 //   FUT_EXCH          -> the CME Group exchange prefixes
 // Tests: tools/tests/chart-sym.test.mjs. Education only. Not financial advice.
+import { parseMonth } from './fut-months.js?v=1272';
 
 export const FUT_EXCH = /^(cme|cme_mini|cbot|cbot_mini|comex|comex_mini|nymex|nymex_mini)$/i;
 // The roots we chart or have heard of on CME Group; only used to accept a BARE ticker ('NQ1!', 'MNQZ6') as futures.
@@ -51,8 +54,13 @@ export function futParts(sym) {
     root = rootOfTicker(s, true);
   }
   if (!root) return null;
+  // ONLY the canonical month chart symbol 'futures:MESZ2026' (what search writes) is its own chart. Every older form (MNQZ6,
+  // CME_MINI:MNQZ2026, NQH27, imports, saved layouts) still folds to the continuous contract, so no existing chart changes.
+  const mo = /^futures:[A-Z0-9]+[FGHJKMNQUVXZ]\d{4}$/i.test(String(sym).trim()) ? parseMonth(s) : null;
+  if (mo && mo.root === root) return { root, ticker: mo.code, sym: 'futures:' + mo.code, month: mo };
   return { root, ticker: root + '1!', sym: 'futures:' + root + '1!' };
 }
+export const monthOfSym = (sym) => { const f = futParts(sym); return f && f.month ? f.month : null; };
 export const isFutures = (sym) => !!futParts(sym);
 export const normFutures = (sym) => { const f = futParts(sym); return f ? f.sym : sym; };
 export const futRoot = (sym) => { const f = futParts(sym); return f ? f.root : ''; };

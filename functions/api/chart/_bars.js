@@ -14,6 +14,8 @@
 // upstream fetch per page, a single linear pass over at most ~1,500 rows, no
 // Intl/Date formatting per row (the New York offset is computed arithmetically).
 
+import { parseMonth, yahooCode } from '../../../assets/fut-months.js';
+
 export const FETCH_TIMEOUT_MS = 4500;
 export const INSIGHTSENTRY_CODES = {
   NQ: 'CME_MINI:NQ1!',
@@ -124,7 +126,16 @@ const TF_ALIASES = { '1m': '1', '5m': '5', '15m': '15', '30m': '30', '1h': '60',
 export function normTf(tf) { tf = String(tf || ''); return TIMEFRAMES[tf] ? tf : (TF_ALIASES[tf] || null); }
 export function normSym(s) {
   s = String(s || '').toUpperCase().replace(/1!$/, '');
-  return Object.prototype.hasOwnProperty.call(SYMBOLS, s) ? s : null;
+  if (Object.prototype.hasOwnProperty.call(SYMBOLS, s)) return s;
+  const m = parseMonth(s); return m && SYMBOLS[m.root] ? m.code : null;   // a contract month (MESZ2026): its own series, never the continuous one
+}
+// a contract-month key from normSym ('MESZ2026'): no recorder tail, no real-time claim (rt), the 10-minute cut for non-entitled callers
+export const isMonthSym = (sym) => !!sym && !SYMBOLS[sym] && !!parseMonth(sym);
+// the SYMBOLS row of a symbol; a contract month = its root's row with the month's own Yahoo code (MESZ26.CME)
+export function rowOf(sym) {
+  if (SYMBOLS[sym]) return SYMBOLS[sym];
+  const m = parseMonth(sym), r = m && SYMBOLS[m.root];
+  return r ? [yahooCode(m, r[2])].concat(r.slice(1)) : null;
 }
 
 // Page index holding epoch second t. W/M serve everything in page 0.
@@ -228,7 +239,7 @@ export function aggregateHours(rows, n, anchor = 18) {
 export const depthFloor = (tf, now) => { const c = TIMEFRAMES[tf]; return c && c.page && c.depth < 1000 * D ? now - c.depth : 0; };
 export function yahooUrl(sym, tf, page, now) {
   const cfg = TIMEFRAMES[tf];
-  const yh = SYMBOLS[sym][0];
+  const yh = rowOf(sym)[0];
   let p1, p2;
   if (cfg.page) { [p1, p2] = pageBounds(tf, page); p2 = Math.min(p2, now + 60); p1 = Math.max(p1, depthFloor(tf, now)); }
   else { p1 = 0; p2 = now + 60; }
@@ -338,7 +349,7 @@ async function fetchYahooPage(sym, tf, page, now, fetchImpl) {
     // 422 = "data not available for startTime/endTime" (outside Yahoo's window), 404 = no data.
     if (res.status === 422 || res.status === 404) throw new OutOfRange(`upstream ${res.status}`);
     if (!res.ok) throw new Error(`upstream ${res.status}`);
-    const rows = parseYahoo(await res.json(), tf, decimalsOf(SYMBOLS[sym][4]), isForex(sym) ? 17 : isEquity(sym) ? 9.5 : 18);   // equities: 2h/4h bars start at the 09:30 open
+    const rows = parseYahoo(await res.json(), tf, decimalsOf(rowOf(sym)[4]), isForex(sym) ? 17 : isEquity(sym) ? 9.5 : 18);   // equities: 2h/4h bars start at the 09:30 open
     if (!cfg.page) return rows;
     const [p1, p2] = pageBounds(tf, page), lo = depthFloor(tf, now);
     const out = rows.filter((r) => r[0] >= p1 && r[0] < p2);

@@ -159,7 +159,7 @@ function symIndex(feed){
 // Accepts "NQ1!", "NQ", "CME_MINI:NQ1!", "futures:NQ1!", "BTCUSDT", "BINANCE:BTCUSDT", "binance:BTCUSDT".
 import { canonicalSymbol as canonicalFormula } from './chart-formula-core.js?v=1272';
 import { symLogoOf } from './symbol-logos.js?v=1272';
-import { isFutures } from './chart-sym.js?v=1272';   // one futures test for every symbol form (CME_MINI:MNQ1!, MNQZ6 ...)
+import { isFutures, monthOfSym } from './chart-sym.js?v=1272';   // one futures test for every symbol form (CME_MINI:MNQ1!, MNQZ6 ...)
 export function normalizeSymbol(raw, feed){
   let s = String(raw || '').trim().replace(/^["']|["']$/g, '');
   if (!s) return null;
@@ -172,6 +172,7 @@ export function normalizeSymbol(raw, feed){
   if (pre === 'futures' || !pre || /^(cme|cme_mini|cbot|cbot_mini|comex|comex_mini|nymex|nymex_mini)$/.test(pre)) {
     const r = t.replace(/1!$/, '');
     if (FUT_ROOTS.includes(r)) return 'futures:' + r + '1!';
+    if (pre === 'futures') { const mo = monthOfSym('futures:' + t); if (mo) return 'futures:' + mo.code; }   // a contract-month chart keeps its month
     if (pre === 'futures') return null;
   }
   // Spot forex: "EURUSD", "EUR/USD", "FX:EURUSD", "FX_IDC:EURUSD", "OANDA:EURUSD", "fx:EURUSD".

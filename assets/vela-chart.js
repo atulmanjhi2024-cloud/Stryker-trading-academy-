@@ -1248,6 +1248,8 @@ function legendFold(R) {
   import('./chart-data-dot.js?v=1272')
     .then((m) => m.installDataDot(ws, { rith: rithRef, FuturesProvider, FxProvider, IdxProvider, stockStatus: Stocks.stockStatus, onStockMeta: Stocks.onStockMeta }))
     .catch((e) => console.warn('TradeZoro: data dot', e));
+  // Contract-month charts (futures:MESZ2026, 25 Nov): "MES · Dec 2026 · CME" header, expiry chip, roll switch, empty-month note
+  import('./chart-fut-month.js?v=1272').then((m) => m.installFutMonth(ws, { loadFeed: FuturesProvider.loadMonthFeed })).catch((e) => console.warn('TradeZoro: contract months', e));
   // Stronger weak magnet on 0.9.0 (nearest OHLC in pixels across nearby candles, 28 px): assets/chart-magnet.js.
   if (VELA090) import('./chart-magnet.js?v=1272')
     .then((m) => m.installMagnet(ws))

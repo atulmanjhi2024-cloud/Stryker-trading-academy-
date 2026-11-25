@@ -24,7 +24,8 @@
 
 import { rtOnChange, isRealtimeAdmin, rtConfirmed, rtKnown } from './rt-access.js?v=1272';
 import { hubCovers } from './live-source.js?v=1272';
-import { labelFor } from './byo-core.js?v=1272';   // member's own connected source (Connect your own data)
+import { labelFor } from './byo-core.js?v=1272';
+import { parseMonth, isLiveMonth } from './fut-months.js?v=1272';   // contract-month charts (futures:MESZ2026)   // member's own connected source (Connect your own data)
 
 const H = 3600;
 const LAG_TTL_MS = 60000;        // re-measure each futures root at most once a minute
@@ -47,7 +48,6 @@ function nyParts(ms) {
 }
 // CME Globex (mirrors globexOpen in functions/api/chart/_bars.js).
 export function globexOpen(ms) {
-  if (typeof globalThis !== 'undefined' && typeof globalThis.__TZ_CME_OPEN === 'boolean') return globalThis.__TZ_CME_OPEN;   // tests only (as cmeOpenNow)
   const { dow, min } = nyParts(ms);
   if (dow === 6) return false;
   if (dow === 0) return min >= 18 * 60;
@@ -118,7 +118,7 @@ export function installDataDot(ws, opts = {}) {
     const hit = lag.get(root);
     if (hit && Date.now() - hit.at < LAG_TTL_MS) return;
     pending.add(root);
-    p.getBars(root.startsWith('IDX:') ? root.slice(4) : isFx(root) ? root.slice(3) : root + '1!', '1', { limit: 1 }).then((bars) => {
+    p.getBars(root.startsWith('IDX:') ? root.slice(4) : isFx(root) ? root.slice(3) : parseMonth(root) ? root : root + '1!', '1', { limit: 1 }).then((bars) => {
       const b = bars && bars[bars.length - 1];
       let min = null;
       if (b && b.time) {
@@ -170,30 +170,24 @@ export function installDataDot(ws, opts = {}) {
       return { s: 'closed', text: 'Market closed' + (n ? ' · opens ' + istLabel(n) + ' IST' : ''), tag: 'Closed' };
     }
     const root = rootOf(sym);
+    // A contract month: live only while it is the month the live feed is on AND that feed is moving its candle; else its own delayed series
+    const mo = parseMonth(root);
+    if (mo) {
+      if (isLiveMonth(mo) && window.__stkL2Live && window.__stkL2Live.has(mo.root)) return { s: 'rt', text: 'Live data · this contract month', tag: 'Live' };
+      measure(root);
+      const mm = lag.get(root);
+      return { s: 'delayed', text: 'Delayed data for this contract month' + (mm && mm.min ? ' · about ' + mm.min + ' min' : ''), tag: 'Delayed' + (mm && mm.min ? ' ' + mm.min + 'm' : '') };
+    }
     // Real-time CME futures: admins, a connected Rithmic login, a signed Market Data Agreement (free L1, Owner 2026-11-04) or an Owner approval; the server delivers everyone else 10 min late.
     if (rithLive()) return { s: 'rt', text: 'Live data from your Rithmic connection', tag: 'Live (Rithmic)' };
     // LIVE (2026-11-03): the hub is feeding this root's candle (assets/chart-futures-l2.js), or the server confirmed real-time on the delayed lane's tail
-    if (window.__stkL2Live && window.__stkL2Live.has(root)) return { s: 'rt', text: 'Live data' + gapLine(root), tag: 'Live' };
-    if (insightRealtime(root) && rtConfirmed()) return { s: 'rt', text: 'Live data' + gapLine(root), tag: 'Live' };
+    if (window.__stkL2Live && window.__stkL2Live.has(root)) return { s: 'rt', text: 'Live data', tag: 'Live' };
+    if (insightRealtime(root) && rtConfirmed()) return { s: 'rt', text: 'Live data', tag: 'Live' };
     if (insightRealtime(root) && !rtKnown()) return { s: 'wait', text: 'Checking your data access', tag: 'Checking' };   // REFRESH FIX 2026-11-05: unknown is not a no
     if (insightRealtime(root)) return { s: 'delayed', text: isRealtimeAdmin() ? 'Reconnecting · showing delayed data until live data returns' : 'CME futures are 10 minutes delayed (CME rule). Sign the market data agreement to get live futures (free), or connect your Rithmic login.', tag: '10 min delayed · CME' };
     measure(root);
     const m = lag.get(root);
     return { s: 'delayed', text: 'Delayed data' + (m && m.min ? ' · about ' + m.min + ' min' : ''), tag: 'Delayed' + (m && m.min ? ' ' + m.min + 'm' : '') };
-  }
-
-  // TICKGAP (24 Nov 2026): admins and beta testers (strykerBeta.isBeta() = admin OR beta tester) see a "data gaps" line under a Live
-  // futures status, from assets/chart-futures-l2.js gapStats (window.__stkGaps): socket / feed stalls and trade pauses in the last 30 min,
-  // so a "price got stuck" report can be confirmed or ruled out on the spot. Members see nothing new.
-  function gapLine(root) {
-    try {
-      if (!(window.strykerBeta && window.strykerBeta.isBeta && window.strykerBeta.isBeta())) return '';
-      const all = window.__stkGaps ? window.__stkGaps() : null, g = all && all[root];
-      if (!g) return '';
-      const s = (ms) => Math.round(ms / 1000) + ' s';
-      return ' · Data gaps (30 min): ' + (g.stalls ? g.stalls + ' feed stall' + (g.stalls > 1 ? 's' : '') + ', longest ' + s(g.stallMax) : 'no feed stalls') +
-        (g.quiet ? '; ' + g.quiet + ' market pause' + (g.quiet > 1 ? 's' : '') + ' over 5 s, longest ' + s(g.quietMax) : '');
-    } catch (e) { return ''; }
   }
 
   function showTip(dot) {
@@ -219,7 +213,7 @@ export function installDataDot(ws, opts = {}) {
     const dotI = document.createElement('i'); dotI.className = 'stkc-dd-dot'; dotI.setAttribute('aria-hidden', 'true');
     const txt = document.createElement('span'); txt.className = 'stkc-dd-t';
     d.append(dotI, txt);
-    d.addEventListener('mouseenter', () => { sync(); showTip(d); });   // fresh text on open (the data gaps line moves)
+    d.addEventListener('mouseenter', () => showTip(d));
     d.addEventListener('mouseleave', () => { if (tipFor === d && !d.dataset.pinned) hideTip(); });
     d.addEventListener('focus', () => showTip(d));
     d.addEventListener('blur', () => { delete d.dataset.pinned; if (tipFor === d) hideTip(); });

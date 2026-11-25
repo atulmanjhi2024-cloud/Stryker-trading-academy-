@@ -123,14 +123,17 @@
   // hint = chart minimum tick (number) or { tick, currency, pv, type } from the chart's symbol info
   function hintOf(h) { return h && typeof h === 'object' ? h : { tick: h }; }
   const tickOr = (h, d) => (Number(h.tick) > 0 ? Number(h.tick) : d);
-  function futuresSpec(root, h) {
+  function futuresSpec(root, h, monthOk) {
     const r = futuresRootOf(root);
     const f = FUTURES[r];
-    if (f) return { ok: true, symbol: 'futures:' + r + '1!', kind: 'futures', root: r, tick: f[0], pointValue: f[1], quote: 'USD', unit: 'contract', fees: true, qtyStep: 1, minQty: 1, maxQty: 500, decimals: decimalsOf(f[0]) };
+    // the contract-month chart (futures:MESZ2026, 25 Nov) is its own paper symbol: its own last price, never the continuous contract's.
+    // Every other month form still folds to the continuous contract as before.
+    const mo = monthOk && /^([A-Z0-9]+?)[FGHJKMNQUVXZ]\d{4}$/.exec(String(root || '').toUpperCase()), key = mo && mo[1] === r ? String(root).toUpperCase() : r + '1!';
+    if (f) return { ok: true, symbol: 'futures:' + key, kind: 'futures', root: r, tick: f[0], pointValue: f[1], quote: 'USD', unit: 'contract', fees: true, qtyStep: 1, minQty: 1, maxQty: 500, decimals: decimalsOf(f[0]) };
     // a root we have no table row for: tick + point value from the chart's symbol info; unknown point value = 1 per point
     if (!r) return { ok: false, reason: needPrices(root) };
     const tick = tickOr(h, 0.01), pv = Number(h.pv) > 0 ? Number(h.pv) : 1;
-    const sp = { ok: true, symbol: 'futures:' + r + '1!', kind: 'futures', root: r, tick, pointValue: pv, quote: 'USD', unit: 'contract', fees: true, qtyStep: 1, minQty: 1, maxQty: 500, decimals: decimalsOf(tick) };
+    const sp = { ok: true, symbol: 'futures:' + key, kind: 'futures', root: r, tick, pointValue: pv, quote: 'USD', unit: 'contract', fees: true, qtyStep: 1, minQty: 1, maxQty: 500, decimals: decimalsOf(tick) };
     if (!(Number(h.pv) > 0)) sp.note = 'Point value not known for ' + r + ': P&L uses 1 per point.';
     return sp;
   }
@@ -193,7 +196,7 @@
     if (!parts.raw) return { ok: false, reason: 'Pick a symbol on the chart first.' };
     const prov = parts.prefix, ticker = parts.ticker;
     let sp;
-    if (FUTURES_PREFIXES.indexOf(prov) >= 0) sp = futuresSpec(ticker, h);
+    if (FUTURES_PREFIXES.indexOf(prov) >= 0) sp = futuresSpec(ticker, h, prov === 'futures');
     else if (!prov) {
       const x = pairParts(ticker);
       if (x) sp = fxSpec('fx', x, h);

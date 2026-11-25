@@ -1447,6 +1447,19 @@ body.charts-page .stkchart-credit{
   box-shadow:0 10px 26px -10px rgba(0,0,0,.55); pointer-events:none; width:max-content;
 }
 .stkc-dd-tip[hidden]{ display:none; }
+.stkc-fm{ display:inline-flex; align-items:center; gap:6px; flex:0 0 auto; margin-left:8px; align-self:center; pointer-events:auto; }
+.stkc-fm:empty{ display:none; }
+.stkc-fm-chip{
+  display:inline-flex; align-items:center; height:20px; padding:0 8px; border:1px solid var(--line); border-radius:999px;
+  background:var(--bg-2); color:var(--ink-1); font:500 11px/1 inherit; font-family:inherit; white-space:nowrap; font-variant-numeric:tabular-nums;
+}
+.stkc-fm-roll{ cursor:pointer; color:#F5A623; border-color:rgba(245,166,35,.45); background:rgba(245,166,35,.12); -webkit-tap-highlight-color:transparent; }
+:root[data-theme="light"] .stkc-fm-roll{ color:#9a5b00; }
+.stkc-fm-roll:hover{ background:rgba(245,166,35,.2); }
+.stkc-fm-roll:focus-visible{ outline:2px solid var(--teal); outline-offset:2px; }
+.vela-statusline.stkc-is-month .vela-sl-symbol, .vela-statusline.stkc-is-month .vela-sl-meta{ white-space:nowrap; }
+[data-layout="mobile"] .stkc-fm{ margin-left:6px; gap:4px; }
+[data-layout="mobile"] .stkc-fm-chip{ height:18px; padding:0 6px; font-size:10.5px; }
 .stkc-venue-note{
   position:absolute; z-index:5; left:50%; top:45%; transform:translate(-50%,-50%); max-width:min(320px, calc(100% - 32px));
   padding:12px 16px; border:1px solid var(--line); border-radius:12px; background:var(--bg-2); color:var(--ink-0);
@@ -5244,6 +5257,7 @@ section.stkss-sec{ padding:0; margin:0; }
 .stkss-l2{ font:400 13px/18px var(--ss-font); color:var(--ss-ink2); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .stkss-tag{ flex:none; height:18px; padding:0 8px; border-radius:999px; font:500 11px/18px var(--ss-font); }
 .stkss-tag-del{ color:#f5a623; background:rgba(245,166,35,0.12); }
+.stkss-tag-mon{ color:var(--ss-ink2); background:var(--ss-raised); border:1px solid var(--ss-line); line-height:16px; font-variant-numeric:tabular-nums; }
 :root[data-theme="light"] .stkss-tag-del{ color:#9a5b00; }
 .stkss-px{ flex:none; display:flex; align-items:center; gap:12px; }
 .stkss-spark.up{ color:var(--ss-mint); }

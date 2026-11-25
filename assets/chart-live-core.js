@@ -40,8 +40,11 @@ export function instrumentOf(sym) {
   if (pre && !FUT_PREFIX.test(pre)) return null;
   let f = /^([A-Z0-9]{1,4}?)[12]!$/.exec(rest);
   if (f && (pre || ROOTS[f[1]])) return { asset: 'future', root: f[1] };
-  f = /^([A-Z0-9]{1,4}?)[FGHJKMNQUVXZ](\d|\d\d|\d{4})$/.exec(rest);
-  if (f && (pre || ROOTS[f[1]])) return { asset: 'future', root: f[1] };
+  f = /^([A-Z0-9]{1,4}?)([FGHJKMNQUVXZ])(\d|\d\d|\d{4})$/.exec(rest);
+  if (f && (pre || ROOTS[f[1]])) {
+    // the canonical contract-month chart symbol (futures:MESZ2026, 25 Nov): trade THAT month, short form MESZ6. Every other form keeps the old meaning.
+    return f[3].length === 4 && /^futures$/i.test(pre) && ROOTS[f[1]] ? { asset: 'future', root: f[1], month: f[1] + f[2] + f[3].slice(-1) } : { asset: 'future', root: f[1] };
+  }
   return null;
 }
 // "CME_MINI:NQ1!", "futures:CL1!", "NQ1!" -> "NQ" / "CL" ; not futures -> ''
@@ -157,7 +160,10 @@ export function heldContract(positions, root) {
 export function contractFor(sym, positions, now, fronts) {
   const ins = instrumentOf(sym); if (!ins) return null;
   if (ins.asset === 'equity') return { root: ins.code, code: ins.code, front: ins.code, held: false, pv: 1, tick: 0.01, asset: 'equity' };
-  const root = ins.root, fm = frontMonth(root, now, fronts), held = heldContract(positions, root), sp = ROOTS[root] || {};
+  const root = ins.root, sp = ROOTS[root] || {};
+  // CONTRACT MONTH chart (futures:MESZ2026, 25 Nov): orders go to THAT month, whatever is held or front (code in the short form MESZ6)
+  if (ins.month) return { root, code: ins.month, front: ins.month, held: false, month: true, pv: sp.pv || 0, tick: sp.tick || 0.01, asset: 'future' };
+  const fm = frontMonth(root, now, fronts), held = heldContract(positions, root);
   if (!fm && !held) return null;   // an open position's contract is enough to manage / flatten it
   return { root, code: held || fm.code, front: fm ? fm.code : held, held: !!held && !!fm && held !== fm.code, pv: sp.pv || 0, tick: sp.tick || 0.01, asset: 'future' };
 }

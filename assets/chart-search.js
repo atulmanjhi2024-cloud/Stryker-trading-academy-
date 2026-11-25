@@ -26,17 +26,16 @@ import { venueChip } from './venue-logos.js?v=1272';
 import { fxMark } from './fx-flags.js?v=1272';
 import { symLogo } from './symbol-logos.js?v=1272';
 import { getInfo } from './chart-symbol-info.js?v=1272';
+import { monthsFor, parseQuery, label as monthLabel, fmtExpiry, setFeed, frontCode, MONTH_ROOTS, INFO_KEY } from './fut-months.js?v=1272';   // contract months (25 Nov)
 
 const PHONE_MAX = 700;
 const PAGE = 50;
 const LS_FAV = 'tz_sym_favs', LS_RECENT = 'tz_sym_recent';
 const TABS = [['all', 'All'], ['stocks', 'Stocks'], ['futures', 'Futures'], ['crypto', 'Crypto'], ['forex', 'Forex'], ['indices', 'Indices']];
 const TYPE_LABEL = { futures: 'Futures', crypto: 'Crypto', forex: 'Forex', indices: 'Index', stocks: 'Stock', other: 'Market' };
+const MONTH_ROWS = 6;   // contract months listed under a futures root (search results and the side panel)
 const POPULAR = [['futures', 'ES1!'], ['futures', 'NQ1!'], ['binance', 'BTCUSDT'], ['binance', 'ETHUSDT'], ['idx', 'SPY'], ['idx', 'QQQ'], ['futures', 'GC1!'], ['futures', 'CL1!'], ['fx', 'EURUSD'], ['binance', 'SOLUSDT']];
 const QUOTE_PROVIDERS = ['futures', 'fx', 'idx'].concat(CRYPTO_VENUES);
-const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-// chart root -> contract-info key; micros of the index futures share the E-mini expiries (CME quarterly cycle)
-const INFO_KEY = { NQ: 'NQ', ES: 'ES', YM: 'YM', RTY: 'RTY', GC: 'GC', SI: 'SI', CL: 'CL', NG: 'NG', ZN: 'ZN', ZB: 'ZB', '6E': '6E', MNQ: 'NQ', MES: 'ES', MYM: 'YM', M2K: 'RTY' };
 
 const svg = (p, s = 20) => '<svg width="' + s + '" height="' + s + '" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + p + '</svg>';
 const IC = {
@@ -83,6 +82,19 @@ export function mountSearch(ws, o = {}) {
   let recents = lsGet(LS_RECENT, []);
   let favUid = null;
   let poolCache = { key: '', list: [] };
+  // contract feed (expiries): loaded on the first open, months for index roots fall back to the exchange rule until it lands
+  let monthFeed = null, monthFeedP = null;
+  const loadMonthFeed = () => monthFeedP || (monthFeedP = getInfo().then((d) => { monthFeed = (d && d.syms) || {}; setFeed(monthFeed); if (S.open && input.value.trim()) render(); }, () => { monthFeedP = null; }));
+  const rollFor = (root) => { const e = monthFeed && monthFeed[INFO_KEY[root] || root]; return e && e.roll || null; };
+  // one list row per contract month of a continuous futures row (d): 'MESZ2026', 'Dec 2026 · expires 18 Dec' ...
+  function monthRow(base, mo) {
+    return { ticker: mo.code, description: monthLabel(mo) + ' contract · expires ' + fmtExpiry(mo.expiry), type: 'futures', provider: 'futures', prefix: base.prefix, exchange: base.exchange, mintick: base.mintick, __sym: 'futures:' + mo.code, __month: mo };
+  }
+  function monthRows(base) {
+    const root = String(base.ticker || '').toUpperCase().replace(/1!$/, '');
+    if (!MONTH_ROOTS.includes(root)) return [];
+    return monthsFor(root, rollFor(root), Date.now(), MONTH_ROWS).map((mo) => monthRow(base, mo));
+  }
 
   function pool() {
     let raw = [];
@@ -380,9 +392,25 @@ export function mountSearch(ws, o = {}) {
     }
     const fr = formulaRow(q.toUpperCase());
     if (fr && fr.row) return { groups: [['Ratio / spread', [fr.row]]], hits: new Map(), msg: '' };
-    const res = search(P.list.filter(passes), /^[A-Z]{3}\s*\/\s*[A-Z]{3,4}$/i.test(q) ? q.replace(/\s*\/\s*/, '') : q, 300);   // EUR/USD, BTC/USDT
+    // a contract month typed ("MESZ2026", "MESZ6", "MES Dec 2026"): that month first, the root's other months after it
+    const qm = parseQuery(q);
+    const res = qm ? [] : search(P.list.filter(passes), /^[A-Z]{3}\s*\/\s*[A-Z]{3,4}$/i.test(q) ? q.replace(/\s*\/\s*/, '') : q, 300);   // EUR/USD, BTC/USDT
     const hits = new Map(res.map((x) => [x.d, x.hit]));
-    return { groups: res.length ? [['Results', res.map((x) => x.d)]] : [], hits, msg: fr && fr.msg ? fr.msg : '' };
+    let rows = res.map((x) => x.d);
+    const tq = q.toUpperCase().replace(/1!$/, '');
+    if (qm) {
+      const base = P.byPT.get('futures:' + qm.root + '1!');
+      if (base && passes(base)) {
+        const list = monthRows(base), hit = list.find((r) => r.__month.code === qm.code);
+        rows = [hit || monthRow(base, Object.assign({}, qm, { expiry: '' }))].concat(list.filter((r) => r !== hit), [base]);
+        if (!hit) rows[0].description = monthLabel(qm) + ' contract';
+      }
+    } else if (rows.length) {
+      // the query is a futures root (MES / MES1!): its continuous contract first, then its next months, then the rest
+      const i = rows.findIndex((d) => d.provider === 'futures' && String(d.ticker).toUpperCase() === tq + '1!');
+      if (i >= 0) { const base = rows[i]; rows = [base].concat(monthRows(base), rows.filter((d, j) => j !== i)); }
+    }
+    return { groups: rows.length ? [['Results', rows]] : [], hits, msg: fr && fr.msg ? fr.msg : '' };
   }
 
   let cur = { groups: [], hits: new Map(), msg: '' };
@@ -473,9 +501,9 @@ export function mountSearch(ws, o = {}) {
     const ic = el('span', { class: 'stkss-ic stkss-ic-' + c, 'aria-hidden': 'true' });
     if (d.__formula) ic.innerHTML = svg(IC.ratio, 18); else { ic.classList.add('stkss-ic-fx'); ic.appendChild(symLogo(d.prefix || d.provider, d.ticker, d.description, d.type, 36)); }
     const tk = el('span', { class: 'stkss-tk' }); tk.appendChild(hl(String(d.ticker), cur.hits.get(d)));
-    const line1 = el('span', { class: 'stkss-l1' }, [tk, statusTag(d, i)]);
+    const line1 = el('span', { class: 'stkss-l1' }, [tk, d.__month ? el('span', { class: 'stkss-tag stkss-tag-mon', text: 'MONTH' }) : statusTag(d, i)]);
     const tl = d.__formula ? '' : TYPE_LABEL[c] || '', vl = d.__formula ? '' : VENUE_LABEL[v] || (v ? v.toUpperCase() : '');
-    const sub = [d.description || '', tl, vl !== tl ? vl : ''].filter(Boolean).join(' · ');
+    const sub = d.__month ? [d.description, vl].filter(Boolean).join(' · ') : [d.description || '', tl, vl !== tl ? vl : ''].filter(Boolean).join(' · ');
     const l2 = el('span', { class: 'stkss-l2' }, [d.__formula || !v ? null : venueChip(v), el('span', { text: sub })]);
     const txt = el('span', { class: 'stkss-txt' }, [line1, l2]);
     const px = el('span', { class: 'stkss-px', 'data-q': '' });
@@ -563,11 +591,12 @@ export function mountSearch(ws, o = {}) {
     return r;
   }
   function sideFutures(d) {
-    const root = String(d.ticker).replace(/1!$/, '').toUpperCase(), ex = VENUE_LABEL[venueOf(d)] || d.prefix || '';
+    const root = d.__month ? d.__month.root : String(d.ticker).replace(/1!$/, '').toUpperCase(), ex = VENUE_LABEL[venueOf(d)] || d.prefix || '';
     sideHead(root, ex + ' Futures');
     side.lastChild.insertBefore(venueChip(venueOf(d)), side.lastChild.firstChild);
+    const base = pool().byPT.get('futures:' + root + '1!') || (d.__month ? null : d);
     const box2 = el('div', { class: 'stkss-slist' });
-    box2.appendChild(sideRow(d.ticker, 'Continuous front month · opens on the chart', ['CONT'], symFor(d), d));
+    if (base) box2.appendChild(sideRow(base.ticker, 'Continuous front month · rolls automatically', ['CONT'], symFor(base), base));
     side.appendChild(box2);
     const key = INFO_KEY[root];
     if (!key) { side.appendChild(sideNote('Contract months for this market are not in our contract calendar yet. The chart uses the continuous front month.')); return; }
@@ -579,17 +608,21 @@ export function mountSearch(ws, o = {}) {
       wait.remove();
       const e = data && data.syms && data.syms[key];
       const roll = e && e.roll || [];
-      if (!roll.length) { side.appendChild(sideNote('No contract calendar for this market right now.')); return; }
+      if (!monthFeed) { monthFeed = (data && data.syms) || {}; setFeed(monthFeed); }
+      const months = MONTH_ROOTS.includes(root) && base ? monthsFor(root, roll, Date.now(), MONTH_ROWS) : [];
+      if (!months.length) { side.appendChild(sideNote('No contract calendar for this market right now.')); return; }
       side.appendChild(el('h4', { class: 'stkss-sec-h', text: 'Contract months' }));
       const l = el('div', { class: 'stkss-slist' });
-      roll.slice(0, 6).forEach((x, i) => {
-        const s = String(x.d), code = root + String(x.c).slice(key.length);
-        const mon = MON[+s.slice(4, 6) - 1] + ' ' + s.slice(0, 4);
-        l.appendChild(sideRow(code, 'Expires ' + (+s.slice(6, 8)) + ' ' + mon, i === 0 ? ['FRONT', 'FUT'] : ['FUT']));
+      const fc = frontCode(root);
+      months.forEach((mo) => {
+        const r = monthRow(base, mo), on = d.__month && d.__month.code === mo.code;
+        const row = sideRow(mo.code, monthLabel(mo) + ' · expires ' + fmtExpiry(mo.expiry) + ' ' + mo.expiry.slice(0, 4), mo.code === fc ? ['FRONT', 'FUT'] : ['FUT'], r.__sym, r);
+        if (on) row.setAttribute('aria-current', 'true');
+        l.appendChild(row);
       });
       side.appendChild(l);
-      side.appendChild(sideNote('Charts follow the continuous front month (rolls automatically). Individual months are listed for reference.'));
-      if (e.tick != null && e.pv != null) side.appendChild(sideNote('Tick ' + e.tick + ' · $' + (e.tick * e.pv).toLocaleString('en-US', { maximumFractionDigits: 2 }) + ' per tick' + (root !== key ? ' (' + key + ' contract)' : '') + '.'));
+      side.appendChild(sideNote('Pick a month to chart that contract on its own. The continuous chart keeps rolling to the front month by itself.'));
+      if (e && e.tick != null && e.pv != null) side.appendChild(sideNote('Tick ' + e.tick + ' · $' + (e.tick * e.pv).toLocaleString('en-US', { maximumFractionDigits: 2 }) + ' per tick' + (root !== key ? ' (' + key + ' contract)' : '') + '.'));
     }, () => { if (sideKey === want) wait.textContent = 'Contract months are unavailable right now.'; });
   }
   function sideCrypto(d) {
@@ -665,6 +698,7 @@ export function mountSearch(ws, o = {}) {
       buildTabs(); buildRail();
       sideKey = null;
       render(true);
+      loadMonthFeed();   // contract months: expiries for the futures rows (memoised 1 h)
       refreshSources();   // first open loads assets/chart-search-sources.js; later opens re-read the member's connections
       favUid = undefined; loadFavs();   // re-read each open: a star added on another device shows
       requestAnimationFrame(() => root.classList.add('is-in'));

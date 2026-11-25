@@ -174,7 +174,9 @@ class Corpus:
         self.text = text
         self.words = set(re.findall(r'[\w-]+', text))
         # string ends that look like a class prefix: 'abc-' " abc-" `abc-${
-        self.prefixes = set(m.group(1) for m in re.finditer(r'([\w-]+[-_])(?:["\'`]|\$\{)', text))
+        # (?<![\w-]) anchors at the word start: same matches, but without it the regex retried from every
+        # character inside every word (28 s of the 30 s build on the 13 MB Charts corpus)
+        self.prefixes = set(m.group(1) for m in re.finditer(r'(?<![\w-])([\w-]+[-_])(?:["\'`]|\$\{)', text))
         self.cache = {}
 
     def has(self, tok):

@@ -44,8 +44,28 @@ jobs:
         with:
           node-version: 22
 
+      # wrangler (npx) + playwright-core downloads, reused across deploys
+      - uses: actions/cache@v4
+        with:
+          path: ~/.npm
+          key: npm-wrangler-4.138.0-playwright-1.56.1
+
+      # FAST SHIP (25 Nov): ship-sha.sh pushes the exact commit to ship/b<build> first and only fast-forwards main once
+      # site-checks passed on it. Same commit = same tree = the same gate (check.py --fast, the generator checks, the
+      # passkey test, the app-shell browser audit, the chart suites), so the deploy does not run it all a second time.
+      # Any push to main without a green site-checks run for this exact SHA still runs the full gate below.
+      - name: Was this exact commit already checked?
+        id: gate
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          n=$(gh api "repos/${{ github.repository }}/actions/workflows/site-checks.yml/runs?head_sha=${{ github.sha }}&status=success&per_page=1" -q '.total_count' 2>/dev/null || echo 0)
+          if [ "${n:-0}" -gt 0 ]; then echo "site-checks passed for ${{ github.sha }}: skipping the duplicate gate"; echo "done=1" >> "$GITHUB_OUTPUT"
+          else echo "no green site-checks run for ${{ github.sha }}: running the full gate"; echo "done=0" >> "$GITHUB_OUTPUT"; fi
+
       - name: Browser audit runtime
-        run: npm install --no-save --no-package-lock playwright-core@1.56.1
+        if: steps.gate.outputs.done != '1'
+        run: npm install --no-save --no-package-lock --no-audit --no-fund playwright-core@1.56.1
 
       - name: Find the Pages project
         id: proj
@@ -131,6 +151,7 @@ jobs:
       # Same gate as runner-test.yml, before anything ships: build 525 went live while runner-test
       # was red (learn pages out of date after a missed ?v= bump), because only runner-test ran it.
       - name: Site checks (check.py + learn pages up to date)
+        if: steps.gate.outputs.done != '1'
         run: |
           python3 tools/check.py
           node tools/gen-learn.js --check
@@ -139,10 +160,19 @@ jobs:
 
       # Roadmap page + dashboard strip: shipped list comes from `Roadmap:` trailers
       # in the git log (full history needed, the checkout above is shallow).
+      # FAST SHIP: the full-history fetch is ~45 s (850 MB pack). ship-sha.sh already commits the regenerated log
+      # ("roadmap log <build>") right after each release commit, so first look back 60 commits: no
+      # `Roadmap:` trailer since the last commit that wrote assets/roadmap-log.json = the committed file is current.
       - name: Refresh the roadmap log from commit trailers
         run: |
-          git fetch --unshallow --quiet origin || git fetch --quiet --depth=100000 origin
-          node tools/gen-roadmap.js
+          git fetch --quiet --deepen=60 origin "${{ github.sha }}" || true
+          last=$(git log --first-parent -1 --format=%H -- assets/roadmap-log.json)
+          if [ -n "$last" ] && ! git log --first-parent --format=%B "$last..HEAD" | grep -qE '^Roadmap:[[:space:]]*[^[:space:]]'; then
+            echo "roadmap log current (written in $(git log -1 --format=%h $last); no Roadmap: trailer since)"
+          else
+            git fetch --unshallow --quiet origin || git fetch --quiet --depth=100000 origin
+            node tools/gen-roadmap.js
+          fi
 
       - name: Refresh the Help Center JSON-LD + no-JS fallback from the data
         run: node tools/gen-help-jsonld.js
@@ -192,31 +222,27 @@ jobs:
           FINATIC_COMPANY_ID: ${{ secrets.FINATIC_COMPANY_ID }}
           FINATIC_ENV: ${{ secrets.FINATIC_ENV }}
           FINATIC_LIVE_ORDERS: ${{ secrets.FINATIC_LIVE_ORDERS }}
-          MT_HOST_SECRET: ${{ secrets.MT_HOST_SECRET }}
-          MT_PUBLISH_KEY: ${{ secrets.MT_PUBLISH_KEY }}
         run: |
-          # Connect-your-own-data sign-in apps: each one is optional; a missing key keeps that row on "Coming soon" (probe says configured:false).
-          for n in ALPACA_CLIENT_ID ALPACA_CLIENT_SECRET TASTY_CLIENT_ID TASTY_CLIENT_SECRET UPSTOX_CLIENT_ID UPSTOX_CLIENT_SECRET FYERS_CLIENT_ID FYERS_CLIENT_SECRET CTRADER_CLIENT_ID CTRADER_CLIENT_SECRET DHAN_PARTNER_ID DHAN_PARTNER_SECRET FINATIC_API_KEY FINATIC_COMPANY_ID FINATIC_ENV FINATIC_LIVE_ORDERS MT_HOST_SECRET MT_PUBLISH_KEY; do
-            v="${!n}"
-            if [ -n "$v" ]; then printf '%s' "$v" | npx --yes wrangler@4.138.0 pages secret put "$n" --project-name "${{ steps.proj.outputs.name }}" >/dev/null && echo "set $n"; fi
-          done
-          if [ -n "$INSIGHTSENTRY_WEBSOCKET_API_KEY" ]; then
-            printf '%s' "$INSIGHTSENTRY_WEBSOCKET_API_KEY" | npx --yes wrangler@4.138.0 pages secret put INSIGHTSENTRY_WEBSOCKET_API_KEY --project-name "${{ steps.proj.outputs.name }}"
-          else
-            echo "INSIGHTSENTRY_WEBSOCKET_API_KEY repo secret not set; realtime futures bridge will stay disabled."
-          fi
-          # Creator Hub: private key that opens sealed community indicators (functions/api/creator/ind.js).
-          if [ -n "$CREATOR_SEAL_KEY" ]; then
-            printf '%s' "$CREATOR_SEAL_KEY" | npx --yes wrangler@4.138.0 pages secret put CREATOR_SEAL_KEY --project-name "${{ steps.proj.outputs.name }}"
-          else
-            echo "CREATOR_SEAL_KEY repo secret not set; community indicators cannot be delivered."
-          fi
-          # Passkeys: the tz-passkeys service account (Firebase Authentication Viewer only) that mints sign-in tokens.
-          if [ -n "$FIREBASE_SA_KEY" ]; then
-            printf '%s' "$FIREBASE_SA_KEY" | npx --yes wrangler@4.138.0 pages secret put FIREBASE_SA_KEY --project-name "${{ steps.proj.outputs.name }}" >/dev/null
-          else
-            echo "FIREBASE_SA_KEY repo secret not set; passkey sign-in stays off (503)."
-          fi
+          # FAST SHIP: one `wrangler pages secret bulk` call instead of ~19 `secret put` calls (~30 s -> ~4 s).
+          # Same rule as before: a secret that is not set in the repo is left alone on Pages (never cleared).
+          # The JSON lives only in the runner's private temp dir (0600) and is deleted straight after the upload.
+          umask 077; F="$RUNNER_TEMP/pages-secrets.json"; trap 'rm -f "$F"' EXIT
+          python3 - "$F" <<'PY'
+          import json, os, sys
+          names = ['ALPACA_CLIENT_ID', 'ALPACA_CLIENT_SECRET', 'TASTY_CLIENT_ID', 'TASTY_CLIENT_SECRET', 'UPSTOX_CLIENT_ID', 'UPSTOX_CLIENT_SECRET',
+                   'FYERS_CLIENT_ID', 'FYERS_CLIENT_SECRET', 'CTRADER_CLIENT_ID', 'CTRADER_CLIENT_SECRET', 'DHAN_PARTNER_ID', 'DHAN_PARTNER_SECRET',
+                   'FINATIC_API_KEY', 'FINATIC_COMPANY_ID', 'FINATIC_ENV', 'FINATIC_LIVE_ORDERS',
+                   'INSIGHTSENTRY_WEBSOCKET_API_KEY', 'CREATOR_SEAL_KEY', 'FIREBASE_SA_KEY']
+          have = {n: os.environ[n] for n in names if os.environ.get(n)}
+          json.dump(have, open(sys.argv[1], 'w'))
+          print('setting:', ' '.join(sorted(have)) or 'nothing')
+          for n, why in (('INSIGHTSENTRY_WEBSOCKET_API_KEY', 'realtime futures bridge will stay disabled'),
+                         ('CREATOR_SEAL_KEY', 'community indicators cannot be delivered'),
+                         ('FIREBASE_SA_KEY', 'passkey sign-in stays off (503)')):
+              if n not in have: print(n + ' repo secret not set; ' + why + '.')
+          PY
+          [ "$(cat "$F")" = '{}' ] && exit 0
+          npx --yes wrangler@4.138.0 pages secret bulk "$F" --project-name "${{ steps.proj.outputs.name }}" >/dev/null && echo "secrets synced"
 
       # Passkeys storage: one KV namespace, bound as PASSKEYS on the production Pages deployment. Idempotent:
       # creates the namespace once, then makes sure the binding is on the project (Cloudflare API, same token).
@@ -265,8 +291,8 @@ jobs:
         run: |
           want=$(node -e "console.log(require('./assets/version.json').build)")
           got=0; meta=0
-          for i in 1 2 3 4 5 6 7 8; do
-            sleep 10
+          for i in $(seq 1 16); do
+            sleep 5
             t=$(date +%s)
             got=$(curl -sfL "https://tradezoro.com/assets/version.json?t=$t" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{try{console.log(JSON.parse(s).build||0)}catch(e){console.log(0)}})" 2>/dev/null || echo 0)
             meta=$(curl -sfL "https://tradezoro.com/?t=$t" | grep -o 'name="stryker-build" content="[0-9]*"' | grep -o '[0-9]*"$' | tr -d '"' || true)

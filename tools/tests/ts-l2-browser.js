@@ -237,10 +237,14 @@ async function crossedBook(b) {
 (async () => {
   const b = await launch({ args: ['--js-flags=--max-old-space-size=768'] });
   try {
+    // L2_PART=a: stale / frozen / crossed book; L2_PART=b: non-admin + admin views. CI runs both halves on two runners (union = all).
+    const PART = process.env.L2_PART || '';
+    if (PART !== 'b') {
     if (!process.env.ONLY_FROZEN) await staleBook(b);
     if (!process.env.ONLY_STALE) await frozenSide(b);
     if (!process.env.ONLY_STALE && !process.env.ONLY_FROZEN) await crossedBook(b);
-    if (!process.env.ONLY_CROSSED && !process.env.ONLY_STALE && !process.env.ONLY_FROZEN) {
+    }
+    if (PART !== 'a' && !process.env.ONLY_CROSSED && !process.env.ONLY_STALE && !process.env.ONLY_FROZEN) {
     // ---- NON-admin: nothing new, nothing opened
     {
       const { ctx, p, errors } = await open(b, { w: 1440, h: 900, admin: false });

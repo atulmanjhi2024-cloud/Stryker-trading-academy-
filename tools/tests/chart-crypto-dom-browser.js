@@ -27,7 +27,7 @@
 // failing (HTTP 503): heat starts only where this page's recording starts, the note is
 // "book history from HH:MM", no console errors. The legacy phases below run with the recorder
 // unreachable (blocked like every non-allowed host), i.e. today's behaviour.
-//   RECORDER_ONLY=1 runs phase R alone (~2 min).
+//   RECORDER_ONLY=1 runs phase R alone (~2 min); SKIP_RECORDER=1 runs everything else.
 const { launch } = require('./lib.js');
 const stub = require('./richstub.js');
 const BASE = process.env.CHART_BASE || 'http://127.0.0.1:8031';
@@ -202,7 +202,7 @@ async function recorderPhase(b) {
   // precise heap numbers + window.gc() for the phone memory budget check
   const b = await launch({ args: ['--enable-precise-memory-info', '--js-flags=--expose-gc --max-old-space-size=768'] });
   try {
-    await recorderPhase(b);
+    if (!process.env.SKIP_RECORDER) await recorderPhase(b);   // SKIP_RECORDER=1: CI runs phase R on its own runner (RECORDER_ONLY=1)
     if (process.env.RECORDER_ONLY) throw 'done';
     // desktop + phone run side by side so both build the same few minutes of book history
     const d = await open(b, { w: 1280, h: 800 });

@@ -30,6 +30,128 @@ FAILURES = []
 SLOT = os.path.join(ROOT, 'tools', 'chrome-slot.sh')   # 3-slot Chrome semaphore
 
 
+# ---- test result cache (fast ship, 25 Nov) --------------------------------------------------------------
+# A node test that passed is not re-run while every file it can load is byte-identical: the key hashes the
+# command, the node version and the content of the test's whole import closure (static + dynamic imports,
+# require()s and every repo path named in a string literal, folders included). Only passes are stored, for
+# 24 h. The store lives in the git common dir (.git/check-cache), so every worktree of the clone shares it and
+# it can never be committed; a fresh CI checkout starts empty and runs everything.
+# STRYKER_NO_CHECK_CACHE=1 turns it off.
+import hashlib
+import threading
+import time
+from types import SimpleNamespace
+
+_PATH_RE = re.compile(r'''["'`]((?:\.{1,2}/|/?(?:assets|functions|tools|workers|tests|android|desktop)/)[^"'`\s?#*${}]*)''')
+_CLOSURE = {}
+_CLOSURE_LOCK = threading.Lock()
+CACHE_TTL = 24 * 3600
+
+
+def _cache_dir():
+    if os.environ.get('STRYKER_NO_CHECK_CACHE'):
+        return None
+    try:
+        g = subprocess.run(['git', 'rev-parse', '--git-common-dir'], capture_output=True, text=True, cwd=ROOT).stdout.strip()
+    except Exception:
+        return None
+    if not g:
+        return None
+    d = os.path.join(ROOT, g, 'check-cache') if not os.path.isabs(g) else os.path.join(g, 'check-cache')
+    os.makedirs(d, exist_ok=True)
+    return d
+
+
+def _resolve(ref, base):
+    ref = ref.rstrip('/')
+    p = os.path.normpath(os.path.join(base, ref) if ref.startswith('.') else os.path.join(ROOT, ref.lstrip('/')))
+    if not p.startswith(ROOT + os.sep):
+        return None
+    for c in (p, p + '.js', p + '.mjs', p + '.cjs', p + '.json', os.path.join(p, 'index.js')):
+        if os.path.isfile(c) or (c == p and os.path.isdir(c)):
+            return c
+    return None
+
+
+def _walk(d):
+    for dp, dns, fns in os.walk(d):
+        dns[:] = [x for x in dns if x not in ('node_modules', '.git', '__pycache__')]
+        for f in fns:
+            yield os.path.join(dp, f)
+
+
+def closure(start, max_dir=None):
+    """Every repo file `start` can load or read, found by following path literals from JS/MJS/HTML/Python files.
+    A folder literal ('assets/sounds/') pulls in the whole folder; max_dir skips folders bigger than that (ci-affected.py)."""
+    seen, todo = set(), [os.path.join(ROOT, s) for s in start]
+    while todo:
+        f = todo.pop()
+        if f in seen:
+            continue
+        if os.path.isdir(f):
+            seen.add(f)
+            fs = list(_walk(f))
+            if max_dir is None or len(fs) <= max_dir:
+                todo.extend(fs)
+            continue
+        if not os.path.isfile(f):
+            continue
+        seen.add(f)
+        if not f.endswith(('.js', '.mjs', '.cjs', '.py', '.html')):
+            continue
+        with _CLOSURE_LOCK:
+            refs = _CLOSURE.get(f)
+        if refs is None:
+            s = open(f, encoding='utf-8', errors='replace').read()
+            refs = [r for r in (_resolve(m.group(1), os.path.dirname(f)) for m in _PATH_RE.finditer(s)) if r]
+            with _CLOSURE_LOCK:
+                _CLOSURE[f] = refs
+        todo.extend(refs)
+    return sorted(x for x in seen if os.path.isfile(x))
+
+
+_NODE_V = None
+
+
+def run_test(cmd, inputs=None, exact=False, **kw):
+    """subprocess.run(cmd, capture_output=True, text=True, cwd=ROOT, **kw) with the pass cache above.
+    inputs: repo-relative seed files of the closure (default: the script, cmd[1]); exact=True: hash only those files."""
+    global _NODE_V
+    kw.setdefault('cwd', ROOT)
+    # python tests: their imports are not followed, so they are only cached when the caller lists the inputs
+    d = _cache_dir() if cmd[0] == 'node' or inputs else None
+    if d is None:
+        return subprocess.run(cmd, capture_output=True, text=True, **kw)
+    if _NODE_V is None:
+        _NODE_V = subprocess.run(['node', '--version'], capture_output=True, text=True).stdout.strip()
+    h = hashlib.sha256(json.dumps([cmd, _NODE_V, sys.version]).encode())
+    for f in (sorted(os.path.join(ROOT, x) for x in inputs) if exact else closure(inputs or [cmd[1]])):
+        h.update(os.path.relpath(f, ROOT).encode() + b'\0')
+        with open(f, 'rb') as fh:
+            h.update(hashlib.sha256(fh.read()).digest())
+    path = os.path.join(d, h.hexdigest() + '.json')
+    try:
+        if time.time() - os.path.getmtime(path) < CACHE_TTL:
+            j = json.load(open(path))
+            return SimpleNamespace(returncode=0, stdout=j['stdout'], stderr=j['stderr'], cached=True)
+    except (OSError, ValueError, KeyError):
+        pass
+    r = subprocess.run(cmd, capture_output=True, text=True, **kw)
+    if r.returncode == 0:
+        tmp = path + '.%d.tmp' % os.getpid()
+        with open(tmp, 'w') as fh:
+            json.dump({'cmd': cmd, 'stdout': r.stdout, 'stderr': r.stderr}, fh)
+        os.replace(tmp, path)
+    return r
+
+
+def run_all(cmds, **kw):
+    """run_test over independent commands in parallel; returns [(cmd, result)] in input order."""
+    from concurrent.futures import ThreadPoolExecutor
+    with ThreadPoolExecutor(max(1, len(cmds))) as ex:
+        return list(zip(cmds, ex.map(lambda c: run_test(c, **kw), cmds)))
+
+
 def html_files():
     """Every shipped HTML page: the root pages plus the /features/<name> pages.
 
@@ -67,7 +189,8 @@ def check_version_consistency():
     exception = 'assets/downloads/stryker-prop-firm-cheat-sheet.pdf?v=341'
     for path in html_files():
         text = open(path).read()
-        for match in re.finditer(r"([^\"'<> ]+)\?v=(\d+)", text):
+        # (?<!...) starts each match at a token start (same matches; unanchored it rescanned every long token per char)
+        for match in re.finditer(r"(?<![^\"'<> ])([^\"'<> ]+)\?v=(\d+)", text):
             url, version = match.group(1), match.group(2)
             if f'{url}?v={version}' == exception:
                 continue
@@ -141,7 +264,7 @@ def check_js_syntax():
     from concurrent.futures import ThreadPoolExecutor
     paths = sorted(glob.glob('assets/*.js')) + sorted(glob.glob('assets/zs/**/*.js', recursive=True)) + sorted(glob.glob('assets/ts/*.js'))
     with ThreadPoolExecutor(8) as ex:
-        results = list(ex.map(lambda p: subprocess.run(['node', '--check', p], capture_output=True, text=True), paths))
+        results = list(ex.map(lambda p: run_test(['node', '--check', p], inputs=[p], exact=True), paths))
     for path, result in zip(paths, results):
         if result.returncode != 0:
             first = result.stderr.strip().split('\n')[0]
@@ -495,8 +618,17 @@ def check_charts_css_subset():
     """assets/style-charts.css (Charts page) is generated from assets/style.css by
     tools/build-charts-css.py; it must be rebuilt whenever style.css or a Charts script changes."""
     import subprocess
-    r = subprocess.run([sys.executable, os.path.join(ROOT, 'tools', 'build-charts-css.py'), '--check'],
-                       capture_output=True, text=True)
+    # cached on the exact inputs: the script, style.css, the generated outputs, each page and every file its corpus reads
+    import importlib.util
+    spec = importlib.util.spec_from_file_location('build_charts_css', os.path.join(ROOT, 'tools', 'build-charts-css.py'))
+    b = importlib.util.module_from_spec(spec); spec.loader.exec_module(b)
+    pages = [b.PAGE] + [os.path.join(ROOT, a) for a, _ in b.EXTRA_PAGES]
+    outs = [b.OUT] + [os.path.join(ROOT, 'assets', o) for _, o in b.EXTRA_PAGES]
+    inputs = {b.SRC, os.path.join(ROOT, 'tools', 'build-charts-css.py'), *pages, *(o for o in outs if os.path.exists(o))}
+    for pg in pages:
+        inputs.update(b.corpus_files(pg))
+    r = run_test([sys.executable, os.path.join('tools', 'build-charts-css.py'), '--check'],
+                 inputs=[os.path.relpath(f, ROOT) for f in inputs], exact=True)
     if r.returncode != 0:
         fail('assets/style-charts.css is out of date: run python3 tools/build-charts-css.py ' + (r.stdout + r.stderr).strip()[:200])
 
@@ -643,14 +775,14 @@ def check_compare_page():
 
 def check_push_rules():
     """Phone push (Owner bug 2026-11-07): prune / pushResult rules + assets/push.js token sync. tools/tests/push-rules-test.js."""
-    r = subprocess.run(['node', 'tools/tests/push-rules-test.js'], capture_output=True, text=True, cwd=ROOT, timeout=60)
+    r = run_test(['node', 'tools/tests/push-rules-test.js'], timeout=60)
     if r.returncode != 0:
         fail('push rules: ' + (r.stdout + r.stderr).strip()[-300:])
 
 
 def check_stripe_void():
     """Billing bug 20 Nov: ended Stripe subscriptions void their OPEN invoices (stubbed Stripe, no network). tools/tests/stripe-void.test.js."""
-    r = subprocess.run(['node', 'tools/tests/stripe-void.test.js'], capture_output=True, text=True, cwd=ROOT, timeout=60)
+    r = run_test(['node', 'tools/tests/stripe-void.test.js'], timeout=60)
     if r.returncode != 0:
         fail('stripe void: ' + (r.stdout + r.stderr).strip()[-300:])
 
@@ -658,16 +790,16 @@ def check_stripe_void():
 def check_ctrader():
     """cTrader (data relay + admin-only trading relay, 23 Nov): allow-lists, per-type checks, gates, audit, idempotency, account lock,
     mocked cTrader end to end. tools/tests/ctrader*.test.mjs. No network, never a real order."""
-    for t in ('ctrader.test.mjs', 'ctrader-trade.test.mjs', 'ctrader-trade-link.test.mjs', 'ctrader-callback.test.mjs', 'ctrader-gate.test.mjs'):
-        r = subprocess.run(['node', 'tools/tests/' + t], capture_output=True, text=True, cwd=ROOT, timeout=180)
+    ts = ('ctrader.test.mjs', 'ctrader-trade.test.mjs', 'ctrader-trade-link.test.mjs', 'ctrader-callback.test.mjs', 'ctrader-gate.test.mjs')
+    for cmd, r in run_all([['node', 'tools/tests/' + t] for t in ts], timeout=180):
         if r.returncode != 0 or 'Error' in r.stderr:
-            fail('ctrader ' + t + ': ' + (r.stdout + r.stderr).strip()[-300:])
+            fail('ctrader ' + os.path.basename(cmd[1]) + ': ' + (r.stdout + r.stderr).strip()[-300:])
 
 
 def check_brokers3():
     """BROKERS 3 (24 Nov): tastytrade / TradeStation / OANDA direct trading. Host guard (no live host while a live flag is off), mapping,
     gates, audit, every adapter call + error path, token swap, browser module. tools/tests/brokers3.test.mjs. Mocked, no network."""
-    r = subprocess.run(['node', 'tools/tests/brokers3.test.mjs'], capture_output=True, text=True, cwd=ROOT, timeout=180)
+    r = run_test(['node', 'tools/tests/brokers3.test.mjs'], timeout=180)
     if r.returncode != 0 or 'Error' in r.stderr:
         fail('brokers3: ' + (r.stdout + r.stderr).strip()[-300:])
 
@@ -676,7 +808,7 @@ def check_metric_alerts():
     """Metric alerts (Owner 2026-11-07): client logic + engine/rules parity (tools/tests/metric-alerts.test.mjs) and the engine rules
     (tools/tests/metric-alerts-test.py, pure + one fake round; no network)."""
     for cmd in (['node', 'tools/tests/metric-alerts.test.mjs'], [sys.executable, 'tools/tests/metric-alerts-test.py']):
-        r = subprocess.run(cmd, capture_output=True, text=True, cwd=ROOT, timeout=120)
+        r = run_test(cmd, timeout=120)
         if r.returncode != 0:
             fail('metric alerts ' + cmd[-1] + ': ' + (r.stdout + r.stderr).strip()[-300:])
 
@@ -686,27 +818,25 @@ def check_phantom():
     and the recorder routes (phantom-worker-local.mjs). No network."""
     for cmd in (['node', 'tools/tests/phantom-core.test.mjs'], [sys.executable, 'workers/book-recorder/test/phantom_test.py'],
                 ['node', 'workers/book-recorder/test/phantom-worker-local.mjs']):
-        r = subprocess.run(cmd, capture_output=True, text=True, cwd=ROOT, timeout=120)
+        r = run_test(cmd, timeout=120)
         if r.returncode != 0:
             fail('phantom ' + cmd[-1] + ': ' + (r.stdout + r.stderr).strip()[-300:])
 
 
 def check_days_load():
-    """Chart setting 'Days of history to load' (member GK): caps, menu, per-timeframe store. tools/tests/chart-days-load.test.mjs.
-    Also the QQQ / SPY polled forming candle (Discord 24 Nov): tools/tests/idx-forming-candle.test.mjs."""
-    for t in ('chart-days-load.test.mjs', 'idx-forming-candle.test.mjs'):
-        r = subprocess.run(['node', 'tools/tests/' + t], capture_output=True, text=True, cwd=ROOT, timeout=60)
-        if r.returncode != 0:
-            fail(t + ': ' + (r.stdout + r.stderr).strip()[-300:])
+    """Chart setting 'Days of history to load' (member GK): caps, menu, per-timeframe store. tools/tests/chart-days-load.test.mjs."""
+    r = run_test(['node', 'tools/tests/chart-days-load.test.mjs'], timeout=60)
+    if r.returncode != 0:
+        fail('days-load: ' + (r.stdout + r.stderr).strip()[-300:])
 
 
 def check_finatic():
     """Finatic broker routes + ZoroCharts live orders (admin only): tests/finatic/*.test.mjs, mocked broker, no network, no real orders."""
     import glob
-    for f in sorted(glob.glob(os.path.join(ROOT, 'tests', 'finatic', '*.test.mjs'))):
-        r = subprocess.run(['node', f], capture_output=True, text=True, cwd=ROOT, timeout=120)
+    fs = sorted(glob.glob(os.path.join('tests', 'finatic', '*.test.mjs'), root_dir=ROOT))
+    for cmd, r in run_all([['node', f] for f in fs], timeout=120):
         if r.returncode != 0:
-            fail('finatic ' + os.path.basename(f) + ': ' + (r.stdout + r.stderr).strip()[-400:])
+            fail('finatic ' + os.path.basename(cmd[1]) + ': ' + (r.stdout + r.stderr).strip()[-400:])
     # the edge Worker version stamp stays 'dev' in git (the deploy workflows write the real hash; bug 23 Nov)
     r = subprocess.run(['node', 'tools/gen-edge-ver.mjs', '--check'], capture_output=True, text=True, cwd=ROOT, timeout=60)
     if r.returncode != 0:
@@ -715,42 +845,26 @@ def check_finatic():
 
 def check_workspaces():
     """Charts workspaces index logic (assets/chart-workspaces-core.js): tools/tests/chart-workspaces.test.mjs."""
-    r = subprocess.run(['node', 'tools/tests/chart-workspaces.test.mjs'], capture_output=True, text=True, cwd=ROOT, timeout=60)
+    r = run_test(['node', 'tools/tests/chart-workspaces.test.mjs'], timeout=60)
     if r.returncode != 0:
         fail('workspaces: ' + (r.stdout + r.stderr).strip()[-300:])
 
 
 def check_account_sync():
     """One account everywhere (assets/account-sync.js): merge / echo / migration / write-storm rules. tools/tests/account-sync.test.mjs."""
-    r = subprocess.run(['node', 'tools/tests/account-sync.test.mjs'], capture_output=True, text=True, cwd=ROOT, timeout=60)
+    r = run_test(['node', 'tools/tests/account-sync.test.mjs'], timeout=60)
     if r.returncode != 0:
         fail('account sync: ' + (r.stdout + r.stderr).strip()[-300:])
 
 
 def check_latency():
     """Charts connection chip numbers + Performance mode coalescing (assets/chart-latency-core.js, chart-live-resume.js): tools/tests/chart-latency.test.mjs."""
-    r = subprocess.run(['node', 'tools/tests/chart-latency.test.mjs'], capture_output=True, text=True, cwd=ROOT, timeout=60)
-    if r.returncode != 0:
-        fail('latency: ' + (r.stdout + r.stderr).strip()[-300:])
-    r = subprocess.run(['node', 'tools/tests/bar-stats.test.mjs'], capture_output=True, text=True, cwd=ROOT, timeout=60)   # Bar Stats maths (assets/chart-bar-stats.js)
-    if r.returncode != 0:
-        fail('bar-stats: ' + (r.stdout + r.stderr).strip()[-300:])
-    # one futures test for every chart symbol form (CME_MINI:MNQ1!, CME:ES1!, MNQZ6 ...): assets/chart-sym.js (Owner bug 17 Nov)
-    r = subprocess.run(['node', 'tools/tests/chart-sym.test.mjs'], capture_output=True, text=True, cwd=ROOT, timeout=60)
-    if r.returncode != 0:
-        fail('chart-sym: ' + (r.stdout + r.stderr).strip()[-300:])
-    # indicator errors: empty-live-stream guard + friendly one-off toast (assets/chart-ind-errors.js, Owner bug 22 Nov 'openTime')
-    r = subprocess.run(['node', 'tools/tests/chart-ind-errors.test.mjs'], capture_output=True, text=True, cwd=ROOT, timeout=60)
-    if r.returncode != 0:
-        fail('chart-ind-errors: ' + (r.stdout + r.stderr).strip()[-300:])
-    # layout link ids /charts/<ID> (assets/chart-layout-slug.js, Owner feature 17 Nov)
-    r = subprocess.run(['node', 'tools/tests/chart-layout-slug.test.mjs'], capture_output=True, text=True, cwd=ROOT, timeout=60)
-    if r.returncode != 0:
-        fail('chart-layout-slug: ' + (r.stdout + r.stderr).strip()[-300:])
-    # crypto footprint: no trade lost between the aggTrades backfill and the live socket (assets/chart-footprint-crypto.js, 22 Nov)
-    r = subprocess.run(['node', 'tools/tests/fp-crypto-gap.test.mjs'], capture_output=True, text=True, cwd=ROOT, timeout=60)
-    if r.returncode != 0:
-        fail('fp-crypto-gap: ' + (r.stdout + r.stderr).strip()[-300:])
+    # chip numbers, Bar Stats maths, chart-sym (every futures symbol form), indicator error guard, layout slugs, crypto footprint gap
+    tests = [('chart-latency.test.mjs', 'latency'), ('bar-stats.test.mjs', 'bar-stats'), ('chart-sym.test.mjs', 'chart-sym'), ('chart-ind-errors.test.mjs', 'chart-ind-errors'), ('chart-layout-slug.test.mjs', 'chart-layout-slug'), ('fp-crypto-gap.test.mjs', 'fp-crypto-gap')]
+    res = run_all([['node', 'tools/tests/' + t] for t, _ in tests], timeout=60)
+    for (t, label), (_, r) in zip(tests, res):
+        if r.returncode != 0:
+            fail(label + ': ' + (r.stdout + r.stderr).strip()[-300:])
 
 
 def check_zscript_engine():
@@ -762,7 +876,7 @@ def check_zscript_engine():
     from concurrent.futures import ThreadPoolExecutor
     suites = ['lang', 'ta', 'vm', 'limits', 'security', 'frames']
     def one(n):
-        return n, subprocess.run(['node', f'tools/tests/zs-{n}.test.mjs'], capture_output=True, text=True, cwd=ROOT, timeout=300)
+        return n, run_test(['node', f'tools/tests/zs-{n}.test.mjs'], timeout=300)
     with ThreadPoolExecutor(3) as ex:
         for n, r in ex.map(one, suites):
             if r.returncode != 0:
@@ -776,7 +890,7 @@ def check_thinkscript_engine():
     if not os.path.isdir(os.path.join(ROOT, 'assets', 'ts')):
         return
     for n in ('lang', 'corpus', 'worker'):
-        r = subprocess.run(['node', f'tools/tests/ts-{n}.test.mjs'], capture_output=True, text=True, cwd=ROOT, timeout=300)
+        r = run_test(['node', f'tools/tests/ts-{n}.test.mjs'], timeout=300)
         if r.returncode != 0:
             bad = [l for l in r.stdout.splitlines() if l.startswith('FAIL')][:5]
             fail(f'thinkScript ts-{n} tests failed: ' + ('; '.join(bad) or (r.stdout + r.stderr)[-300:]))
@@ -785,7 +899,7 @@ def check_mql5_engine():
     and a 25+ indicator corpus (tools/tests/mq5-engine.test.mjs); the help page's built-in list is current."""
     if not os.path.isdir(os.path.join(ROOT, 'assets', 'mq5')):
         return
-    r = subprocess.run(['node', 'tools/tests/mq5-engine.test.mjs'], capture_output=True, text=True, cwd=ROOT, timeout=300)
+    r = run_test(['node', 'tools/tests/mq5-engine.test.mjs'], timeout=300)
     if r.returncode != 0:
         bad = [l for l in r.stdout.splitlines() if l.startswith('FAIL')][:5]
         fail('MQL5 engine tests failed: ' + ('; '.join(bad) or (r.stdout + r.stderr)[-300:]))

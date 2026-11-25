@@ -1,6 +1,15 @@
 # The slow part of tools/check.py, run in parallel on GitHub instead of on the server.
 # Ship flow: local `python3 tools/check.py --fast`, push to ship/<build>, tools/ci-wait.sh <sha>, fast-forward main.
 # Browser suites are sharded across the matrix; failures upload their screenshots (out/).
+#
+# FAST SHIP (25 Nov): 9 browser jobs, balanced by the step times of the 25 Nov runs:
+#   shell audit 3 shards (~1 min each, always run: it covers every page);
+#   charts live a/b (was one 3.2 min job + ts-bigtrades); ts-l2 split by L2_PART (a = stale / frozen / crossed book,
+#   b = non-admin + admin views; was 4 min); crypto dom split into the recorder phase (RECORDER_ONLY) and the rest
+#   (SKIP_RECORDER; was 4.6 min). The union of every split is exactly the old suite: no check is dropped.
+# Each chart job first asks tools/ci-affected.py whether anything it loads changed versus main (the pages the suite
+# opens with their whole script corpus, the suite, its harness; a pure ?v= bump does not count; any unknown change =
+# run). Nothing changed = the job passes in ~15 s without a browser. workflow_dispatch run_all=true runs everything.
 
 name: site-checks
 
@@ -8,6 +17,9 @@ on:
   push:
     branches: ['ship/**', 'hermes/**']
   workflow_dispatch:
+    inputs:
+      run_all: { description: 'Run every browser suite (ignore the change map)', type: boolean, default: false }
+      base: { description: 'Branch the change map compares with', type: string, default: main }
 
 permissions:
   contents: read
@@ -19,6 +31,7 @@ concurrency:
 env:
   PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
   STRYKER_CHROMIUM: /usr/bin/google-chrome
+  CI_RUN_ALL: ${{ inputs.run_all && '1' || '' }}
 
 jobs:
   static:
@@ -26,15 +39,18 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 8
     steps:
+      # shallow (was fetch-depth 0, ~30 s): full history only fed two warn-only checks (roadmap log behind, asset
+      # changed without a bump); both skip on a shallow clone, and ship-sha.sh regenerates the roadmap log locally
       - uses: actions/checkout@v6
-        with: { fetch-depth: 0 }
       - uses: actions/setup-node@v6
         with: { node-version: 22 }
       - run: python3 tools/check.py --fast
+      # the rest of the deploy gate (deploy-site.yml skips its own copy when this run passed for the same commit)
       - run: |
           node tools/gen-sitemap.js
           if [ -f tools/gen-learn.js ]; then node tools/gen-learn.js --check; fi
           if [ -f tools/gen-indicator-pages.js ]; then node tools/gen-indicator-pages.js --check; fi
+          node tools/tests/passkey.test.mjs
 
   browser:
     name: browser (${{ matrix.name }})
@@ -47,27 +63,43 @@ jobs:
           - { name: shell 1/3, kind: shell, shard: '1/3' }
           - { name: shell 2/3, kind: shell, shard: '2/3' }
           - { name: shell 3/3, kind: shell, shard: '3/3' }
-          - { name: charts live, kind: suites, suites: 'chart-live-of-browser.js chart-rt-access-browser.js byo-browser.js drawer-touch-browser.js' }
-          - { name: charts trades+l2, kind: suites, suites: 'ts-bigtrades-browser.js ts-l2-browser.js' }
-          - { name: charts crypto dom, kind: suites, suites: 'chart-crypto-dom-browser.js' }
+          - { name: charts live a, kind: suites, suites: 'chart-live-of-browser.js drawer-touch-browser.js' }
+          - { name: charts live b, kind: suites, suites: 'chart-rt-access-browser.js byo-browser.js ts-bigtrades-browser.js' }
+          - { name: charts l2 a, kind: suites, suites: 'ts-l2-browser.js', part: 'L2_PART=a' }
+          - { name: charts l2 b, kind: suites, suites: 'ts-l2-browser.js', part: 'L2_PART=b' }
+          - { name: charts crypto dom recorder, kind: suites, suites: 'chart-crypto-dom-browser.js', part: 'RECORDER_ONLY=1' }
+          - { name: charts crypto dom book, kind: suites, suites: 'chart-crypto-dom-browser.js', part: 'SKIP_RECORDER=1' }
     steps:
       - uses: actions/checkout@v6
+      - name: Anything these suites load changed?
+        id: aff
+        if: matrix.kind == 'suites'
+        run: |
+          # main's tip is the base: ship branches sit on it. A file main changed since only adds files (more runs, never fewer).
+          if [ "$GITHUB_REF" != refs/heads/main ] && git fetch -q --depth=1 origin "${{ inputs.base || 'main' }}"; then
+            rc=0; python3 tools/ci-affected.py FETCH_HEAD ${{ matrix.suites }} || rc=$?   # || : the step shell is bash -e
+          else echo "run: no main to compare with"; rc=0; fi
+          if [ $rc = 3 ]; then echo "run=0" >> "$GITHUB_OUTPUT"; else echo "run=1" >> "$GITHUB_OUTPUT"; fi
       - uses: actions/setup-node@v6
+        if: matrix.kind == 'shell' || steps.aff.outputs.run == '1'
         with: { node-version: 22 }
       - name: Browser runtime (playwright-core + the runner's Chrome)
+        if: matrix.kind == 'shell' || steps.aff.outputs.run == '1'
         run: |
-          npm install --no-save --no-package-lock playwright-core@1.56.1
+          npm install --no-save --no-package-lock --no-audit --no-fund playwright-core@1.56.1
           google-chrome --version
       - name: app-shell audit (shard)
         if: matrix.kind == 'shell'
         env: { SHARD: '${{ matrix.shard }}' }
         run: node tools/tests/app-shell-audit.js
       - name: Browser suites
-        if: matrix.kind == 'suites'
+        if: matrix.kind == 'suites' && steps.aff.outputs.run == '1'
         env: { WAIT_MIN: '2' }   # crypto-dom waits for the book to record (default 3.5 min); the mocked book needs less
-        run: tools/ci-browser.sh ${{ matrix.suites }}
+        run: |
+          if [ -n "${{ matrix.part }}" ]; then export ${{ matrix.part }}; fi
+          tools/ci-browser.sh ${{ matrix.suites }}
       - uses: actions/upload-artifact@v4
-        if: always()
+        if: always() && (matrix.kind == 'shell' || steps.aff.outputs.run == '1')
         with:
           name: shots-${{ strategy.job-index }}
           path: |

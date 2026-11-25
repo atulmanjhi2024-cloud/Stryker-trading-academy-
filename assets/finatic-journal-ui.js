@@ -14,7 +14,7 @@ export const BROKER_AVAILABLE = {
   'interactive-brokers': false, // the Finatic order API has no Interactive Brokers adapter (its order schema lists none), so nothing can be traded
   'metatrader-4': true,         // our MT path (venue 'mt', Finatic mt4 adapter); Owner enabled it 21 Nov; only tested with stubs, no live order log yet
   'metatrader-5': true,         // same as MetaTrader 4 (Finatic mt5 adapter); the hosted-terminal path (w-mtcloud) is not merged
-  'ninjatrader': true,          // Finatic ninja_trader adapter exists; no failed orders on record
+  'ninjatrader': false,         // Owner 24 Nov: coming soon (runs on the same Tradovate backend that fails via Finatic)
   'rithmic': false,             // Finatic connect returns "permission denied (code 13)": not enabled for our app
   'tastytrade': true,           // Finatic tasty_trade adapter exists; no failed orders on record
   'tradovate': false,           // every Tradovate order via Finatic failed with 504 (4 of 4, 2 users, 21-23 Nov); Finatic's order schema has no Tradovate entry; support ticket open. Set true once Finatic confirms

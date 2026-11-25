@@ -3,6 +3,8 @@
 // Order history | Trade history | Balances. Data: the account the member picked. Paper (everyone): window.__stkPaper.account state.
 // Live (admins only, a broker account picked): chart-live.js dock() = read-only copy of the poll data (+ one read of transactions).
 // Actions reuse the existing paper closePos / cancelOrder / flattenAll and live flatten / cancel (their own confirms). No new order routes.
+// Spread column (Owner 25 Nov 2026): Positions / Open orders rows of broker symbols whose chart feed streams bid + ask (byo-core.js
+// QUOTES, the chart's own stream) show the live spread in pips / points; shown only when at least one row has one.
 // Lazy-loaded by assets/chart-paper.js mountPaper(). Test: tools/tests/chart-posorders-browser.js.
 const KEY = 'stryker_posorders_ui', H0 = 220, HMIN = 120, PHONE = 700, ICON = 600;
 const TABS = [['pos', 'Positions'], ['ord', 'Open orders'], ['oh', 'Order history'], ['th', 'Trade history'], ['bal', 'Balances']];
@@ -11,6 +13,8 @@ const money = (n, sign) => (Number.isFinite(n) ? (n < 0 ? '−' : sign && n > 0 
 const cls = (n) => (n > 0 ? 'up' : n < 0 ? 'down' : '');
 const show = (s) => String(s || '').replace(/^[^:]+:/, '');
 const phone = () => window.innerWidth <= PHONE;
+// live spread of a dock row's symbol: the cTrader account chart (CT:NAS100) first, then the plain name (EURUSD / EUR_USD)
+const spreadOf = (sym) => { const Q = window.__stkQuotes; if (!Q || !sym) return null; const q = Q.get('CT:' + sym) || Q.get(sym); return q ? String(Math.round(q.spread * 10) / 10) : null; };
 
 let P = null, btn = null, dock = null, ui = { open: false, tab: 'pos', h: H0 }, sig = '', liveTx = null;
 try { Object.assign(ui, JSON.parse(localStorage.getItem(KEY) || '{}'), { open: false }); } catch (e) {}
@@ -46,19 +50,15 @@ const data = () => { try { return (P.live ? liveData() : null) || (P.live ? null
 
 // ---- view -----------------------------------------------------------------------------------------------------------------------
 const tbl = (head, rows, empty) => rows.length
-  ? '<div class="stkpo-tw"><table class="stkpo-t"><thead><tr>' + head.map((h, i) => '<th' + (/Qty|Avg|Last|P&amp;L|Price|Commission|Swap|^TP$|^SL$/.test(esc(h)) ? ' class="n"' : '') + '>' + esc(h) + '</th>').join('') + '</tr></thead><tbody>' + rows.join('') + '</tbody></table></div>'
+  ? '<div class="stkpo-tw"><table class="stkpo-t"><thead><tr>' + head.map((h, i) => '<th' + (/Qty|Avg|Last|Spread|P&amp;L|Price|Commission|Swap/.test(esc(h)) ? ' class="n"' : '') + '>' + esc(h) + '</th>').join('') + '</tr></thead><tbody>' + rows.join('') + '</tbody></table></div>'
   : '<p class="stkpo-empty">' + esc(empty) + '</p>';
 const X = (i, label) => '<td class="x"><button type="button" class="stkpo-x" data-x="' + i + '" aria-label="' + esc(label) + '" title="' + esc(label) + '"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg></button></td>';
 function body(d) {
-  const t = ui.tab;
-  // AUTO-TPSL: live cTrader rows get a TP and an SL cell; a tap opens a small inline editor (Enter sets, Esc cancels, empty = remove)
-  const lv = (p, i, k) => !p.setLevel ? '<td class="n">—</td>' : '<td class="n lv"><button type="button" class="stkpo-lv ' + k + (p[k] ? '' : ' add') + '" data-lv="' + k + '" data-i="' + i + '" aria-label="' + (p[k] ? 'Change ' : 'Add ') + (k === 'tp' ? 'take profit' : 'stop loss') + ' for ' + esc(p.sym) + '">' + esc(p[k] || '+ Add') + '</button></td>';
-  if (t === 'pos') return tbl(['Symbol', 'Side', 'Qty', 'Avg price', 'Last'].concat(d.sltp ? ['TP', 'SL'] : []).concat(['Open P&L', '']), d.pos.map((p, i) => '<tr><td class="s">' + esc(p.sym) + '</td><td class="' + (p.buy ? 'up' : 'down') + '">' + p.side + '</td><td class="n">' + esc(p.qty) + '</td><td class="n">' + esc(p.avg) + '</td><td class="n">' + esc(p.last) + '</td>' + (d.sltp ? lv(p, i, 'tp') + lv(p, i, 'sl') : '') + '<td class="n ' + cls(p.pnl) + '">' + (p.pnl == null ? '—' : money(p.pnl, true)) + '</td>' + (p.close ? X(i, 'Close ' + p.sym) : '<td></td>') + '</tr>'), 'No open positions');
+  const t = ui.tab, sp = (rows) => rows.some((r) => r.spread != null), spTd = (r) => '<td class="n">' + esc(r.spread != null ? r.spread : '—') + '</td>';
+  const sP = sp(d.pos), sO = sp(d.ord);
+  if (t === 'pos') return tbl(['Symbol', 'Side', 'Qty', 'Avg price', 'Last'].concat(sP ? ['Spread'] : [], ['Open P&L', '']), d.pos.map((p, i) => '<tr><td class="s">' + esc(p.sym) + '</td><td class="' + (p.buy ? 'up' : 'down') + '">' + p.side + '</td><td class="n">' + esc(p.qty) + '</td><td class="n">' + esc(p.avg) + '</td><td class="n">' + esc(p.last) + '</td>' + (sP ? spTd(p) : '') + '<td class="n ' + cls(p.pnl) + '">' + (p.pnl == null ? '—' : money(p.pnl, true)) + '</td>' + (p.close ? X(i, 'Close ' + p.sym) : '<td></td>') + '</tr>'), 'No open positions');
   if (t === 'ord') return (d.ord.length && d.cancelAll ? '<div class="stkpo-tools"><button type="button" class="stkpo-b" data-all="1">Cancel all</button></div>' : '') +
-    (d.live && d.sltp
-      // AUTO-TPSL: live cTrader: SL / TP of each working order, its time, and the positions' own stop loss / take profit orders
-      ? tbl(['Symbol', 'Side', 'Type', 'Qty', 'Price', 'SL', 'TP', 'Time', 'Status', ''], d.ord.map((o, i) => '<tr' + (o.prot ? ' class="prot ' + o.prot + '"' : '') + '><td class="s">' + esc(o.sym) + '</td><td class="' + (o.buy ? 'up' : 'down') + '">' + o.side + '</td><td>' + esc(o.type) + '</td><td class="n">' + esc(o.qty) + '</td><td class="n">' + esc(o.price) + '</td><td class="n">' + esc(o.sl || '—') + '</td><td class="n">' + esc(o.tp || '—') + '</td><td>' + esc(o.t ? when(o.t) : '—') + '</td><td>' + esc(o.status) + '</td>' + (o.cancel ? X(i, (o.prot ? 'Remove ' + (o.prot === 'sl' ? 'stop loss' : 'take profit') + ' of ' : 'Cancel ') + o.sym + (o.prot ? ' position' : ' order')) : '<td></td>') + '</tr>'), 'No open orders')
-      : tbl(['Symbol', 'Side', 'Type', 'Qty', 'Price', 'Status', ''], d.ord.map((o, i) => '<tr><td class="s">' + esc(o.sym) + '</td><td class="' + (o.buy ? 'up' : 'down') + '">' + o.side + '</td><td>' + esc(o.type) + '</td><td class="n">' + esc(o.qty) + '</td><td class="n">' + esc(o.price) + '</td><td>' + esc(o.status) + '</td>' + (o.cancel ? X(i, 'Cancel ' + o.sym + ' order') : '<td></td>') + '</tr>'), 'No open orders'));
+    tbl(['Symbol', 'Side', 'Type', 'Qty', 'Price'].concat(sO ? ['Spread'] : [], ['Status', '']), d.ord.map((o, i) => '<tr><td class="s">' + esc(o.sym) + '</td><td class="' + (o.buy ? 'up' : 'down') + '">' + o.side + '</td><td>' + esc(o.type) + '</td><td class="n">' + esc(o.qty) + '</td><td class="n">' + esc(o.price) + '</td>' + (sO ? spTd(o) : '') + '<td>' + esc(o.status) + '</td>' + (o.cancel ? X(i, 'Cancel ' + o.sym + ' order') : '<td></td>') + '</tr>'), 'No open orders');
   const err = (m, k) => '<p class="stkpo-empty stkpo-err" role="alert"><span>' + esc(m) + '</span><button type="button" class="stkpo-b" data-retry="' + k + '">Retry</button></p>';
   if (t === 'oh' && d.ohErr && !(Array.isArray(d.oh) && d.oh.length)) return err(d.ohErr, 'oh');
   if (t === 'oh' && (d.oh == null || d.oh === 'loading')) return '<p class="stkpo-empty">Loading…</p>';
@@ -82,6 +82,7 @@ function render(force) {
   const al = 'Positions & Orders' + (n ? ', ' + n + ' open' : ''); if (btn.getAttribute('aria-label') !== al) btn.setAttribute('aria-label', al); if (btn.title !== 'Positions & Orders') btn.title = 'Positions & Orders';
   if (!ui.open || !d) return;
   cur = d;
+  if (d.live) for (const r of d.pos.concat(d.ord)) r.spread = spreadOf(r.sym);   // live broker rows only; paper rows stay as they are
   for (const b of dock.querySelectorAll('[role=tab]')) { const o = b.dataset.t === ui.tab; b.classList.toggle('on', o); b.setAttribute('aria-selected', String(o)); b.tabIndex = o ? 0 : -1; }
   { const tl = dock.querySelector('.stkpo-tabs'), on = tl.querySelector('[role=tab].on');   // phones: the picked tab is never cut off at the row's edge
     if (on && tl.scrollWidth > tl.clientWidth) { const l = on.offsetLeft - tl.offsetLeft, r = l + on.offsetWidth; if (l < tl.scrollLeft) tl.scrollLeft = l; else if (r > tl.scrollLeft + tl.clientWidth) tl.scrollLeft = r - tl.clientWidth; } }
@@ -89,9 +90,7 @@ function render(force) {
   if (ui.tab === 'th' && d.live && d.th == null) d.th = 'loading';
   if (ui.tab === 'oh' && d.live && d.oh == null) d.oh = 'loading';
   const s = JSON.stringify([ui.tab, d.live, d.pos, d.ord, d.oh, d.th, d.bal, d.thErr, d.ohErr, d.thNote, tzOf()]);
-  if (!force && s === sig) return;
-  if (dock.querySelector('.stkpo-ed')) return;   // an inline TP / SL editor is open: never redraw under the typing
-  sig = s;
+  if (!force && s === sig) return; sig = s;
   const v = dock.querySelector('.stkpo-view'), top = v.scrollTop;
   v.innerHTML = body(d); v.scrollTop = top;
 }
@@ -139,7 +138,6 @@ function build() {
   dock.querySelector('.stkpo-tabs').addEventListener('click', (e) => { const b = e.target.closest('[role=tab]'); if (!b) return; ui.tab = b.dataset.t; save(); if ((ui.tab === 'th' || ui.tab === 'oh') && P.live && P.live.dockTrades) P.live.dockTrades(false, ui.tab); render(true); });
   dock.querySelector('.stkpo-tabs').addEventListener('keydown', (e) => { const i = TABS.findIndex((t) => t[0] === ui.tab), j = e.key === 'ArrowRight' ? i + 1 : e.key === 'ArrowLeft' ? i - 1 : -1; if (j < 0 || j >= TABS.length) return; ui.tab = TABS[j][0]; save(); render(true); dock.querySelector('[role=tab].on').focus(); });
   dock.querySelector('.stkpo-view').addEventListener('click', (e) => {
-    const lvb = e.target.closest('[data-lv]'); if (lvb && cur) { openEditor(lvb, cur.pos[+lvb.dataset.i], lvb.dataset.lv); return; }
     const x = e.target.closest('[data-x]'), all = e.target.closest('[data-all]');
     if (x && cur) { const r = (ui.tab === 'pos' ? cur.pos : cur.ord)[+x.dataset.x]; if (r) (r.close || r.cancel)(); setTimeout(() => render(true), 60); }
     if (all && cur && cur.cancelAll) { cur.cancelAll(); setTimeout(() => render(true), 60); }
@@ -157,32 +155,6 @@ function build() {
   window.addEventListener('resize', () => { placeBtn(); if (ui.open) document.documentElement.classList.toggle('stkpo-sheet-open', dock.classList.contains('sheet')); });
 }
 
-// AUTO-TPSL: inline TP / SL editor in a Positions row (live cTrader). Enter / Set = setLevel (every live check + the confirm setting),
-// empty + Set = remove, Esc / Cancel = nothing. The error from the checks shows under the field; nothing is sent when it is wrong.
-function openEditor(btnEl, row, k) {
-  if (!row || !row.setLevel) return;
-  closeEditor();
-  const td = btnEl.closest('td'), raw = row[k + 'Raw'];
-  const ed = document.createElement('div'); ed.className = 'stkpo-ed'; ed.setAttribute('role', 'group'); ed.setAttribute('aria-label', (k === 'tp' ? 'Take profit' : 'Stop loss') + ' for ' + row.sym);
-  ed.innerHTML = '<input type="text" inputmode="decimal" autocomplete="off" spellcheck="false" aria-label="' + (k === 'tp' ? 'Take profit price' : 'Stop loss price') + '" placeholder="' + (k === 'tp' ? 'TP price' : 'SL price') + '">' +
-    '<button type="button" class="stkpo-b go" data-ed="set">Set</button><button type="button" class="stkpo-b" data-ed="no" aria-label="Cancel">Cancel</button><p class="stkpo-ed-err" role="alert" hidden></p>';
-  const inp = ed.querySelector('input'); inp.value = raw != null ? Number(raw).toFixed(row.dec != null ? row.dec : 5) : '';
-  td.appendChild(ed); btnEl.hidden = true;
-  const err = ed.querySelector('.stkpo-ed-err');
-  const go = async () => {
-    const t = inp.value.replace(/[, ]/g, '').trim(), v = t === '' ? null : Number(t);
-    if (t !== '' && !(v > 0)) { err.textContent = 'Enter a price, or leave it empty to remove it.'; err.hidden = false; return; }
-    if (v == null && raw == null) { closeEditor(); return; }
-    ed.querySelectorAll('button,input').forEach((x) => { x.disabled = true; }); err.hidden = true;
-    const r = await row.setLevel(k, v);
-    if (r && r.error && !/^Cancelled/.test(r.error)) { ed.querySelectorAll('button,input').forEach((x) => { x.disabled = false; }); err.textContent = r.error; err.hidden = false; inp.focus(); return; }
-    closeEditor(); sig = ''; render(true);
-  };
-  ed.addEventListener('click', (e) => { const b = e.target.closest('[data-ed]'); if (!b) return; e.stopPropagation(); if (b.dataset.ed === 'set') go(); else { closeEditor(); render(true); } });
-  inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); go(); } else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); closeEditor(); render(true); } });
-  setTimeout(() => { inp.focus(); inp.select(); }, 0);
-}
-function closeEditor() { const ed = dock && dock.querySelector('.stkpo-ed'); if (ed) { const b = ed.parentNode.querySelector('[data-lv]'); if (b) b.hidden = false; ed.remove(); } sig = ''; }
 const CSS = `
 .stkpo-btn{ flex:none; display:inline-flex; align-items:center; gap:6px; height:24px; margin:0 4px 0 6px; padding:0 8px; border:0; border-radius:4px; background:transparent; color:var(--vela-fg-muted, var(--ink-2)); font:600 12px/16px -apple-system, BlinkMacSystemFont, "Trebuchet MS", Roboto, Ubuntu, sans-serif; cursor:pointer; white-space:nowrap; box-sizing:border-box; }
 .stkpo-btn[hidden]{ display:none; }
@@ -220,17 +192,6 @@ const CSS = `
 .stkpo-b{ height:28px; padding:0 12px; border:1px solid var(--line); border-radius:8px; background:none; color:var(--ink-1); font:600 12px/1 var(--font-body, sans-serif); cursor:pointer; }
 .stkpo-b:hover{ background:var(--bg-2); color:var(--ink-0); }
 .stkpo-empty{ margin:16px 4px; color:var(--ink-3); }
-.stkpo-t td.lv{ position:relative; }
-.stkpo-lv{ height:24px; padding:0 8px; border:1px solid transparent; border-radius:6px; background:none; color:var(--ink-1); font:500 12px/1 var(--font-body, sans-serif); font-variant-numeric:tabular-nums; cursor:pointer; white-space:nowrap; }
-.stkpo-lv:hover{ border-color:var(--line); background:var(--bg-2); color:var(--ink-0); }
-.stkpo-lv.tp:not(.add){ color:#089981; } .stkpo-lv.sl:not(.add){ color:#f23645; } .stkpo-lv.add{ color:var(--ink-3); }
-.stkpo-lv:focus-visible,.stkpo-ed input:focus-visible{ outline:2px solid var(--gold); outline-offset:1px; }
-.stkpo-ed{ display:inline-flex; align-items:center; gap:4px; flex-wrap:wrap; justify-content:flex-end; padding:4px 0; min-width:236px; }
-.stkpo-ed input{ width:96px; height:28px; padding:0 8px; box-sizing:border-box; border:1px solid var(--line); border-radius:8px; background:var(--bg-1); color:var(--ink-0); font:500 12px/1 var(--font-mono, monospace); font-variant-numeric:tabular-nums; text-align:right; }
-.stkpo-b.go{ background:var(--gold); border-color:var(--gold); color:#0b0b0d; }
-.stkpo-ed-err{ flex-basis:100%; margin:0; max-width:280px; white-space:normal; text-align:right; font:600 11px/16px var(--font-body, sans-serif); color:#f23645; }
-.stkpo-ed-err[hidden]{ display:none; }
-.stkpo-t tr.prot td:nth-child(3){ color:var(--ink-2); }
 .stkpo-err{ display:flex; align-items:center; gap:12px; color:var(--ink-2); }
 .stkpo-err span{ flex:1 1 auto; min-width:0; max-width:640px; } .stkpo-err .stkpo-b{ flex:none; }
 .stkpo-bal{ display:grid; grid-template-columns:repeat(auto-fill, minmax(160px, 1fr)); gap:8px; padding-top:12px; }
@@ -239,7 +200,6 @@ const CSS = `
 .stkpo-bal b.up{ color:#089981; } .stkpo-bal b.down{ color:#f23645; }
 .stkpo.sheet{ position:fixed; left:0; right:0; bottom:0; z-index:90; height:min(60vh, 460px); border:1px solid var(--line); border-bottom:0; border-radius:16px 16px 0 0; box-shadow:0 -12px 32px rgba(0,0,0,.35); padding-bottom:env(safe-area-inset-bottom); }
 .stkpo.sheet .stkpo-grip{ display:none; }
-.stkpo.sheet .stkpo-lv{ height:36px; } .stkpo.sheet .stkpo-ed{ min-width:276px; } .stkpo.sheet .stkpo-ed input{ height:40px; width:112px; font-size:16px; } .stkpo.sheet .stkpo-ed .stkpo-b{ height:40px; }
 .stkpo.sheet .stkpo-tabs [role=tab]{ height:40px; } .stkpo.sheet .stkpo-close{ width:40px; height:40px; } .stkpo.sheet .stkpo-x{ width:40px; height:40px; }
 :root[data-theme="light"] .stkpo .up,:root[data-theme="light"] .stkpo .down{ filter:none; }
 @media (prefers-reduced-motion:reduce){ .stkpo-grip::after{ transition:none; } }

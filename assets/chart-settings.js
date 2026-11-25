@@ -583,6 +583,9 @@ function ourSections(id){
       { kind: 'color', label: 'Status line background', id: 'sl-bg-color', get: g('slBgColor'), set: st('slBgColor') }
     ] },
     { title: 'Scales and lines' + MARK, id: 'stk-scales', placement: 'end', rows: [
+      { kind: 'heading', label: 'Broker prices' },
+      { kind: 'toggle', label: 'Show bid / ask lines', id: 'bid-ask', get: () => { const A = window.__stkAxisTags; return A ? A.bidAskOn() : true; }, set: (v) => { const A = window.__stkAxisTags; if (A) A.setBidAsk(!!v); },
+        title: 'Broker CFD and forex charts (cTrader, OANDA): a Bid line and an Ask line with their prices on the scale, like MetaTrader. Other charts have no bid / ask feed, so nothing shows there. Saved for your account on this device.' },
       { kind: 'heading', label: 'More' }, off('Price scale on the left'), off('Previous day close line'), off('High and low price labels'),
       off('Indicator labels on the price scale'), off('Currency and unit label'),
       { kind: 'heading', label: 'Time scale' },

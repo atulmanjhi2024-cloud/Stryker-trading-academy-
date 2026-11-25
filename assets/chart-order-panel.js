@@ -41,6 +41,11 @@
 //           size from risk, and "Panel layout": where the panel sits (Float | Left | Right | Bottom of the chart; docked modes give the
 //           chart that space, like Dock right) and which account numbers the footer shows (Balance, Equity, Today's P&L, Open P&L;
 //           prefs.ai, none by default). Advanced off = the panel is exactly the simple one again (TP1 / risk are not sent).
+// SPREAD (Owner 25 Nov 2026, "show spread on trading panel"): on a broker CFD / forex chart whose feed streams bid AND ask (cTrader spots,
+//           OANDA pricing: byo-core.js QUOTES), MetaTrader style: Sell shows the bid, Buy shows the ask, and the details bar shows
+//           "Spread 1.2" (pips / points from the symbol's pipPosition, else the pip of the pair, else the tick), amber
+//           "Spread is wider than usual" when it is > 3x its 5-min median. DISPLAY ONLY: quote() above (Join Bid / Ask, order prices)
+//           is not fed from it, so what an order sends is unchanged.
 // Tests: tools/tests/chart-live-browser.js (live + member paper, mocked endpoints only), tools/tests/chart-paper-trading-browser.js.
 // Education only. Not financial advice.
 import * as L from './chart-live-core.js?v=1282';
@@ -160,6 +165,9 @@ function quote(c) {
   if (!qs.book || Date.now() - qs.at > QUOTE_MAX_AGE) return null;
   const b = bestOf(qs.book.bids, qs.book.asks); return b ? { bid: b.bid, ask: b.ask, note: '' } : null;
 }
+// broker bid / ask for display (see SPREAD above); null on charts without a two-sided feed
+const brokerQuote = (c) => { const Q = window.__stkQuotes; return Q && c.sym ? Q.get(c.sym, c.tick) : null; };
+const spreadText = (q) => String(Math.round(q.spread * 10) / 10);
 const noQuoteWhy = (c) => (c.fut && l2Delayed() ? 'Join Bid / Join Ask need the live order book (yours is 10 min delayed).' : 'Waiting for the live bid and ask…');
 
 // ------------------------------------------------------------------------------------------------ quantities, brackets
@@ -306,6 +314,7 @@ function build() {
         '<span class="stkop-inst" role="radiogroup" aria-label="Trade instrument (mini or micro)" data-k="inst" hidden></span><label class="stkop-mtsym" data-k="mtsym" hidden></label></div>' +
       '<div class="stkop-il"><span class="stkop-last" data-k="last">—</span><span class="stkop-chg" data-k="chg"></span><span class="stkop-sp"></span>' +
         '<span class="stkop-ba"><span>Bid <b class="bid" data-k="bid">—</b></span><span>Ask <b class="ask" data-k="ask">—</b></span></span></div>' +
+      '<div class="stkop-il stkop-sprl" data-k="sprw" hidden><span class="stkop-ba"><span>Spread <b data-k="spr">—</b></span></span><span class="stkop-wide" data-k="wide" role="status" hidden>Spread is wider than usual</span></div>' +
     '</div>' +
     '<div class="stkop-alert" data-k="alert" role="status" hidden><p class="stkop-alt" data-k="alt"></p><button type="button" class="stkop-b" data-a="retry" hidden>Retry</button><button type="button" class="stkop-b" data-a="enable" hidden>Enable live trading</button></div>' +
     '<div class="stkop-body"></div><div class="stkop-ft"></div>' +
@@ -496,7 +505,7 @@ function setTab(t) {
 }
 
 // ------------------------------------------------------------------------------------------------ views
-const pillBtn = (cls, a, text) => '<button type="button" class="stkop-pill ' + cls + '" data-a="' + a + '">' + text + '</button>';
+const pillBtn = (cls, a, text) => '<button type="button" class="stkop-pill ' + cls + '" data-a="' + a + '"><span>' + text + '</span><small data-k="' + a + 'px" hidden></small></button>';
 const stepper = (unit) => '<div class="stkop-qty" role="group" aria-label="Quantity"><button type="button" data-q="-1" aria-label="One less">−</button><label><input data-f="qty" type="text" inputmode="decimal" autocomplete="off" aria-label="Quantity"><span class="stkop-unit">' + esc(unit) + '</span></label><button type="button" data-q="1" aria-label="One more">+</button></div>';
 function viewScalp(c) {
   return '<div class="stkop-scalp">' +
@@ -542,7 +551,7 @@ function viewLayout() {
 }
 function viewOrder(c) {
   return '<form class="stkop-order" novalidate><div class="stkop-oscroll">' +
-    '<div class="stkop-sides" role="radiogroup" aria-label="Side"><button type="button" role="radio" class="stkop-side buy" data-side="buy"><b>Buy</b><span>BID <em data-k="bid">—</em></span></button><button type="button" role="radio" class="stkop-side sell" data-side="sell"><b>Sell</b><span>ASK <em data-k="ask">—</em></span></button></div>' +
+    '<div class="stkop-sides" role="radiogroup" aria-label="Side"><button type="button" role="radio" class="stkop-side buy" data-side="buy"><b>Buy</b><span><i data-k="buyl">BID</i> <em data-k="buyp">—</em></span></button><button type="button" role="radio" class="stkop-side sell" data-side="sell"><b>Sell</b><span><i data-k="selll">ASK</i> <em data-k="sellp">—</em></span></button></div>' +
     '<div class="stkop-otype"><span class="stkop-lbl">Order type</span><div class="stkop-seg" role="radiogroup" aria-label="Order type"><button type="button" role="radio" data-type="market">Market</button><button type="button" role="radio" data-type="limit">Limit</button><button type="button" role="radio" data-type="stop">Stop</button></div></div>' +
     '<div class="stkop-sec">' +
       '<div class="stkop-f"><span class="stkop-lbl" data-k="plabel">Market price</span><b class="stkop-mkt" data-k="mkt">—</b><input class="stkop-in" data-f="price" type="text" inputmode="decimal" autocomplete="off" aria-label="Order price"></div>' +
@@ -684,8 +693,17 @@ export function update() {
   const r = qtyRules(c);
   for (const b of el.querySelectorAll('[data-q]')) b.disabled = +b.dataset.q < 0 ? qn <= r.min : qn >= r.max;
   // bid / ask
-  for (const n of el.querySelectorAll('[data-k=bid]')) { const t = qt ? fmt(c, qt.bid) : '—'; if (n.textContent !== t) n.textContent = t; }
-  for (const n of el.querySelectorAll('[data-k=ask]')) { const t = qt ? fmt(c, qt.ask) : '—'; if (n.textContent !== t) n.textContent = t; }
+  // broker charts: the bid / ask of the chart's own feed (display only; the Join buttons keep the order-book quote)
+  const bq = qt ? null : brokerQuote(c), dq = qt || bq;
+  const put = (k, t, hide) => { for (const n of el.querySelectorAll('[data-k=' + k + ']')) { if (t != null && n.textContent !== t) n.textContent = t; if (hide != null && n.hidden !== hide) n.hidden = hide; } };
+  for (const n of el.querySelectorAll('[data-k=bid]')) { const q = n.closest('.stkop-join') ? qt : dq, t = q ? fmt(c, q.bid) : '—'; if (n.textContent !== t) n.textContent = t; }
+  for (const n of el.querySelectorAll('[data-k=ask]')) { const q = n.closest('.stkop-join') ? qt : dq, t = q ? fmt(c, q.ask) : '—'; if (n.textContent !== t) n.textContent = t; }
+  // MetaTrader style with a broker quote: Buy = ask, Sell = bid (the order-book view keeps its Buy BID / Sell ASK cards)
+  put('buyl', bq ? 'ASK' : 'BID'); put('buyp', bq ? fmt(c, bq.ask) : qt ? fmt(c, qt.bid) : '—');
+  put('selll', bq ? 'BID' : 'ASK'); put('sellp', bq ? fmt(c, bq.bid) : qt ? fmt(c, qt.ask) : '—');
+  put('buypx', bq ? fmt(c, bq.ask) : '', !bq); put('sellpx', bq ? fmt(c, bq.bid) : '', !bq);
+  put('spr', bq ? spreadText(bq) : '—'); put('sprw', null, !bq); put('wide', 'Spread is wider than usual', !(bq && bq.wide));
+  const sw = el.querySelector('[data-k=sprw]'); if (sw) sw.classList.toggle('wide', !!(bq && bq.wide));
   // scalp
   for (const b of el.querySelectorAll('.stkop-scalp [data-a=buy], .stkop-scalp [data-a=sell]')) b.disabled = !!why;
   const lim = caps(c).limit !== false;

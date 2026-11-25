@@ -12922,6 +12922,13 @@ section.stkss-sec{ padding:0; margin:0; }
 .stkop-ba{ flex:none; display:inline-flex; align-items:center; gap:12px; font:500 11px/20px var(--font-body, sans-serif); color:var(--ink-3); }
 .stkop-ba b{ font:600 12px/20px var(--font-mono, monospace); font-variant-numeric:tabular-nums; }
 .stkop-ba b.bid{ color:var(--op-buy-ink); } .stkop-ba b.ask{ color:var(--op-sell-ink); }
+.stkop-sprl[hidden]{ display:none; }
+.stkop-sprl .stkop-ba b{ color:var(--ink-1); }
+.stkop-sprl.wide .stkop-ba b, .stkop-wide{ color:var(--amber); }
+.stkop-wide{ font:500 11px/20px var(--font-body, sans-serif); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0; }
+/* broker quote (Owner 25 Nov): Sell shows the bid, Buy the ask, under the word, MetaTrader style */
+.stkop-pill:has(> small:not([hidden])){ flex-direction:column; gap:0; }
+.stkop-pill > small{ font:600 12px/16px var(--font-mono, monospace); font-variant-numeric:tabular-nums; opacity:.92; }
 /* docked: full-height side panel at the chart's right edge; the chart gives up the width (margin-right); left edge = width handle */
 .stkchart-panel.stkop-docked #vela-chart{ margin-right:var(--stkop-dw, 340px); }
 .stkop.is-dock{ border-radius:0; border-width:0 0 0 1px; border-color:var(--line-soft); box-shadow:none; z-index:31; background:var(--bg-0); }

@@ -375,6 +375,7 @@ export const oanda = {
                 const line = buf.slice(0, i).trim(); buf = buf.slice(i + 1);
                 if (!line) continue;
                 let m; try { m = JSON.parse(line); } catch (e) { continue; }
+                if (m.type === 'PRICE' && m.bids && m.bids[0] && m.asks && m.asks[0]) QUOTES.put(m.instrument, +m.bids[0].price, +m.asks[0].price, Math.round(Number(m.time) * 1000));
                 if (m.type === 'PRICE' && m.bids && m.bids[0] && m.asks && m.asks[0]) onTick(m.instrument, (+m.bids[0].price + +m.asks[0].price) / 2, Math.round(Number(m.time) * 1000), 0);
               }
             }
@@ -591,6 +592,38 @@ export const schwab = {
   subscribe(hub, ticker, timeframe, seed, onBar) { return hub.add(this.symbolOf(ticker), candleBuilder(timeframe, seed, onBar)); }
 };
 export const ADAPTERS = { alpaca, oanda, ironbeam, schwab };
+
+// ---------- live bid / ask of broker charts (Owner 25 Nov: "show spread lines like mt5"; read-only) ----------
+// Adapters that stream both sides (cTrader spots, OANDA pricing) put them here from the SAME stream that feeds the chart: no extra
+// request. Readers: chart-axis-tags.js (Bid / Ask lines), chart-order-panel.js (Sell = bid, Buy = ask, Spread), chart-posorders.js.
+// Key = the ticker without provider / punctuation: byo:CT:NAS100 + CT:NAS100 -> CTNAS100, fx:EURUSD + EUR_USD -> EURUSD.
+const QK = (s) => String(s || '').replace(/^(byo|fx):/i, '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+const QMAP = new Map(), QPIP = new Map(), Q_WIN = 5 * MIN;
+const fxPip = (k) => (/^[A-Z]{6}$/.test(k) && !/^(XAU|XAG|XPT|XPD|BTC|ETH)/.test(k) ? (k.endsWith('JPY') ? 0.01 : 0.0001) : 0);
+const decPip = (x) => { const s = String(x), i = s.indexOf('.'); return Math.pow(10, -(i < 0 ? 0 : Math.min(8, s.length - i - 1))); };
+export const QUOTES = {
+  key: QK,
+  put(sym, bid, ask, ts) {
+    if (!(bid > 0 && ask > 0 && ask >= bid)) return;
+    const k = QK(sym), at = Date.now(); let q = QMAP.get(k);
+    if (!q) QMAP.set(k, q = { bid, ask, at, ts: ts || at, hist: [] });
+    q.bid = bid; q.ask = ask; q.at = at; q.ts = ts || at;
+    const h = q.hist, last = h[h.length - 1];
+    if (!last || at - last[0] >= 1000) { h.push([at, ask - bid]); while (h.length && at - h[0][0] > Q_WIN) h.shift(); }   // one sample a second, 5 min
+    else last[1] = Math.max(last[1], ask - bid);
+  },
+  setPip(sym, pip) { if (pip > 0) QPIP.set(QK(sym), pip); },
+  drop(sym) { QMAP.delete(QK(sym)); },
+  // -> { bid, ask, at, pip, spread (in pips / points), median, wide } | null. tick = the chart's tick, the last fallback unit.
+  get(sym, tick) {
+    const k = QK(sym), q = QMAP.get(k); if (!q) return null;
+    const pip = QPIP.get(k) || fxPip(k) || (tick > 0 ? tick : decPip(q.bid));
+    const sp = (q.ask - q.bid) / pip, xs = q.hist.map((x) => x[1]).sort((a, b) => a - b);
+    const med = xs.length ? xs[xs.length >> 1] / pip : null;
+    return { bid: q.bid, ask: q.ask, at: q.at, pip, spread: sp, median: med, wide: xs.length >= 20 && med > 0 && sp > 3 * med };
+  }
+};
+if (typeof window !== 'undefined') window.__stkQuotes = QUOTES;
 
 // ---------- runtime registry: connected sources on this device ----------
 // Listeners get { id, status, msg }. Credentials live in memory only after decrypt; they are never logged or exposed on window.

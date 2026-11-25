@@ -3,7 +3,7 @@
 //   args = argument values in catalog order (defaults already filled by the compiler)
 //   st   = this call site's state index (stateful functions) or output id (plots), else -1
 // na is NaN for every type. Nothing here can reach the network, the DOM or storage.
-import { ZsRuntimeError } from './errors.js?v=1279';
+import { ZsRuntimeError } from './errors.js?v=1280';
 
 const NA = NaN;
 const isNa = (x) => x !== x || x === null || x === undefined;

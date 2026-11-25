@@ -13685,6 +13685,9 @@ html .dash-shell > .sidebar{ height:calc(100vh - var(--dash-head-h, var(--topbar
 /* ---- Zoom to selection (assets/chart-sel-zoom.js) ---- */
 .stkz-ov{ position:fixed; z-index:60; cursor:crosshair; touch-action:none; background:color-mix(in srgb, #000 8%, transparent); }
 .stkz-hint{ position:absolute; left:50%; top:12px; transform:translateX(-50%); max-width:calc(100% - 24px); box-sizing:border-box; padding:8px 12px; border-radius:8px; background:var(--vela-surface-elev, var(--bg-2)); border:1px solid var(--vela-border, var(--line)); color:var(--vela-fg, var(--ink-1)); font:500 12px/16px -apple-system, BlinkMacSystemFont, "Trebuchet MS", Roboto, Ubuntu, sans-serif; text-align:center; pointer-events:none; }
+.stkz-hint{ display:flex; align-items:center; gap:4px; white-space:nowrap; height:28px; box-sizing:border-box; pointer-events:auto; padding:0 4px 0 12px; border-radius:22px; }
+.stkz-hx{ flex:none; width:44px; height:44px; margin:-8px 0; border:0; background:transparent; color:var(--vela-fg-muted, var(--ink-3)); font-size:16px; line-height:1; cursor:pointer; }
+.stkz-pb.on{ background:var(--accent, #03c988); color:#04130d; border-color:var(--accent, #03c988); }
 .stkz-hint[hidden]{ display:none; }
 .stkz-box{ position:absolute; box-sizing:border-box; border:1px solid var(--accent, #03c988); background:color-mix(in srgb, var(--accent, #03c988) 14%, transparent); pointer-events:none; }
 .stkz-choose{ position:fixed; z-index:61; display:flex; flex-wrap:wrap; align-items:center; justify-content:center; gap:4px; padding:4px; max-width:min(340px, calc(100vw - 16px)); box-sizing:border-box; border-radius:8px; background:var(--vela-surface-elev, var(--bg-2)); border:1px solid var(--vela-border, var(--line)); box-shadow:0 18px 40px -12px rgba(0,0,0,.6); }

@@ -23,14 +23,22 @@ export function mountSelZoom(ws, opts){
   };
   const el = (cls, tag) => { const n = document.createElement(tag || 'div'); n.className = cls; return n; };
 
-  let ov = null, box = null, hint = null, chooser = null, backPill = null, watch = 0;
+  let ov = null, box = null, hint = null, chooser = null, backPill = null, watch = 0, idle = 0, guard = 0;
+  const touch = () => window.matchMedia('(pointer:coarse)').matches || window.innerWidth <= 640;
   const stack = [];          // { id, symbol, tf, range }
 
   function clear(){
     [ov, chooser].forEach((n) => n && n.remove());
     ov = box = hint = chooser = null;
+    clearTimeout(idle); clearInterval(guard); idle = guard = 0;
     document.removeEventListener('keydown', onKey, true);
+    document.removeEventListener('pointerdown', onOutside, true);
+    document.removeEventListener('visibilitychange', onHide);
+    placeBtn();
   }
+  // any press outside the overlay/chooser (toolbar, another tool, menu) cancels
+  function onOutside(e){ if (!(ov && ov.contains(e.target)) && !(chooser && chooser.contains(e.target))) clear(); }
+  function onHide(){ if (document.hidden) clear(); }
   function onKey(e){
     if (e.key === 'Escape' && (ov || chooser)) { e.stopPropagation(); e.preventDefault(); clear(); }
   }
@@ -43,7 +51,13 @@ export function mountSelZoom(ws, opts){
     ov = el('stkz-ov');
     Object.assign(ov.style, { left: pr.left + 'px', top: pr.top + 'px', width: pr.width + 'px', height: pr.height + 'px' });
     hint = el('stkz-hint');
-    hint.textContent = 'Drag over the area to zoom into. Esc cancels.';
+    const ht = el('stkz-ht', 'span');
+    ht.textContent = touch() ? 'Drag over the area to zoom in' : 'Drag over the area to zoom into. Esc cancels.';
+    const hx = el('stkz-hx', 'button');
+    hx.type = 'button'; hx.textContent = '✕'; hx.setAttribute('aria-label', 'Cancel');
+    hx.addEventListener('pointerdown', (e) => e.stopPropagation());
+    hx.addEventListener('click', (e) => { e.stopPropagation(); clear(); });
+    hint.append(ht, hx);
     ov.appendChild(hint);
     ov.setAttribute('role', 'application');
     ov.setAttribute('aria-label', 'Zoom to selection: drag over the chart');
@@ -51,7 +65,9 @@ export function mountSelZoom(ws, opts){
     const local = (e) => ({ x: Math.max(0, Math.min(pr.width, e.clientX - pr.left)), y: Math.max(0, Math.min(pr.height, e.clientY - pr.top)) });
     ov.addEventListener('pointerdown', (e) => {
       if (e.button > 0) return;
+      if (e.target.closest && e.target.closest('.stkz-hint')) return;
       e.preventDefault();
+      clearTimeout(idle);
       try { ov.setPointerCapture(e.pointerId); } catch (err) {}
       ({ x: x0, y: y0 } = local(e)); down = true;
       if (chooser) { chooser.remove(); chooser = null; }
@@ -68,13 +84,21 @@ export function mountSelZoom(ws, opts){
       down = false;
       const p = local(e);
       const xa = Math.min(x0, p.x), xb = Math.max(x0, p.x);
-      if (xb - xa < MIN_PX) { if (box) box.remove(); box = null; hint.hidden = false; return; }
+      if (xb - xa < MIN_PX) { clear(); return; }
       choose(cell, pr, xa, xb);
     };
     ov.addEventListener('pointerup', end);
     ov.addEventListener('pointercancel', () => { down = false; });
     document.body.appendChild(ov);
     document.addEventListener('keydown', onKey, true);
+    document.addEventListener('pointerdown', onOutside, true);
+    document.addEventListener('visibilitychange', onHide);
+    const sym0 = cell.symbol, tf0 = String(cell.timeframe), lay0 = (ws.context && ws.context().cells || []).length;
+    guard = setInterval(() => {
+      const c = cellOf();
+      if (!c || c.symbol !== sym0 || String(c.timeframe) !== tf0 || (ws.context && ws.context().cells || []).length !== lay0) clear();
+    }, 300);
+    idle = setTimeout(clear, 20000);
   }
 
   // selected plot-x span -> bar times (clamped to the loaded bars)
@@ -87,6 +111,7 @@ export function mountSelZoom(ws, opts){
   }
 
   function choose(cell, pr, xa, xb){
+    clearTimeout(idle); idle = 0;
     const span = timeSpan(cell, xa, xb);
     const cur = String(cell.timeframe);
     chooser = el('stkz-choose');
@@ -184,7 +209,7 @@ export function mountSelZoom(ws, opts){
   });
   window.addEventListener('resize', () => { if (backPill) showBack(); placeBtn(); });
 
-  // Phone has no drawing column: a small button on the chart starts it (hidden above 640px).
+  // Phone has no drawing column: a small button at the chart's top-right starts it (hidden above 640px).
   let pb = null;
   function placeBtn(){
     const phone = window.innerWidth <= 640;
@@ -194,11 +219,12 @@ export function mountSelZoom(ws, opts){
       pb = el('stkz-pb', 'button');
       pb.type = 'button'; pb.title = pb.ariaLabel = 'Zoom to selection';
       pb.innerHTML = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9V6a2 2 0 0 1 2-2h3M15 4h3a2 2 0 0 1 2 2v3M20 15v3a2 2 0 0 1-2 2h-3M9 20H6a2 2 0 0 1-2-2v-3"/><path d="M10 14l4-4M11 10h3v3"/></svg>';
-      pb.addEventListener('click', start);
+      pb.addEventListener('click', () => { if (ov) clear(); else { start(); placeBtn(); } });
       document.body.appendChild(pb);
     }
     pb.hidden = false;
-    Object.assign(pb.style, { left: Math.round(pr.left + 8) + 'px', top: Math.round(pr.top + pr.height - 40 - 92) + 'px' });
+    Object.assign(pb.style, { left: Math.round(pr.left + pr.width - 48) + 'px', top: Math.round(pr.top + 8) + 'px' });
+    pb.classList.toggle('on', !!ov);
   }
   setInterval(placeBtn, 1500);
 

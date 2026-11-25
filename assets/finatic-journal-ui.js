@@ -3,9 +3,9 @@
 // /connect/finatic/data (server allow-list, scoped to the member's own connection). The "Order test" step is admins only (admin flag).
 // Flow: start session -> broker portal in a new tab (the member logs in there) -> Continue -> pick account + dates -> preview -> import.
 // Depends on the journal page globals: auth, db, firebase, JOURNAL_UID, JOURNAL_TRADES, journalCollectionRef, reloadJournalData, showToast.
-import { CSS } from './rithmic-journal-ui.js?v=1293';
-import { acctInfo, grantFor, ageText } from './chart-live-core.js?v=1293';
-import { tripsFromBroker, tripToTrade, tripId, ordersToFetch, planImport } from './finatic-fills.js?v=1293';
+import { CSS } from './rithmic-journal-ui.js?v=1294';
+import { acctInfo, grantFor, ageText } from './chart-live-core.js?v=1294';
+import { tripsFromBroker, tripToTrade, tripId, ordersToFetch, planImport } from './finatic-fills.js?v=1294';
 
 // WHICH BROKERS WORK TODAY (CoS: flip one value to true/false; false = tile shows "Coming soon" and cannot be tapped). Checked 24 Nov 2026.
 // A broker counts as working only when a member can connect AND trade through our current path.
@@ -180,7 +180,7 @@ export function openBrokerSync({ uid, onConnected, portal, admin } = {}) {
     // (window.__stkMtHost, set by chart-live.js after the same check as cTrader; the /connect/mt/* server re-checks every call).
     // Everyone else, MetaTrader 4, and the journal keep the existing path below.
     if (onConnected && brokerId === 'metatrader-5' && window.__stkMtHost) {
-      return import('./mt-connect-ui.js?v=1293').then((m) => { close(); m.openMtConnect({ platform: 'mt5', onConnected: (acc) => { try { onConnected([acc]); } catch (e) {} } }); }).catch(() => drawStart('Could not open the sign-in. Try again.'));
+      return import('./mt-connect-ui.js?v=1294').then((m) => { close(); m.openMtConnect({ platform: 'mt5', onConnected: (acc) => { try { onConnected([acc]); } catch (e) {} } }); }).catch(() => drawStart('Could not open the sign-in. Try again.'));
     }
     const win = window.open('', '_blank');           // opened on the tap so pop-up blockers allow it
     sheet.querySelectorAll('.fjs-tile').forEach((t) => { t.disabled = true; });

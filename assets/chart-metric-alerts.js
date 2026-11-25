@@ -13,7 +13,7 @@
 // 15 minutes per alert; a condition already true when the alert is set never fires until it resets.
 // Storage: Firestore students/{uid}/metricAlerts (owner-only rules, functions-src/firestore.rules). GEX/options data reads "updated" only.
 // Education only. Not financial advice.
-import { locked as proLocked, upgrade as proUpgrade } from './chart-pro-gate.js?v=1293';
+import { locked as proLocked, upgrade as proUpgrade } from './chart-pro-gate.js?v=1294';
 
 export const MAX_METRIC = 20;
 const MAX_Z = 25;

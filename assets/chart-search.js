@@ -19,14 +19,14 @@
 // favourites collection and rule; the Indicators window ignores sym: keys); guests -> localStorage. Recents: localStorage.
 // Education only. Not financial advice.
 
-import { classify, venueOf, pairOf, metaOf, search, symOf, keyOf, quoteOf, decimalsOf, VENUE_LABEL, VENUE_ORDER, CRYPTO_VENUES } from './chart-search-core.js?v=1293';
-import { parseFormula, bodyOf } from './chart-formula-core.js?v=1293';
-import { resolveLegs } from './chart-formula.js?v=1293';
-import { venueChip } from './venue-logos.js?v=1293';
-import { fxMark } from './fx-flags.js?v=1293';
-import { symLogo } from './symbol-logos.js?v=1293';
-import { getInfo } from './chart-symbol-info.js?v=1293';
-import { monthsFor, parseQuery, label as monthLabel, fmtExpiry, setFeed, frontCode, MONTH_ROOTS, INFO_KEY } from './fut-months.js?v=1293';   // contract months (25 Nov)
+import { classify, venueOf, pairOf, metaOf, search, symOf, keyOf, quoteOf, decimalsOf, VENUE_LABEL, VENUE_ORDER, CRYPTO_VENUES } from './chart-search-core.js?v=1294';
+import { parseFormula, bodyOf } from './chart-formula-core.js?v=1294';
+import { resolveLegs } from './chart-formula.js?v=1294';
+import { venueChip } from './venue-logos.js?v=1294';
+import { fxMark } from './fx-flags.js?v=1294';
+import { symLogo } from './symbol-logos.js?v=1294';
+import { getInfo } from './chart-symbol-info.js?v=1294';
+import { monthsFor, parseQuery, label as monthLabel, fmtExpiry, setFeed, frontCode, MONTH_ROOTS, INFO_KEY } from './fut-months.js?v=1294';   // contract months (25 Nov)
 
 const PHONE_MAX = 700;
 const PAGE = 50;
@@ -267,7 +267,7 @@ export function mountSearch(ws, o = {}) {
 
   // ---------------- your brokers & feeds (assets/chart-search-sources.js, loaded on the first open) ----------------
   let SRC = null, SRCM = null;
-  const srcMod = () => SRC || (SRC = import('./chart-search-sources.js?v=1293').then((m) => { SRCM = m; return m; }));
+  const srcMod = () => SRC || (SRC = import('./chart-search-sources.js?v=1294').then((m) => { SRCM = m; return m; }));
   const srcKey = (x) => x.id;
   async function refreshSources() {
     try { const m = await srcMod(); const l = await m.listSources(); const sig = (a) => (a || []).map((x) => x.id + x.ok + x.label).join('|'); if (sig(l) !== sig(S.srcs) || !S.srcs) { S.srcs = l; if (!srcMenu.hidden) paintMenu(); } }

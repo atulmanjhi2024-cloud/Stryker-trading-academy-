@@ -9,7 +9,7 @@ import { webcrypto as C } from 'node:crypto';
 if (!globalThis.crypto) globalThis.crypto = C;
 const mem = () => { const m = new Map(); return { getItem: (k) => (m.has(k) ? m.get(k) : null), setItem: (k, v) => m.set(k, String(v)), removeItem: (k) => m.delete(k) }; };
 globalThis.sessionStorage = mem();
-const T = await import('../../assets/ctrader-trade.js?v=1293');
+const T = await import('../../assets/ctrader-trade.js?v=1294');
 const { makeWS, mockState, ACC } = await import('./ctrader-mock.mjs');
 let n = 0; const t = async (name, fn) => { await fn(); n++; console.log('ok', name); };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -111,7 +111,7 @@ await t('parallel checks: a duplicate key -> nothing sent, the lock this write t
   L.shut();
 });
 await t('SLIPPAGE: the expected price + the fill + the slippage go to THIS order\'s log row (marks, after the order), bad values refused', async () => {
-  const LC = await import('../../assets/chart-live-core.js?v=1293');
+  const LC = await import('../../assets/chart-live-core.js?v=1294');
   const M = mockState({ fsMs: 0, ctMs: 20, twoStep: true, fillMs: 30, fillPx: 99.8 }); const { L, ops } = mk(M);
   await L.warm('US100');
   const a = await timeOrder(ops, { side: 'sell' }); const fill = await a.r.fill; assert.equal(fill, 99.8);

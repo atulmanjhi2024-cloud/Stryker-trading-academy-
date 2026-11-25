@@ -13,10 +13,10 @@
 // A thinkScript source on the chart starts with the comment line "#@thinkscript 1 <name>" (added when it goes on the chart);
 // Pine's handle list skips those (chart-pine.js pineHandles).
 
-import { TS_EXAMPLES } from './ts/examples.js?v=1291';
-import { toModel } from './chart-zscript.js?v=1291';
-import { createShell, el, ib, ICONS, libRow, emptyState, renderDocs, ago, download, pickFile, fileName } from './chart-script-editor.js?v=1291';
-import { isFutures } from './chart-sym.js?v=1291';
+import { TS_EXAMPLES } from './ts/examples.js?v=1292';
+import { toModel } from './chart-zscript.js?v=1292';
+import { createShell, el, ib, ICONS, libRow, emptyState, renderDocs, ago, download, pickFile, fileName } from './chart-script-editor.js?v=1292';
+import { isFutures } from './chart-sym.js?v=1292';
 
 const LANG = 'thinkscript';
 const EXT_KEY = 'stryker.thinkscript';
@@ -38,7 +38,7 @@ const descOf = (src) => { const c = /^\s*#\s*(?!@)([^\n]{3,})/m.exec(body(src));
 
 // ---------- the engine (assets/ts/runner.js), loaded on first use ----------
 let engineP = null;
-const RUNNER_URL = './ts/runner.js?v=1291';
+const RUNNER_URL = './ts/runner.js?v=1292';
 function engine(){
   if (!engineP) engineP = import(RUNNER_URL).catch(() => import(RUNNER_URL + '&retry=' + Date.now())).catch((e) => { engineP = null; throw e; });
   return engineP;
@@ -259,7 +259,7 @@ const Store = {
 // ---------- editor highlighting: thinkScript tokens (# comments, case-insensitive keywords) ----------
 let langP = null;
 function tsLanguage(){
-  if (!langP) langP = import('./zs-editor/cm6.js?v=1291').then(({ StreamLanguage, tags }) => {
+  if (!langP) langP = import('./zs-editor/cm6.js?v=1292').then(({ StreamLanguage, tags }) => {
     const KW = new Set(['def', 'rec', 'plot', 'input', 'declare', 'script', 'if', 'then', 'else', 'switch', 'case', 'default', 'fold', 'to', 'with', 'while', 'do', 'and', 'or', 'crosses', 'above', 'below', 'reference', 'not']);
     const ATOMS = new Set(['yes', 'no', 'true', 'false']);
     const NS = new Set(['color', 'paintingstrategy', 'curve', 'averagetype', 'aggregationperiod', 'alert', 'sound', 'double', 'crossingdirection', 'fundamentaltype', 'pricetype']);
@@ -295,7 +295,7 @@ function tsLanguage(){
 }
 let builtinsP = null;
 function loadBuiltins(){
-  if (!builtinsP) builtinsP = import('./ts/catalog.js?v=1291').then((m) => m.catalog()).catch(() => []);
+  if (!builtinsP) builtinsP = import('./ts/catalog.js?v=1292').then((m) => m.catalog()).catch(() => []);
   return builtinsP;
 }
 
@@ -365,7 +365,7 @@ export function mountThinkscript(ws, opts){
 
   function ensureEditor(){
     if (!edP) {
-      edP = Promise.all([import('./zs-editor/editor.js?v=1291'), loadBuiltins(), tsLanguage()]).then(([m, builtins, language]) => {
+      edP = Promise.all([import('./zs-editor/editor.js?v=1292'), loadBuiltins(), tsLanguage()]).then(([m, builtins, language]) => {
         builtinsAll = builtins;
         edHost.innerHTML = '';
         const first = TS_EXAMPLES[0];

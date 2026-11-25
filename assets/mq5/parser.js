@@ -2,7 +2,7 @@
 // The subset an indicator uses: globals, input/sinput (+ input group), enums, structs (fields only), functions
 // (overloads, default arguments, by-reference parameters, simple templates), the C statement set and operators.
 // Classes, pointers, new/delete and operator overloading give one clear error.
-import { err } from './lexer.js?v=1280';
+import { err } from './lexer.js?v=1281';
 
 export const BASE_TYPES = new Set(['void', 'bool', 'char', 'uchar', 'short', 'ushort', 'int', 'uint', 'long', 'ulong', 'float', 'double', 'string', 'datetime', 'color']);
 const KW = new Set(['if', 'else', 'for', 'while', 'do', 'switch', 'case', 'default', 'break', 'continue', 'return', 'static', 'const', 'input', 'sinput',

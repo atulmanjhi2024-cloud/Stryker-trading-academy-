@@ -9,6 +9,7 @@
 <link rel="preload" href="assets/fonts/archivo-latin-variable.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="preload" href="assets/fonts/archivo-tnum-latin-variable.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="assets/style.css?v=1274">
+<link rel="stylesheet" href="assets/referrals-page.css?v=1274">
 <script src="assets/skeleton.js?v=1274"></script>
 <script src="assets/sanitize.js?v=1274"></script>
 <script>
@@ -140,81 +141,101 @@
   </aside>
   
 
-  <main class="dash-main" id="main" tabindex="-1">
-    <div class="dash-topbar">
-      <div>
-        <h1>Invite friends, get Pro free</h1>
-        <p>Share your link. When a friend joins and settles in, you both get <span data-rx="friendDays">5</span> days of Pro.</p>
-      </div>
-    </div>
-
+  <main class="dash-main refx-page" id="main" tabindex="-1">
     <div class="auth-error" id="referral-error"></div>
 
-    <section class="panel refx-share" aria-labelledby="refx-share-h">
-      <div class="panel-head"><h2 id="refx-share-h">Your invite link</h2></div>
-      <div class="refx-linkrow">
-        <label class="sr-only" for="referral-link-display">Your invite link</label>
-        <input type="text" id="referral-link-display" class="refx-link" readonly value="" aria-describedby="refx-code-line">
-        <div class="refx-linkbtns">
-          <button type="button" class="btn btn-primary refx-btn" id="referral-copy-btn">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>
-            <span>Copy link</span>
-          </button>
-          <button type="button" class="btn btn-secondary refx-btn" id="referral-native-share" hidden>
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12M7 8l5-5 5 5"/><path d="M5 13v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6"/></svg>
-            <span>Share</span>
-          </button>
-        </div>
+    <section class="refx-card refx-hero" aria-labelledby="refx-title">
+      <div class="refx-hero-txt">
+        <h1 id="refx-title">Invite friends, get Pro free</h1>
+        <p>You both get <span data-rx="friendDays">5</span> days of Pro for every friend who joins. Stack up to a year.</p>
       </div>
-      <p class="refx-code" id="refx-code-line">Code <span id="referral-code-display" class="refx-code-val">—</span>
-        <button type="button" class="refx-code-copy" id="referral-code-copy" aria-label="Copy code"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg></button>
-      </p>
-      <div class="refx-socials" role="group" aria-label="Share on">
-        <a class="refx-soc" id="refx-share-x" target="_blank" rel="noopener" href="#"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg><span>X</span></a>
-        <a class="refx-soc" id="refx-share-wa" target="_blank" rel="noopener" href="#"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 20.5l1.3-4.2A8.5 8.5 0 1 1 8 19.4z"/><path d="M9 8.5c0 3.5 3 6.5 6.5 6.5l1-1.6-2-1-1 .9a5 5 0 0 1-2.8-2.8l.9-1-1-2z"/></svg><span>WhatsApp</span></a>
-        <a class="refx-soc" id="refx-share-tg" target="_blank" rel="noopener" href="#"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 4L3 11.2l6 2.2 2.2 6.6 3.3-4.3 4.7 3.6z"/><path d="M9 13.4L21 4"/></svg><span>Telegram</span></a>
-        <a class="refx-soc" id="refx-share-rd" target="_blank" rel="noopener" href="#"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><ellipse cx="12" cy="14.5" rx="8" ry="5.5"/><circle cx="18.5" cy="5" r="1.5"/><path d="M12 9l1.2-5 5.3 1"/><path d="M9.5 16.5c1.5 1 3.5 1 5 0"/><circle cx="9" cy="13.5" r=".6" fill="currentColor"/><circle cx="15" cy="13.5" r=".6" fill="currentColor"/></svg><span>Reddit</span></a>
-      </div>
+      <svg class="refx-hero-art" width="232" height="120" viewBox="0 0 232 120" fill="none" aria-hidden="true">
+        <path class="refx-art-line" d="M72 76 C 100 44, 132 44, 160 76" stroke-width="2" stroke-dasharray="2 6" stroke-linecap="round"/>
+        <circle class="refx-art-av" cx="40" cy="80" r="32"/>
+        <circle class="refx-art-fig" cx="40" cy="72" r="10"/>
+        <path class="refx-art-fig" d="M22 102a18 15 0 0 1 36 0z"/>
+        <circle class="refx-art-av" cx="192" cy="80" r="32"/>
+        <circle class="refx-art-fig" cx="192" cy="72" r="10"/>
+        <path class="refx-art-fig" d="M174 102a18 15 0 0 1 36 0z"/>
+        <rect class="refx-art-badge" x="88" y="16" width="56" height="28" rx="14"/>
+        <text class="refx-art-badge-t" x="116" y="35" text-anchor="middle">PRO</text>
+        <circle class="refx-art-dot" cx="116" cy="54" r="3"/>
+      </svg>
+    </section>
 
+    <div class="refx-top">
+      <section class="refx-card refx-share" aria-labelledby="refx-share-h">
+        <h2 id="refx-share-h">Your invite link</h2>
+        <div class="refx-linkrow">
+          <label class="sr-only" for="referral-link-display">Your invite link</label>
+          <input type="text" id="referral-link-display" class="refx-link" readonly value="" aria-describedby="refx-code-line">
+          <button type="button" class="refx-copy" id="referral-copy-btn"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg><span>Copy link</span></button>
+        </div>
+        <p class="refx-code" id="refx-code-line"><span>Or share your code</span> <span id="referral-code-display" class="refx-code-val">—</span><button type="button" class="refx-code-copy" id="referral-code-copy" aria-label="Copy code"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg></button></p>
+        <div class="refx-socials" role="group" aria-label="Share on">
+          <a class="refx-soc" id="refx-share-x" target="_blank" rel="noopener" href="#"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M18.901 1.153h3.68l-8.04 9.19L24 22.846h-7.406l-5.8-7.584-6.638 7.584H.474l8.6-9.83L0 1.154h7.594l5.243 6.932ZM17.61 20.644h2.039L6.486 3.24H4.298Z"/></svg><span>X</span></a>
+          <a class="refx-soc" id="refx-share-wa" target="_blank" rel="noopener" href="#"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413Z"/></svg><span>WhatsApp</span></a>
+          <a class="refx-soc" id="refx-share-tg" target="_blank" rel="noopener" href="#"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0a12 12 0 0 0-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.48.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z"/></svg><span>Telegram</span></a>
+          <button type="button" class="refx-soc" id="refx-share-dc"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M20.317 4.3698a19.7913 19.7913 0 00-4.8851-1.5152.0741.0741 0 00-.0785.0371c-.211.3753-.4447.8648-.6083 1.2495-1.8447-.2762-3.68-.2762-5.4868 0-.1636-.3933-.4058-.8742-.6177-1.2495a.077.077 0 00-.0785-.037 19.7363 19.7363 0 00-4.8852 1.515.0699.0699 0 00-.0321.0277C.5334 9.0458-.319 13.5799.0992 18.0578a.0824.0824 0 00.0312.0561c2.0528 1.5076 4.0413 2.4228 5.9929 3.0294a.0777.0777 0 00.0842-.0276c.4616-.6304.8731-1.2952 1.226-1.9942a.076.076 0 00-.0416-.1057c-.6528-.2476-1.2743-.5495-1.8722-.8923a.077.077 0 01-.0076-.1277c.1258-.0943.2517-.1923.3718-.2914a.0743.0743 0 01.0776-.0105c3.9278 1.7933 8.18 1.7933 12.0614 0a.0739.0739 0 01.0785.0095c.1202.099.246.1981.3728.2924a.077.077 0 01-.0066.1276 12.2986 12.2986 0 01-1.873.8914.0766.0766 0 00-.0407.1067c.3604.698.7719 1.3628 1.225 1.9932a.076.076 0 00.0842.0286c1.961-.6067 3.9495-1.5219 6.0023-3.0294a.077.077 0 00.0313-.0552c.5004-5.177-.8382-9.6739-3.5485-13.6604a.061.061 0 00-.0312-.0286zM8.02 15.3312c-1.1825 0-2.1569-1.0857-2.1569-2.419 0-1.3332.9555-2.4189 2.157-2.4189 1.2108 0 2.1757 1.0952 2.1568 2.419 0 1.3332-.9555 2.4189-2.1569 2.4189zm7.9748 0c-1.1825 0-2.1569-1.0857-2.1569-2.419 0-1.3332.9554-2.4189 2.1569-2.4189 1.2108 0 2.1757 1.0952 2.1568 2.419 0 1.3332-.946 2.4189-2.1568 2.4189Z"/></svg><span>Discord</span></button>
+          <a class="refx-soc" id="refx-share-rd" target="_blank" rel="noopener" href="#"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 0C5.373 0 0 5.373 0 12c0 3.314 1.343 6.314 3.515 8.485l-2.286 2.286C.775 23.225 1.097 24 1.738 24H12c6.627 0 12-5.373 12-12S18.627 0 12 0Zm4.388 3.199c1.104 0 1.999.895 1.999 1.999 0 1.105-.895 2-1.999 2-.946 0-1.739-.657-1.947-1.539v.002c-1.147.162-2.032 1.15-2.032 2.341v.007c1.776.067 3.4.567 4.686 1.363.473-.363 1.064-.58 1.707-.58 1.547 0 2.802 1.254 2.802 2.802 0 1.117-.655 2.081-1.601 2.531-.088 3.256-3.637 5.876-7.997 5.876-4.361 0-7.905-2.617-7.998-5.87-.954-.447-1.614-1.415-1.614-2.538 0-1.548 1.255-2.802 2.803-2.802.645 0 1.239.218 1.712.585 1.275-.79 2.881-1.291 4.64-1.365v-.01c0-1.663 1.263-3.034 2.88-3.207.188-.911.993-1.595 1.959-1.595Zm-8.085 8.376c-.784 0-1.459.78-1.506 1.797-.047 1.016.64 1.429 1.426 1.429.786 0 1.371-.369 1.418-1.385.047-1.017-.553-1.841-1.338-1.841Zm7.406 0c-.786 0-1.385.824-1.338 1.841.047 1.017.634 1.385 1.418 1.385.785 0 1.473-.413 1.426-1.429-.046-1.017-.721-1.797-1.506-1.797Zm-3.703 4.013c-.974 0-1.907.048-2.77.135-.147.015-.241.168-.183.305.483 1.154 1.622 1.964 2.953 1.964 1.33 0 2.47-.81 2.953-1.964.057-.137-.037-.29-.184-.305-.863-.087-1.795-.135-2.769-.135Z"/></svg><span>Reddit</span></a>
+          <a class="refx-soc" id="refx-share-em" href="#"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3.5 6.5l8.5 6 8.5-6"/></svg><span>Email</span></a>
+          <button type="button" class="refx-soc" id="referral-native-share" hidden><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12M7 8l5-5 5 5"/><path d="M5 13v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6"/></svg><span>Share</span></button>
+        </div>
+      </section>
+
+      <section class="refx-card refx-progress" aria-labelledby="refx-prog-h">
+        <h2 id="refx-prog-h">Pro days earned</h2>
+        <div class="refx-days-row">
+          <span class="refx-days-num" id="refx-days">—</span>
+          <span class="refx-days-of">of <span data-rx="capDaysPerYear">365</span> a year</span>
+        </div>
+        <div class="refx-bar" role="progressbar" id="refx-bar" aria-label="Pro days earned" aria-valuemin="0" aria-valuemax="365" aria-valuenow="0"><span class="refx-bar-fill" id="refx-bar-fill"></span></div>
+        <div class="refx-ticks" id="refx-ticks" aria-hidden="true"></div>
+        <p class="refx-prog-note" id="refx-prog-note"></p>
+        <dl class="refx-mini">
+          <div><dt>Verified friends</dt><dd id="refx-verified">—</dd></div>
+          <div><dt>Pending</dt><dd id="refx-pending">—</dd></div>
+        </dl>
+      </section>
+    </div>
+
+    <section class="refx-card" aria-labelledby="refx-how-h">
+      <h2 id="refx-how-h">How it works</h2>
       <ol class="refx-steps">
-        <li><span class="refx-step-n">1</span><span><b>Share your link</b><span>Copy it or send it from here.</span></span></li>
-        <li><span class="refx-step-n">2</span><span><b>Your friend joins</b><span>Confirms their email and uses TradeZoro on <span data-rx="activeDaysNeeded">2</span> days in their first <span data-rx="windowDays">7</span>.</span></span></li>
-        <li><span class="refx-step-n">3</span><span><b>You both get Pro</b><span>+<span data-rx="inviterDays">5</span> days for you, +<span data-rx="friendDays">5</span> days for them. Pro adds the live futures order book.</span></span></li>
+        <li><span class="refx-step-ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/></svg></span><span class="refx-step-tx"><span class="refx-step-n">Step 1</span><b>Share your link</b><span>Copy it or send it from here.</span></span></li>
+        <li><span class="refx-step-ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3.5 6.5l8.5 6 8.5-6"/></svg></span><span class="refx-step-tx"><span class="refx-step-n">Step 2</span><b>Friend signs up and verifies email</b><span>Then uses TradeZoro on <span data-rx="activeDaysNeeded">2</span> days in their first <span data-rx="windowDays">7</span>.</span></span></li>
+        <li><span class="refx-step-ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="8" width="18" height="4" rx="1"/><path d="M12 8v13M19 12v9H5v-9"/><path d="M7.5 8a2.5 2.5 0 0 1 0-5C11 3 12 8 12 8s1-5 4.5-5a2.5 2.5 0 0 1 0 5"/></svg></span><span class="refx-step-tx"><span class="refx-step-n">Step 3</span><b>You both get <span data-rx="inviterDays">5</span> Pro days</b><span>+<span data-rx="inviterDays">5</span> days for you, +<span data-rx="friendDays">5</span> days for them.</span></span></li>
       </ol>
     </section>
 
-    <div class="stat-grid-3 refx-stats">
-      <div class="stat-card">
-        <div class="stat-val" id="refx-verified">—</div>
-        <div class="stat-label">Verified friends</div>
-      </div>
-      <div class="stat-card">
-        <div class="stat-val" id="refx-days">—</div>
-        <div class="stat-label">Pro days earned</div>
-      </div>
-      <div class="stat-card">
-        <div class="stat-val" id="refx-pending">—</div>
-        <div class="stat-label">Pending</div>
-      </div>
+    <div class="refx-cols">
+      <section class="refx-card" aria-labelledby="refx-inv-h">
+        <div class="refx-head">
+          <h2 id="refx-inv-h">Your invites</h2>
+          <span id="referral-invite-count" class="refx-meta"></span>
+        </div>
+        <div id="referral-invite-list"><div data-skel="rows" data-n="3" data-cols="3"></div></div>
+      </section>
+
+      <section class="refx-card" aria-labelledby="refx-lb-h">
+        <div class="refx-head">
+          <h2 id="refx-lb-h">Leaderboard</h2>
+          <span class="refx-meta">Your rank <b id="referral-rank">—</b> · <span id="referral-total-points">0</span> pts</span>
+        </div>
+        <div id="referral-leaderboard"><div data-skel="rows" data-n="5" data-cols="3"></div></div>
+      </section>
     </div>
 
-    <section class="panel" aria-labelledby="refx-inv-h">
-      <div class="panel-head">
-        <h2 id="refx-inv-h">Your invites</h2>
-        <span id="referral-invite-count" class="refx-meta"></span>
-      </div>
-      <div id="referral-invite-list"><div data-skel="rows" data-n="4" data-cols="3"></div></div>
+    <section class="refx-card refx-faq" aria-labelledby="refx-faq-h">
+      <h2 id="refx-faq-h">Questions</h2>
+      <details class="refx-faq-item"><summary><span>What counts as a verified invite?</span><svg class="refx-faq-chev" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></summary><p>A new account that signed up with your link, confirmed its email and used TradeZoro on <span data-rx="activeDaysNeeded">2</span> different days in its first <span data-rx="windowDays">7</span>. One reward per new account. Throwaway email addresses don&#39;t count.</p></details>
+      <details class="refx-faq-item"><summary><span>Is there a limit?</span><svg class="refx-faq-chev" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></summary><p>Yes. You can earn up to <span data-rx="capDaysPerYear">365</span> Pro days a year from invites. Your friend still gets their <span data-rx="friendDays">5</span> days.</p></details>
+      <details class="refx-faq-item"><summary><span>Does it stack with a paid plan?</span><svg class="refx-faq-chev" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></summary><p>Yes. If you already pay for Pro, the days you earn are saved on your account. Your billing is never changed.</p></details>
+      <details class="refx-faq-item"><summary><span>Can I invite myself?</span><svg class="refx-faq-chev" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></summary><p>No. A second account, or a sign-up from the same device or network as yours, doesn&#39;t count.</p></details>
+      <details class="refx-faq-item"><summary><span>When do the days arrive?</span><svg class="refx-faq-chev" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></summary><p>We check new invites once a day, so days land within 2 days of your friend meeting the rules. Nobody has to approve it. On the free plan, Pro switches on straight away.</p></details>
     </section>
 
-    <section class="panel" aria-labelledby="refx-lb-h">
-      <div class="panel-head">
-        <h2 id="refx-lb-h">Leaderboard</h2>
-        <span class="refx-meta">Your rank <b id="referral-rank">—</b> · <span id="referral-total-points">0</span> pts</span>
-      </div>
-      <div id="referral-leaderboard"><div data-skel="rows" data-n="5" data-cols="3"></div></div>
-    </section>
-
-    <p class="refx-fine">We check new invites within 2 days of a friend's first <span data-rx="windowDays">7</span> days. One reward per new account. Same device or network, throwaway email addresses and self-invites don't count. Up to <span data-rx="capDaysPerYear">365</span> Pro days a year from invites. If you already pay for Pro, your earned days are saved on your account. Education only. Not financial advice.</p>
+    <p class="refx-fine">We check new invites within 2 days of a friend's first <span data-rx="windowDays">7</span> days. One reward per new account. Up to <span data-rx="capDaysPerYear">365</span> Pro days a year from invites. <a href="terms.html">Terms</a> apply. Education only. Not financial advice.</p>
   </main>
 </div>
 

@@ -13638,3 +13638,34 @@ html .dash-shell > .sidebar{ height:calc(100vh - var(--dash-head-h, var(--topbar
 .footer-grid .fs-row svg{ width:20px; height:20px; display:block; }
 @media (max-width:800px){ .footer-grid .fs-row{ grid-column:1 / -1; grid-row:auto; justify-content:center; margin:24px 0 0; }
  .footer-grid > div:nth-child(n+2):not(.fs-row){ grid-row:auto; } }
+
+/* Invite nudge, account-menu entry, sign-up invite note (assets/referrals.js, account-menu.js, auth.js).
+   Restored 25 Nov: lost in the build-1269-era merge f35636be65 together with the old referrals.html rules. */
+/* One-time nudge after a member's 3rd active day (assets/referrals.js referralMaybeNudge). Low, small, dismissable. */
+.ref-nudge{
+  position:fixed; z-index:150; right:24px; bottom:24px; width:360px; max-width:calc(100vw - 32px); box-sizing:border-box;
+  display:flex; align-items:center; gap:12px; padding:12px 12px 12px 16px;
+  background:var(--bg-2); border:1px solid var(--line); border-radius:16px; box-shadow:var(--shadow-pop);
+  animation:refNudgeIn .25s cubic-bezier(.2,0,0,1);
+}
+.ref-nudge-ic{ flex:0 0 36px; width:36px; height:36px; border-radius:10px; display:inline-flex; align-items:center; justify-content:center; background:rgba(3,201,136,0.12); color:var(--gold); }
+.ref-nudge-txt{ flex:1 1 auto; min-width:0; display:flex; flex-direction:column; gap:2px; }
+.ref-nudge-txt b{ font-size:14px; line-height:20px; color:var(--ink-0); font-weight:600; }
+.ref-nudge-txt span{ font-size:12px; line-height:16px; color:var(--ink-2); }
+.ref-nudge-go{ flex:0 0 auto; height:36px; padding:0 14px; border-radius:10px; }
+.ref-nudge-x{ flex:0 0 32px; width:32px; height:32px; display:inline-flex; align-items:center; justify-content:center; border:0; border-radius:8px; background:none; color:var(--ink-3); cursor:pointer; }
+.ref-nudge-x:hover{ background:var(--bg-3); color:var(--ink-0); }
+@media (max-width:820px){ .ref-nudge{ left:16px; right:16px; width:auto; max-width:none; bottom:calc(88px + env(safe-area-inset-bottom)); } }
+@keyframes refNudgeIn{ from{ opacity:0; transform:translateY(8px); } to{ opacity:1; transform:none; } }
+@media (prefers-reduced-motion: reduce){ .ref-nudge{ animation:none; } }
+
+/* Account menu entry + sign-up invite note */
+.account-item-invite{ white-space:nowrap; }
+.account-item-invite svg{ color:var(--gold); }
+.auth-invite{
+  display:flex; align-items:flex-start; gap:12px; margin:0 0 20px; padding:12px 16px;
+  border:1px solid var(--line); border-radius:12px; background:rgba(3,201,136,0.06);
+  font-size:14px; line-height:20px; color:var(--ink-1);
+}
+.auth-invite svg{ flex:0 0 20px; color:var(--gold); margin-top:0; }
+.auth-invite b{ color:var(--ink-0); font-weight:600; }

@@ -121,14 +121,15 @@ const BANNED = /KOL|Member Tier|commission|\$\s?\d|₹\s?\d|profit|win rate|guar
     await noOverflow('filled');
     const txt = await page.evaluate(() => document.getElementById('main').innerText);
     ok(/Invite friends, get Pro free/.test(txt), tag + ' title');
-    ok(/you both get 5 days of Pro/.test(txt) && /\+5 days for you, \+5 days for them/.test(txt) && /Up to 365 Pro days a year/.test(txt) && !/\b7 days of Pro|\b90 Pro days|review/i.test(txt), tag + ' copy: 5 + 5 days, 365 cap, no review wording');
+    ok(/[Yy]ou both get 5 days of Pro/.test(txt) && /\+5 days for you, \+5 days for them/.test(txt) && /Up to 365 Pro days a year/.test(txt) && !/\b7 days of Pro|\b90 Pro days|review/i.test(txt), tag + ' copy: 5 + 5 days, 365 cap, no review wording');
     ok(!BANNED.test(txt), tag + ' no KOL / tier / commission / prices / result claims');
     ok(/Education only\. Not financial advice\./.test(txt) && /within 2 days/.test(txt), tag + ' fine print');
     const st = await page.evaluate(() => ['refx-verified', 'refx-days', 'refx-pending'].map((id) => document.getElementById(id).textContent));
-    ok(st[0] === '2' && st[1] === '+10' && st[2] === '2', tag + ' stats verified 2 / +10 days / pending 2 (' + st.join(',') + ')');
+    ok(st[0] === '2' && st[1] === '10' && st[2] === '2', tag + ' stats verified 2 / 10 days / pending 2 (' + st.join(',') + ')');
+    ok(await page.evaluate(() => /width: ?2\.7/.test(document.getElementById('refx-bar-fill').getAttribute('style')) && document.querySelectorAll('.refx-tick').length === 4 && document.getElementById('refx-bar').getAttribute('aria-valuenow') === '10'), tag + ' progress bar 10 / 365 with 4 ticks');
     const chips = await page.evaluate(() => Array.from(document.querySelectorAll('.refx-chip')).map((c) => c.textContent.trim()));
-    ok(chips.join('|') === 'Joined|Verifying|Verified|Verified|Not eligible|Not eligible', tag + ' status chips ' + chips.join('|'));
-    ok(/Same device as inviter/.test(txt) && /Disposable email address/.test(txt), tag + ' not-eligible reasons shown');
+    ok(chips.join('|') === 'Pending|Pending|Rewarded|Rewarded|Not eligible|Not eligible', tag + ' status chips ' + chips.join('|'));
+    ok(mobile || (/Same device as inviter/.test(txt) && /Disposable email address/.test(txt)), tag + ' not-eligible reasons shown (desktop; phone hides the note)');
     ok(await page.evaluate(() => document.getElementById('referral-link-display').value.endsWith('/signup.html?ref=maya4821')), tag + ' link');
     const lb = await page.evaluate(() => Array.from(document.querySelectorAll('.refx-lb .refx-who b')).map((b) => b.textContent));
     ok(lb.length === 3 && lb[0] === '@ravitrades' && /^Maya/.test(lb[1]) && !lb.some((x) => /@example|Rao|Park/.test(x)), tag + ' leaderboard handles only: ' + lb.join(','));
@@ -140,7 +141,9 @@ const BANNED = /KOL|Member Tier|commission|\$\s?\d|₹\s?\d|profit|win rate|guar
     await page.evaluate(() => { window.__copied = null; navigator.clipboard.writeText = (t) => { window.__copied = t; return Promise.resolve(); }; });
     await page.click('#referral-copy-btn');
     await page.waitForTimeout(100);
-    ok(await page.evaluate(() => /ref=maya4821$/.test(window.__copied || '') && document.querySelector('#referral-copy-btn span').textContent === 'Copied'), tag + ' copy link');
+    ok(await page.evaluate(() => /ref=maya4821$/.test(window.__copied || '') && document.querySelector('#referral-copy-btn span').textContent === 'Copied' && document.getElementById('referral-copy-btn').classList.contains('is-copied')), tag + ' copy link (copied state)');
+    ok(await page.evaluate(() => Array.from(document.querySelectorAll('.toast, [class*=toast]')).some((e) => /Invite link copied/.test(e.textContent))), tag + ' copy toast');
+    ok(await page.evaluate(() => /^mailto:\?subject=/.test(document.getElementById('refx-share-em').getAttribute('href')) && !!document.getElementById('refx-share-dc')), tag + ' email + discord share');
     // alignment
     const al = await page.evaluate(() => {
       const r = (q) => { const e = typeof q === 'string' ? document.querySelector(q) : q; const b = e.getBoundingClientRect(); return { t: b.top, b: b.bottom, l: b.left, r: b.right, h: b.height, w: b.width, cy: b.top + b.height / 2, cx: b.left + b.width / 2 }; };
@@ -152,19 +155,15 @@ const BANNED = /KOL|Member Tier|commission|\$\s?\d|₹\s?\d|profit|win rate|guar
       const btn = document.getElementById('referral-copy-btn'); const cs = getComputedStyle(btn);
       out.copyPadLR = [parseFloat(cs.paddingLeft), parseFloat(cs.paddingRight)];
       out.copyInnerLR = Math.abs((ic.l - cp.l) - (cp.r - lab.r));
-      const soc = Array.from(document.querySelectorAll('.refx-soc')).map((e) => r(e));
+      const soc = Array.from(document.querySelectorAll('.refx-soc:not([hidden])')).map((e) => r(e));
       out.socH = soc.map((s) => s.h);
       out.socIcon = Array.from(document.querySelectorAll('.refx-soc')).map((e) => { const a = r(e.querySelector('svg')), b = r(e.querySelector('span')), c = r(e); return Math.max(Math.abs(a.cy - c.cy), Math.abs(b.cy - c.cy)); });
       out.socInnerLR = Array.from(document.querySelectorAll('.refx-soc')).map((e) => { const a = r(e.querySelector('svg')), b = r(e.querySelector('span')), c = r(e); return Math.abs((a.l - c.l) - (c.r - b.r)); });
-      const cards = Array.from(document.querySelectorAll('.refx-stats .stat-card')).map((e) => r(e));
-      out.cardTops = Math.max(...cards.map((c) => c.t)) - Math.min(...cards.map((c) => c.t));
-      out.cardH = Math.max(...cards.map((c) => c.h)) - Math.min(...cards.map((c) => c.h));
-      const gaps = []; for (let i = 1; i < cards.length; i++) gaps.push(Math.round(cards[i].l - cards[i - 1].r)); out.cardGaps = gaps;
-      out.rows = Array.from(document.querySelectorAll('#referral-invite-list .refx-row')).map((row) => { const a = r(row.querySelector('.refx-av')), w = r(row.querySelector('.refx-who')), s = r(row.querySelector('.refx-st')), rr = r(row); return Math.max(Math.abs(a.cy - rr.cy), Math.abs(w.cy - rr.cy), Math.abs(s.cy - rr.cy)); });
+            out.rows = Array.from(document.querySelectorAll('#referral-invite-list .refx-row')).map((row) => { const a = r(row.querySelector('.refx-av')), w = r(row.querySelector('.refx-who')), s = r(row.querySelector('.refx-st')), rr = r(row); return Math.max(Math.abs(a.cy - rr.cy), Math.abs(w.cy - rr.cy), Math.abs(s.cy - rr.cy)); });
       out.chipText = Array.from(document.querySelectorAll('.refx-chip')).map((c) => { const k = r(c); const range = document.createRange(); range.selectNodeContents(c); const t = range.getBoundingClientRect(); return Math.abs((t.top + t.height / 2) - k.cy); });
       out.lbRows = Array.from(document.querySelectorAll('.refx-lb .refx-row')).map((row) => { const a = r(row.querySelector('.refx-rank')), p = r(row.querySelector('.refx-pts')), rr = r(row); return Math.max(Math.abs(a.cy - rr.cy), Math.abs(p.cy - rr.cy)); });
       out.ptsRight = (() => { const p = Array.from(document.querySelectorAll('.refx-pts')).map((e) => r(e).r); return Math.max(...p) - Math.min(...p); })();
-      out.steps = Array.from(document.querySelectorAll('.refx-step-n')).map((e) => { const k = r(e); const range = document.createRange(); range.selectNodeContents(e); const t = range.getBoundingClientRect(); return Math.max(Math.abs(t.top + t.height / 2 - k.cy), Math.abs(t.left + t.width / 2 - k.cx)); });
+      out.steps = Array.from(document.querySelectorAll('.refx-step-ic')).map((e) => { const k = r(e); const range = document.createRange(); range.selectNodeContents(e); const t = range.getBoundingClientRect(); return Math.max(Math.abs(t.top + t.height / 2 - k.cy), Math.abs(t.left + t.width / 2 - k.cx)); });
       out.clipped = Array.from(document.querySelectorAll('#main *')).filter((e) => { if (!e.offsetParent || e.closest('.refx-link, .sr-only')) return false; const cs = getComputedStyle(e); if (cs.textOverflow === 'ellipsis') return false; return e.children.length === 0 && e.scrollWidth > e.clientWidth + 1 && /hidden|clip/.test(cs.overflowX); }).map((e) => e.className || e.tagName);
       const panel = document.querySelector('.refx-share'); const pcs = getComputedStyle(panel); out.panelPad = [pcs.paddingLeft, pcs.paddingRight, pcs.paddingTop, pcs.paddingBottom];
       return out;
@@ -176,13 +175,11 @@ const BANNED = /KOL|Member Tier|commission|\$\s?\d|₹\s?\d|profit|win rate|guar
     ok(al.socH.every((h) => h === 40), tag + ' share pills 40 px');
     ok(al.socIcon.every((d) => d <= 1), tag + ' share pill icon + text centred (' + al.socIcon.map((d) => d.toFixed(1)) + ')');
     ok(al.socInnerLR.every((d) => d <= 1 || vp.w < 641), tag + ' share pill padding even (' + al.socInnerLR.map((d) => d.toFixed(1)) + ')');
-    ok(al.cardTops <= 1 && al.cardH <= 1, tag + ' stat tiles one row, same height');
-    ok(new Set(al.cardGaps).size === 1, tag + ' stat gaps equal (' + al.cardGaps + ')');
-    ok(al.rows.every((d) => d <= 1), tag + ' invite rows: avatar / name / status share a centre (' + al.rows.map((d) => d.toFixed(1)) + ')');
+        ok(al.rows.every((d) => d <= 1), tag + ' invite rows: avatar / name / status share a centre (' + al.rows.map((d) => d.toFixed(1)) + ')');
     ok(al.chipText.every((d) => d <= 1), tag + ' chip text centred (' + al.chipText.map((d) => d.toFixed(1)) + ')');
     ok(al.lbRows.every((d) => d <= 1), tag + ' leaderboard rows centred');
     ok(al.ptsRight <= 1, tag + ' points right-aligned');
-    ok(al.steps.every((d) => d <= 1), tag + ' step numbers centred (' + al.steps.map((d) => d.toFixed(1)) + ')');
+    ok(al.steps.every((d) => d <= 1), tag + ' step icons centred (' + al.steps.map((d) => d.toFixed(1)) + ')');
     ok(al.clipped.length === 0, tag + ' nothing clipped ' + al.clipped.join(','));
     ok(al.panelPad[0] === al.panelPad[1] && al.panelPad[2] === al.panelPad[3], tag + ' panel padding even ' + al.panelPad);
     await page.evaluate(() => window.scrollTo(0, 0));
@@ -195,7 +192,8 @@ const BANNED = /KOL|Member Tier|commission|\$\s?\d|₹\s?\d|profit|win rate|guar
     await page.waitForTimeout(300);
     await noOverflow('empty');
     const st2 = await page.evaluate(() => ['refx-verified', 'refx-days', 'refx-pending'].map((id) => document.getElementById(id).textContent));
-    ok(st2.join() === '0,+0,0', tag + ' empty stats 0 / +0 / 0');
+    ok(st2.join() === '0,0,0', tag + ' empty stats 0 / 0 / 0');
+    ok(await page.evaluate(() => /Your first invite gets you both 5 days/.test(document.getElementById('main').innerText) && !!document.getElementById('refx-empty-copy')), tag + ' friendly zero state + Copy link in the empty list');
     if (theme === 'dark') await shot('2-referrals-empty', true);
 
     // ---------- account menu entry

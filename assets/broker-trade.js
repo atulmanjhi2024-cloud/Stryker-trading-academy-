@@ -10,7 +10,7 @@
 //   OANDA: the member pastes a personal access token once (Practice; Live hidden until switched on). Only our server calls OANDA with it.
 // Demo / practice first: every sign-in is the broker's TEST environment (tastytrade sandbox, TradeStation SIM, OANDA practice) unless
 // the server's probe says that broker's live flag is on. Education only. Not financial advice.
-import { saveKeys, loadKeys, forgetKeys } from './byo-core.js?v=1262';
+import { saveKeys, loadKeys, forgetKeys } from './byo-core.js?v=1263';
 
 export const B3 = { TRADE: '/connect/brokers/trade', TOKEN: '/connect/brokers/token', STATE_KEY: 'tz-b3-trade-state', REFRESH_BEFORE: 3 * 60000 };
 export const BROKERS = {

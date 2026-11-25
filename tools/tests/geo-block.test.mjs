@@ -1,6 +1,6 @@
 // Sanctions geo-block tests (Owner order 09 Nov 2026). No network.
 //   node tools/tests/geo-block.test.mjs
-// Proves: every blocked country and Ukraine region is blocked in both code forms; UA elsewhere, US, IN, GB allowed;
+// Proves (RU/BY open for access, closed for payment since 25 Nov 2026): every blocked country and Ukraine region is blocked in both code forms; UA elsewhere, US, IN, GB allowed;
 // all five copies of the list agree; the Pages middleware returns 451 (HTML page, JSON on /api) for a faked
 // request.cf, lets the block page / robots / favicon through, leaves allowed visitors (and crawlers from allowed
 // countries) alone and keeps the legacy 301; both Workers answer 451 {error:"unavailable_region"} before any route,
@@ -23,10 +23,36 @@ const ctx = { window: {} }; vm.createContext(ctx);
 vm.runInContext(fs.readFileSync(path.join(root, 'assets/geo-block-list.js'), 'utf8'), ctx);
 const B = ctx.window.TZGeoBlock;
 
-await t('blocked countries: CU IR KP SY RU BY (any case)', () => {
-  for (const c of ['CU', 'IR', 'KP', 'SY', 'RU', 'BY', 'ru', ' by ']) {
+await t('blocked countries for ACCESS: CU IR KP SY only (any case)', () => {
+  assert.equal(JSON.stringify(G.BLOCKED_COUNTRIES), JSON.stringify(['CU', 'IR', 'KP', 'SY']));
+  for (const c of ['CU', 'IR', 'KP', 'SY', 'cu', ' ir ']) {
     assert.ok(G.isBlockedPlace(c), c); assert.ok(C.isBlockedPlace(c), c); assert.ok(B.isBlockedResidence(c), c);
   }
+});
+await t('Russia and Belarus: open for access, closed for payment (Owner 25 Nov 2026)', () => {
+  for (const c of ['RU', 'BY', 'ru', ' by ']) {
+    assert.ok(!G.isBlockedPlace(c), c); assert.ok(!C.isBlockedPlace(c), c); assert.ok(!B.isBlockedResidence(c), c);
+    assert.ok(!C.isBlockedResidence(c), c); assert.ok(!C.isBlockedStudent({ residenceCountry: c }), c);
+    assert.ok(C.isPaymentBlockedResidence(c), c); assert.ok(B.isPaymentBlockedResidence(c), c); assert.ok(C.isPaymentBlockedStudent({ residenceCountry: c }), c);
+  }
+  for (const c of ['CU', 'IR', 'KP', 'SY', 'UA-43', 'UA-09']) { assert.ok(C.isPaymentBlockedResidence(c), c); assert.ok(B.isPaymentBlockedResidence(c), c); }
+  assert.ok(!C.isPaymentBlockedResidence('US') && !B.isPaymentBlockedResidence('IN') && !C.isPaymentBlockedResidence(''));
+  assert.equal(JSON.stringify(G.PAYMENT_BLOCKED_COUNTRIES), JSON.stringify(['CU', 'IR', 'KP', 'SY', 'RU', 'BY']));
+  assert.equal(JSON.stringify(C.PAYMENT_BLOCKED_COUNTRIES), JSON.stringify(G.PAYMENT_BLOCKED_COUNTRIES));
+  assert.equal(JSON.stringify(Array.from(B.PAYMENT_BLOCKED_COUNTRIES)), JSON.stringify(G.PAYMENT_BLOCKED_COUNTRIES));
+  assert.ok(!/Russia|Belarus/.test(B.ATTEST_TEXT)); assert.match(B.ATTEST_TEXT, /Cuba, Iran, North Korea, Syria/);
+  // payment gate: RU/BY residence or billing country refused with payment_unavailable_country; free orders and access use the other list
+  const fake = { https: { HttpsError: class extends Error { constructor(c, m, d) { super(m); this.code = c; this.d = d; } } } };
+  for (const c of ['RU', 'BY']) {
+    assert.throws(() => C.assertCanBuy(fake, { residenceCountry: c, sanctionsAttest: true }), (e) => e.d.code === 'payment_unavailable_country' && e.message === "Paid plans aren't available in your country yet.");
+    assert.throws(() => C.assertCanBuy(fake, { residenceCountry: 'US', sanctionsAttest: true }, c), (e) => e.d.code === 'payment_unavailable_country');
+    C.assertCanBuy(fake, { residenceCountry: c, sanctionsAttest: true }, c, { free: true });   // invite / beta / 100% coupon: no money, allowed
+    assert.throws(() => C.assertCanBuy(fake, { residenceCountry: c, sanctionsAttest: true, sanctionsLocked: true }, c, { free: true }), (e) => e.d.code === 'unavailable_region');
+  }
+  assert.throws(() => C.assertCanBuy(fake, { residenceCountry: 'IR', sanctionsAttest: true }, '', { free: true }), (e) => e.d.code === 'unavailable_region');
+  C.assertCanBuy(fake, { residenceCountry: 'US', sanctionsAttest: true }, 'US');
+  assert.ok(C.paymentVerdict({ residence: 'RU' }).blocked); assert.ok(C.paymentVerdict({ cardCountries: ['BY'] }).blocked);
+  assert.ok(C.isBlockedAddress({ country: 'RU' })); assert.ok(C.isBlockedAddress({ country: 'BY' }));
 });
 await t('blocked UA regions in Cloudflare form (43 40 14 09) and ISO form (UA-43 ...), plus unpadded 9', () => {
   for (const r of ['43', '40', '14', '09', 'UA-43', 'UA-40', 'UA-14', 'UA-09', 'ua-09', '9']) {
@@ -58,11 +84,11 @@ await t('country picker: ~250 places, blocked ones flagged, US/IN/GB/UA selectab
   const o = B.options();
   assert.ok(o.length > 240, String(o.length));
   const blocked = o.filter((x) => x.blocked).map((x) => x.code).sort();
-  assert.equal(JSON.stringify(blocked), JSON.stringify(['BY', 'CU', 'IR', 'KP', 'RU', 'SY', 'UA-09', 'UA-14', 'UA-40', 'UA-43']));
-  for (const c of ['US', 'IN', 'GB', 'UA']) assert.ok(o.find((x) => x.code === c && !x.blocked), c);
+  assert.equal(JSON.stringify(blocked), JSON.stringify(['CU', 'IR', 'KP', 'SY', 'UA-09', 'UA-14', 'UA-40', 'UA-43']));
+  for (const c of ['US', 'IN', 'GB', 'UA', 'RU', 'BY']) assert.ok(o.find((x) => x.code === c && !x.blocked), c);
 });
 await t('Stripe address check: country, and UA oblast in state/city', () => {
-  assert.ok(C.isBlockedAddress({ country: 'RU', city: 'Moscow' }));
+  assert.ok(C.isBlockedAddress({ country: 'RU', city: 'Moscow' }));   // billing address: payment list (RU/BY closed for paying)
   assert.ok(C.isBlockedAddress({ country: 'UA', state: 'Crimea' }));
   assert.ok(C.isBlockedAddress({ country: 'UA', state: 'UA-14' }));
   assert.ok(C.isBlockedAddress({ country: 'UA', state: '', city: 'Sevastopol' }));
@@ -72,7 +98,7 @@ await t('Stripe address check: country, and UA oblast in state/city', () => {
   assert.ok(C.isBlockedAddress({ country: 'UA', city: 'Крим' })); assert.ok(C.isBlockedAddress({ country: 'UA', city: 'Луганськ' }));
   for (const pc of ['95000', '99011', '83001', '91000', '87500']) assert.ok(C.isBlockedAddress({ country: 'UA', postal_code: pc }), pc);
   for (const pc of ['01001', '61000', '79000']) assert.ok(!C.isBlockedAddress({ country: 'UA', postal_code: pc }), pc);
-  assert.ok(C.paymentVerdict({ cardCountries: ['RU'] }).blocked); assert.ok(C.paymentVerdict({ cardCountries: [], addresses: [] }).unknown);
+  assert.ok(C.paymentVerdict({ cardCountries: ['RU'] }).blocked); assert.ok(C.paymentVerdict({ cardCountries: ['KP'] }).blocked); assert.ok(C.paymentVerdict({ cardCountries: [], addresses: [] }).unknown);
   assert.ok(!C.paymentVerdict({ cardCountries: ['US'], addresses: [{ country: 'US' }] }).blocked);
   assert.ok(C.isBlockedStudent({ residenceCountry: 'IR' })); assert.ok(C.isBlockedStudent({ sanctionsLocked: true }));
   assert.ok(!C.isBlockedStudent({ residenceCountry: 'IN' })); assert.ok(!C.isBlockedStudent({}));
@@ -95,12 +121,15 @@ await t('middleware: blocked country gets 451 + the block page on pages and stat
     assert.equal(r.headers.get('cache-control'), 'private, no-store');
   }
 });
+await t('middleware: Russia and Belarus pass (Owner 25 Nov 2026)', async () => {
+  for (const c of ['RU', 'BY']) { assert.equal(await (await run('https://tradezoro.com/charts', { country: c })).text(), 'NEXT', c); assert.equal(await (await run('https://tradezoro.com/api/x', { country: c })).text(), 'NEXT', c); }
+});
 await t('middleware: blocked UA region (Cloudflare code) gets 451; Kyiv passes', async () => {
   for (const rc of ['43', '40', '14', '09']) assert.equal((await run('https://tradezoro.com/', { country: 'UA', regionCode: rc })).status, 451, rc);
   assert.equal(await (await run('https://tradezoro.com/', { country: 'UA', regionCode: '30' })).text(), 'NEXT');
 });
 await t('middleware: /api and websocket upgrades get JSON 451 unavailable_region', async () => {
-  const r = await run('https://tradezoro.com/api/gex/ladder', { country: 'RU' });
+  const r = await run('https://tradezoro.com/api/gex/ladder', { country: 'SY' });
   assert.equal(r.status, 451); assert.equal((await r.json()).error, 'unavailable_region');
   const w = await run('https://tradezoro.com/api/chart/stream/BTC', { country: 'KP' }, { headers: { upgrade: 'websocket' } });
   assert.equal(w.status, 451); assert.equal((await w.json()).error, 'unavailable_region');
@@ -118,13 +147,14 @@ await t('middleware: allowed countries untouched; crawlers judged by country onl
   for (const c of ['US', 'IN', 'GB', 'DE', undefined]) assert.equal(await (await run('https://tradezoro.com/charts', c ? { country: c } : undefined)).text(), 'NEXT', String(c));
   const bot = { headers: { 'user-agent': 'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)' } };
   assert.equal(await (await run('https://tradezoro.com/', { country: 'US' }, bot)).text(), 'NEXT');
-  assert.equal((await run('https://tradezoro.com/', { country: 'BY' }, bot)).status, 451);
+  assert.equal((await run('https://tradezoro.com/', { country: 'KP' }, bot)).status, 451);
+  for (const c of ['RU', 'BY']) assert.equal(await (await run('https://tradezoro.com/', { country: c }, bot)).text(), 'NEXT', c);
 });
 await t('middleware: legacy 301 kept for pages, not for static files; HEAD gets 451 with no body', async () => {
   const r = await run('https://strykertrading.com/login?x=1', { country: 'US' });
   assert.equal(r.status, 301); assert.equal(r.headers.get('location'), 'https://tradezoro.com/login?x=1');
   assert.equal(await (await run('https://strykertrading.com/assets/style.css', { country: 'US' })).text(), 'NEXT');
-  const h = await run('https://tradezoro.com/', { country: 'RU' }, { method: 'HEAD' });
+  const h = await run('https://tradezoro.com/', { country: 'CU' }, { method: 'HEAD' });
   assert.equal(h.status, 451); assert.equal(await h.text(), '');
 });
 await t('middleware: inline fallback page if ASSETS fails', async () => {

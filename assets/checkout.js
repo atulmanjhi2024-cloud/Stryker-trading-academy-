@@ -201,8 +201,43 @@ function checkoutFmt(usd){
 // Live Futures Data: no payment button until the Market Data Agreement (non-professional check + e-signature) is saved on the server.
 let CHECKOUT_MDA = null;   // students/{uid}.marketDataAgreement as read at load, or set after accepting
 function checkoutMdaNeeded(){ return checkoutIsAddon() && !(window.StkMDA && StkMDA.accepted({ marketDataAgreement: CHECKOUT_MDA })); }
+// Paid plans closed for Russia and Belarus (Owner 25 Nov 2026; list: PAYMENT_BLOCKED_COUNTRIES in assets/geo-block-list.js).
+// Signals: the visitor's edge country (/api/hl-geo, Cloudflare) and the saved billing country. Free orders (price 0) stay open.
+// The server re-checks (assertCanBuy), this only swaps the pay button for a calm line.
+let CHECKOUT_GEO_COUNTRY = '';
+function checkoutPayClosed(){
+  const G = window.TZGeoBlock;
+  if (!G || !G.isPaymentBlockedResidence) return false;
+  const b = String((CHECKOUT_BILLING && CHECKOUT_BILLING.country) || '').trim();
+  const byName = /^(russia|russian federation|belarus)$/i.test(b);
+  return G.isPaymentBlockedResidence(CHECKOUT_GEO_COUNTRY) || G.isPaymentBlockedResidence(b.length === 2 ? b : '') || byName;
+}
+function checkoutApplyPayClosed(){
+  const btn = document.getElementById('checkout-complete-btn');
+  let note = document.getElementById('checkout-pay-closed');
+  const closed = !!btn && !!CHECKOUT_PLAN && checkoutPayClosed() && checkoutTotalDue() > 0;
+  if (closed) {
+    if (!note) {
+      note = document.createElement('p');
+      note.id = 'checkout-pay-closed'; note.setAttribute('role', 'status');
+      note.style.cssText = 'margin:0; padding:12px 14px; border:1px solid color-mix(in srgb, currentColor 22%, transparent); border-radius:10px; font-size:14px; line-height:20px; color:var(--ink-1); text-align:center;';
+      note.textContent = (window.TZGeoBlock && window.TZGeoBlock.PAYMENT_MESSAGE) || "Paid plans aren't available in your country yet.";
+      btn.insertAdjacentElement('afterend', note);
+    }
+    btn.style.display = 'none'; btn.disabled = true; note.style.display = '';
+    const t = document.getElementById('checkout-trial-print'); if (t) t.style.display = 'none';
+    const gn = document.getElementById('checkout-gateway-note'); if (gn && gn.closest('.notice')) gn.closest('.notice').style.display = 'none';
+    const rd = document.getElementById('checkout-renew-disclosure'); if (rd) rd.style.display = 'none';
+    const ar = document.getElementById('checkout-autopay-row'); if (ar) ar.style.display = 'none';
+    const pi = document.getElementById('checkout-pay-inr'); if (pi) pi.style.display = 'none';
+  } else {
+    if (btn) btn.style.display = '';
+    if (note) { note.style.display = 'none'; const gn = document.getElementById('checkout-gateway-note'); if (gn && gn.closest('.notice')) gn.closest('.notice').style.display = ''; }
+  }
+}
 function updateOrderSummary(){
   updateOrderSummaryBase();
+  checkoutApplyPayClosed();
   const host = document.getElementById('checkout-mda'), btn = document.getElementById('checkout-complete-btn');
   if (!host || !checkoutIsAddon() || !window.StkMDA) return;
   host.style.display = '';
@@ -700,6 +735,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     handled = true;
     CHECKOUT_UID = user.uid;
+    fetch('/api/hl-geo', { cache: 'no-store' }).then((r) => r.json()).then((g) => { CHECKOUT_GEO_COUNTRY = String((g && g.country) || ''); if (CHECKOUT_PLAN) updateOrderSummary(); }).catch(() => {});
     handleStripeReturn(user.uid);
 
     const fxReady = (typeof strykerFxReady === 'function') ? strykerFxReady() : Promise.resolve();
@@ -796,6 +832,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const errEl = document.getElementById('checkout-error');
     errEl.style.display = 'none';
     if (!CHECKOUT_UID || !CHECKOUT_PLAN || checkoutMdaNeeded()) return;
+    if (checkoutPayClosed() && checkoutTotalDue() > 0) { checkoutApplyPayClosed(); return; }
 
     // Billing details validate and save BEFORE any money — or a free coupon
     // seat — changes hands, so every order has a name and address behind it.

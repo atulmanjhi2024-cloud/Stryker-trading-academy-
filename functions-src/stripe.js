@@ -520,7 +520,10 @@ async function geoVerdict(uid, signals, extraAddresses) {
 
 async function geoRefuse({ uid, subId, chargeId, verdict, source, sessionId }) {
   const reason = verdict.reason === 'locked' ? 'locked' : verdict.reason;
-  if (uid) {
+  // Owner 25 Nov 2026: Russia / Belarus may use the site free, so a payer refused only for RU / BY keeps the account
+  // (no lock, login stays on); the subscription is still cancelled and the charge refunded below.
+  const payOnly = verdict.reason !== 'locked' && ['RU', 'BY'].includes(String(verdict.country || '').toUpperCase());
+  if (uid && !payOnly) {
     await db.collection('students').doc(uid).set({ sanctionsLocked: true, sanctionsLockedAt: admin.firestore.FieldValue.serverTimestamp(),
       sanctionsLockReason: reason, subscriptionAutopay: false }, { merge: true });
     await admin.auth().updateUser(uid, { disabled: true }).catch((e) => console.error('geo: auth disable failed', uid, e.message));
@@ -536,7 +539,7 @@ async function geoRefuse({ uid, subId, chargeId, verdict, source, sessionId }) {
   if (chargeId) refund = await geoRefundOnce(uid, chargeId, subId);
   await db.collection('sanctionsLog').doc(String(subId || chargeId || sessionId || uid)).set({
     uid: uid || null, source, reason, country: verdict.country || null, subscriptionId: subId || null, chargeId: chargeId || null,
-    sessionId: sessionId || null, refund, action: 'locked, auth disabled, subscription cancelled',
+    sessionId: sessionId || null, refund, action: payOnly ? 'subscription cancelled, refunded (RU/BY paid plans closed; account not locked)' : 'locked, auth disabled, subscription cancelled',
     at: admin.firestore.FieldValue.serverTimestamp()
   }, { merge: true });
   console.warn('stripeWebhook geo refused', source, reason, verdict.country || '', 'sub', subId || '-', 'refund', refund);

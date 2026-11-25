@@ -13,7 +13,8 @@ function stub(cfg) {
       'settings/commerce': { usdInr: 88, stripeCheckout: true },
       'settings/pageAccess': {},
       'plans/free': { name: 'Starter', displayName: 'Free', rank: 0, price: '0', period: 'month' },
-      'students/u1': CFG.student || null
+      'students/u1': CFG.student || null,
+      'plans/pro': { name: 'Pro', displayName: 'Pro', rank: 2, price: '19', period: 'month' }
     };
     window.__sets = []; window.__signedOut = 0;
     const snap = (id, d) => ({ id, exists: !!d, data: () => d || {}, ref: {} });
@@ -75,6 +76,7 @@ async function open(browser, url, cfg, width) {
   p.on('pageerror', (e) => errors.push(e.message));
   await p.addInitScript(stub(cfg));
   await p.route(/^https?:\/\/(?!localhost|127\.0\.0\.1)/, (r) => r.abort());
+  if (cfg.geo) await p.route('**/api/hl-geo', (r) => r.fulfill({ contentType: 'application/json', body: JSON.stringify({ country: cfg.geo, region: '' }) }));
   await p.goto(BASE + '/' + url, { waitUntil: 'load' });
   await p.waitForTimeout(cfg.wait || 1500);
   return { p, ctx, errors };
@@ -105,9 +107,34 @@ const hideOverlays = (p) => p.evaluate(() => document.querySelectorAll('body *')
       check(page + ': no page errors', errors.filter((e) => !/Failed to fetch|NetworkError|net::/.test(e)), []);
       await ctx.close();
     }
-    for (const [label, student] of [['stored RU', { plan: 'Starter', residenceCountry: 'RU' }], ['server lock', { plan: 'Pro', sanctionsLocked: true }]]) {
+    for (const [label, student] of [['stored IR', { plan: 'Starter', residenceCountry: 'IR' }], ['server lock', { plan: 'Pro', sanctionsLocked: true }]]) {
       const { p, ctx } = await open(browser, 'charts.html', { signedIn: true, student, wait: 3000 }, 1440);
       check('still locked on load (' + label + ')', await p.evaluate(() => [document.querySelector('h1') && document.querySelector('h1').textContent, window.__signedOut > 0]), ['Not available in your region', true]);
+      await ctx.close();
+    }
+    for (const c of ['RU', 'BY']) {   // Owner 25 Nov 2026: a stored RU / BY residence no longer locks anyone out
+      const { p, ctx } = await open(browser, 'charts.html', { signedIn: true, student: { plan: 'Starter', residenceCountry: c }, wait: 3000 }, 1440);
+      check('stored ' + c + ' lets the member in', await p.evaluate(() => [document.querySelector('h1') && document.querySelector('h1').textContent === 'Not available in your region', window.__signedOut > 0]), [false, false]);
+      await ctx.close();
+    }
+    // Checkout (Owner 25 Nov 2026): RU / BY see a calm line instead of the pay button; everyone else keeps the button.
+    for (const [geo, billing, w, light] of [['RU', null, 390, false], ['BY', null, 1440, true], ['US', 'Russia', 390, true], ['US', null, 390, false], ['US', null, 1440, false]]) {
+      const student = { plan: 'Starter', billing: billing ? { fullName: 'T', address: 'a', city: 'c', postal: '1', country: billing } : undefined };
+      const { p, ctx } = await open(browser, 'checkout.html?plan=pro', { signedIn: true, student, geo, wait: 3500, light }, w);
+      const r = await p.evaluate(() => {
+        const b = document.getElementById('checkout-complete-btn'), n = document.getElementById('checkout-pay-closed');
+        const vis = (e) => !!e && e.offsetParent !== null;
+        const cs = n ? getComputedStyle(n) : null;
+        return { btn: vis(b), note: vis(n), text: n ? n.textContent : '', hscroll: document.documentElement.scrollWidth > innerWidth,
+          pad: cs ? [cs.paddingLeft, cs.paddingRight, cs.paddingTop, cs.paddingBottom] : null, clipped: n ? n.scrollWidth > n.clientWidth + 1 : false };
+      });
+      const closed = geo !== 'US' || !!billing;
+      check('checkout ' + geo + (billing ? ' + Russia billing' : '') + ' ' + w + (light ? ' light' : ' dark') + ': ' + (closed ? 'line, no pay button' : 'pay button, no line'),
+        [r.btn, r.note, r.text, r.hscroll, r.clipped], closed ? [false, true, "Paid plans aren't available in your country yet.", false, false] : [true, false, '', false, false]);
+      if (closed) check('  closed line: even padding', r.pad[0] === r.pad[1] && r.pad[2] === r.pad[3], true);
+      await hideOverlays(p);
+      await p.evaluate(() => { const n = document.getElementById('checkout-pay-closed') || document.getElementById('checkout-complete-btn'); if (n) n.scrollIntoView({ block: 'center' }); });
+      await p.screenshot({ path: path.join(OUT, 'checkout-' + geo + (billing ? '-bill' : '') + '-' + w + (light ? '-light' : '-dark') + '.png'), fullPage: w < 500 });
       await ctx.close();
     }
     {
@@ -118,7 +145,7 @@ const hideOverlays = (p) => p.evaluate(() => document.querySelectorAll('body *')
     {
       const { p, ctx } = await open(browser, 'terms.html#restricted-regions', { signedIn: true, student: { plan: 'Starter' }, wait: 2500 }, 390);
       check('terms: no prompt, Restricted regions section present', await p.evaluate(() => [!document.getElementById('geo-gate'), !!document.getElementById('restricted-regions'),
-        (document.getElementById('site-page-updated') || {}).textContent]), [true, true, 'Last updated 9 November 2026']);
+        (document.getElementById('site-page-updated') || {}).textContent]), [true, true, 'Last updated 25 November 2026']);
       await p.screenshot({ path: path.join(OUT, 'terms-restricted-390-dark.png') });
       await ctx.close();
     }

@@ -47,7 +47,7 @@ const SITE_PAGES_DEFAULTS = {
   },
 
   'terms': {
-    updated: '9 November 2026',
+    updated: '25 November 2026',
     title: 'Terms & Risk Disclosure',
     bodyHtml:
       '<h2>1. Acceptance of these terms</h2>' +
@@ -55,7 +55,7 @@ const SITE_PAGES_DEFAULTS = {
       '<h2>2. Eligibility</h2>' +
       '<p>You must be at least 18 years old to create an account. TradeZoro does not offer accounts to anyone under 18, given the financial risk involved in the subject matter taught here.</p>' +
       '<h2 id="restricted-regions">3. Restricted regions</h2>' +
-      '<p>TradeZoro LLC is a US company and follows US sanctions law. Our service is not offered to anyone located in, ordinarily resident in, or a citizen of Cuba, Iran, North Korea, Syria, Russia or Belarus, or the Crimea, Donetsk or Luhansk regions of Ukraine (including Sevastopol). This applies to free and paid accounts alike.</p>' +
+      '<p>TradeZoro LLC is a US company and follows US sanctions law. Our service is not offered to anyone located in, ordinarily resident in, or a citizen of Cuba, Iran, North Korea, Syria, or the Crimea, Donetsk or Luhansk regions of Ukraine (including Sevastopol). This applies to free and paid accounts alike.</p>' +
       '<p>When you create an account you confirm your country of residence and that none of the above applies to you. You may not use a VPN, proxy or any other method to hide your location or get around these restrictions. If we find that an account breaks this section, we will close it. Any payments on that account may be refunded at our discretion, or handled as the law requires.</p>' +
       '<h2>4. Risk disclosure</h2>' +
       '<p><strong>Trading foreign exchange, indices, commodities, and other financial instruments carries a high level of risk and may not be suitable for everyone.</strong> You could lose some or all of your invested capital, and you should not trade with money you cannot afford to lose.</p>' +
@@ -189,6 +189,6 @@ const SITE_PAGES_DEFAULTS = {
 
 // Restricted regions (sanctions geo-block, Owner order 09 Nov 2026). Also used by site-page-render.js to add the
 // section when an admin-saved sitePages/terms doc (written before this date) doesn't have it yet.
-const SITE_TERMS_RESTRICTED = { updated: '9 November 2026', html: '<h2 id="restricted-regions">Restricted regions</h2>' +
-      '<p>TradeZoro LLC is a US company and follows US sanctions law. Our service is not offered to anyone located in, ordinarily resident in, or a citizen of Cuba, Iran, North Korea, Syria, Russia or Belarus, or the Crimea, Donetsk or Luhansk regions of Ukraine (including Sevastopol). This applies to free and paid accounts alike.</p>' +
+const SITE_TERMS_RESTRICTED = { updated: '25 November 2026', html: '<h2 id="restricted-regions">Restricted regions</h2>' +
+      '<p>TradeZoro LLC is a US company and follows US sanctions law. Our service is not offered to anyone located in, ordinarily resident in, or a citizen of Cuba, Iran, North Korea, Syria, or the Crimea, Donetsk or Luhansk regions of Ukraine (including Sevastopol). This applies to free and paid accounts alike.</p>' +
       '<p>When you create an account you confirm your country of residence and that none of the above applies to you. You may not use a VPN, proxy or any other method to hide your location or get around these restrictions. If we find that an account breaks this section, we will close it. Any payments on that account may be refunded at our discretion, or handled as the law requires.</p>' };

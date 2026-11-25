@@ -2,13 +2,17 @@
 // Owner order 09 Nov 2026 via the CoS ("no chances"): TradeZoro is a US LLC, so US sanctions (OFAC) forbid serving
 // these places at all, free or paid. The list matches Stripe's prohibited-countries list
 // (https://stripe.com/legal/restricted-businesses and https://docs.stripe.com/payments/countries-and-regions),
-// PLUS Russia and Belarus by the Owner's own decision.
+// Owner 25 Nov 2026: Russia and Belarus reopened for access (free use). They were never OFAC-comprehensive; the Owner had blocked
+// them on 9 Nov by choice. Paid checkout stays closed for them (PAYMENT_BLOCKED_COUNTRIES below).
 // COPIES (keep identical; tools/tests/geo-block.test.mjs fails if they drift):
 //   functions/_geo-block.js (this file), workers/book-recorder/src/geo-block.js, workers/discord-roles/src/geo-block.js,
 //   functions-src/geoBlock.js (Cloud Functions, CommonJS), assets/geo-block-list.js (browser).
 // Ukraine regions: Cloudflare request.cf.regionCode is the ISO 3166-2 subdivision code WITHOUT the "UA-" prefix
 // (Crimea "43", Sevastopol "40", Donetsk "14", Luhansk "09"); we also accept "UA-43", lower case and an unpadded "9".
-export const BLOCKED_COUNTRIES = ['CU', 'IR', 'KP', 'SY', 'RU', 'BY'];
+export const BLOCKED_COUNTRIES = ['CU', 'IR', 'KP', 'SY'];
+// Paid checkout only (Owner 25 Nov 2026): the blocked list above PLUS Russia and Belarus (card networks and our payment
+// processor do not serve them). Used by the payment path, never by the site-access check.
+export const PAYMENT_BLOCKED_COUNTRIES = ['CU', 'IR', 'KP', 'SY', 'RU', 'BY'];
 export const BLOCKED_UA_REGIONS = ['43', '40', '14', '09'];
 // Backup when a region code is missing but the region NAME is present (cf.region).
 const UA_REGION_NAMES = /crimea|krym|sevastopol|donetsk|luhansk|lugansk/i;

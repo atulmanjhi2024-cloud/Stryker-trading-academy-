@@ -189,7 +189,7 @@ const invoice = (uid, sub, reason) => ({ id: 'in_' + sub + (reason === 'subscrip
   const eN2 = await refusal(() => F.redeemFreeCheckout({ planId: 'pro', couponCode: 'FREEPRO' }, ctxOf('u-none')));
   ok('coupon refused when residence not confirmed', eN2 && /confirm your country of residence/.test(eN2.message));
   member('u-bill');
-  const eB = await refusal(() => F.redeemFreeCheckout({ planId: 'pro', couponCode: 'FREEPRO', billing: { country: 'RU' } }, ctxOf('u-bill')));
+  const eB = await refusal(() => F.redeemFreeCheckout({ planId: 'pro', couponCode: 'FREEPRO', billing: { country: 'IR' } }, ctxOf('u-bill')));
   ok('free checkout refused for a blocked client billing country', eB && REGION.test(eB.message));
   member('u-ok', { residenceCountry: 'IN' });
   const cOk = await S.stripeCreateCheckout({ planId: 'pro' }, ctxOf('u-ok'));
@@ -205,10 +205,10 @@ const invoice = (uid, sub, reason) => ({ id: 'in_' + sub + (reason === 'subscrip
   let r = await send(ev('checkout.session.completed', session('w-ru', 'sub_ru', { card: 'RU', billing: 'US' })));
   let st = get('students/w-ru');
   ok('RU card: webhook 200', r.code === 200, r);
-  ok('RU card: account locked (reason card), autopay off', st.sanctionsLocked === true && st.sanctionsLockReason === 'card' && st.subscriptionAutopay === false, st);
+  ok('RU card: paid plans closed but account NOT locked (RU/BY use the site free, Owner 25 Nov 2026)', !st.sanctionsLocked && !st.sanctionsLockReason, st);
   ok('RU card: no plan granted, no order', st.plan === 'Starter' && !st.paidThroughMillis && ordersFor('w-ru') === 0);
   ok('RU card: subscription cancelled once, charge refunded once', deletesFor('sub_ru') === 1 && refundsFor('ch_sub_ru') === 1 && W.charges.ch_sub_ru.refunded);
-  ok('RU card: login disabled', authCalls.some(([u, p]) => u === 'w-ru' && p.disabled === true));
+  ok('RU card: login stays enabled', !authCalls.some(([u, p]) => u === 'w-ru' && p.disabled === true));
   const log = get('sanctionsLog/sub_ru');
   ok('RU card: sanctionsLog written (codes only)', log && log.reason === 'card' && log.country === 'RU' && log.refund === 'refunded', log);
   ok('RU card: refund reason not "fraudulent"', calls.find((c) => c.url.endsWith('/refunds')).body.includes('reason=requested_by_customer'));
@@ -217,7 +217,7 @@ const invoice = (uid, sub, reason) => ({ id: 'in_' + sub + (reason === 'subscrip
   ok('RU card: later invoice.paid -> no second refund, no grant', r.code === 200 && refundsFor('ch_sub_ru') === 1 && !get('students/w-ru').paidThroughMillis);
   // Stripe then sends subscription.deleted: nothing changes
   r = await send(ev('customer.subscription.deleted', { id: 'sub_ru', status: 'canceled', metadata: { uid: 'w-ru', sitePlanId: 'pro' } }));
-  ok('RU card: subscription.deleted keeps the lock, writes no order', get('students/w-ru').sanctionsLocked === true && ordersFor('w-ru') === 0);
+  ok('RU card: subscription.deleted writes no order, no lock', !get('students/w-ru').sanctionsLocked && ordersFor('w-ru') === 0);
 
   // ---------- billing address in Crimea (UA), US card ----------
   member('w-cr');
@@ -229,7 +229,7 @@ const invoice = (uid, sub, reason) => ({ id: 'in_' + sub + (reason === 'subscrip
   member('w-by');
   const sBy = session('w-by', 'sub_by', { card: 'BY' });
   r = await send(ev('invoice.paid', invoice('w-by', 'sub_by')));
-  ok('BY card, invoice first: locked + refunded, no grant', get('students/w-by').sanctionsLocked && refundsFor('ch_sub_by') === 1 && !get('students/w-by').paidThroughMillis);
+  ok('BY card, invoice first: refunded, no grant, not locked', !get('students/w-by').sanctionsLocked && refundsFor('ch_sub_by') === 1 && !get('students/w-by').paidThroughMillis);
   r = await send(ev('checkout.session.completed', sBy));
   ok('BY card, session second: still one refund, no grant, no order', refundsFor('ch_sub_by') === 1 && get('students/w-by').plan === 'Starter' && ordersFor('w-by') === 0);
 

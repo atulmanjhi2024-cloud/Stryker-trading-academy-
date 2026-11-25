@@ -7,7 +7,7 @@
 // Opening a broker symbol opens OUR chart for the same instrument (mapCode; cTrader: the broker's own instrument chart instead) and, for MetaTrader / cTrader, remembers the broker symbol
 // for that account (chart-live mtRemember = the same map the trade badge's picker writes), so trading on that chart needs no pick step.
 // Reads only: never places, changes or cancels an order. Education only. Not financial advice.
-import * as L from './chart-live-core.js?v=1285';
+import * as L from './chart-live-core.js?v=1286';
 
 const IDX_KEYS = ['NDX', 'SPX', 'DJI', 'RUT', 'XAU', 'XAG', 'WTI'];
 // broker index / metal / oil -> our chart(s), first one present in the symbol pool wins
@@ -16,7 +16,7 @@ const IDX_CHART = { NDX: [['futures', 'NQ1!']], SPX: [['futures', 'ES1!']], DJI:
 const IDX_CLS = { NDX: 'Indices', SPX: 'Indices', DJI: 'Indices', RUT: 'Indices', XAU: 'Metals', XAG: 'Metals', WTI: 'Energy' };
 const USUAL = ['NQ1!', 'ES1!', 'YM1!', 'RTY1!', 'GC1!', 'SI1!', 'CL1!', 'EURUSD', 'GBPUSD', 'USDJPY', 'AUDUSD', 'USDCAD', 'BTCUSD'];
 const FIN_ROOTS = ['NQ', 'MNQ', 'ES', 'MES', 'YM', 'MYM', 'RTY', 'M2K', 'GC', 'MGC', 'SI', 'SIL', 'CL', 'MCL', 'NG', 'HG', 'MHG', 'ZN', 'ZB', '6E'];
-const CORE = () => import('./byo-core.js?v=1285');
+const CORE = () => import('./byo-core.js?v=1286');
 
 // broker energy / metal names our pool may not carry -> the futures chart whose icon they share (row logo only; no trading key)
 const ICON_ALIAS = { USOIL: 'CL1!', XTIUSD: 'CL1!', UKOIL: 'BZ1!', BRENT: 'BZ1!', XBRUSD: 'BZ1!', XNGUSD: 'NG1!', NATGAS: 'NG1!', NGAS: 'NG1!', XPTUSD: 'PL1!', XPDUSD: 'PA1!', COPPER: 'HG1!', XCUUSD: 'HG1!' };
@@ -88,7 +88,7 @@ export async function loadSymbols(src, find) {
   }
   if (src.kind === 'fin') {
     let fronts = null;
-    try { const m = await import('./chart-symbol-info.js?v=1285'); const d = await m.getInfo(); fronts = L.frontsOf(d && d.syms); } catch (e) { fronts = null; }
+    try { const m = await import('./chart-symbol-info.js?v=1286'); const d = await m.getInfo(); fronts = L.frontsOf(d && d.syms); } catch (e) { fronts = null; }
     const now = Date.now();
     return { rows: FIN_ROOTS.map((r) => { const f = L.frontMonth(r, now, fronts), m = mapCode(r, true), d = target(m.charts); return row(f ? f.code : r, d ? d.description + ' · front month' : 'Front month', m, d); }), note: 'Futures at ' + src.name + ', front months. Charts follow the continuous front month.' };
   }
@@ -96,7 +96,7 @@ export async function loadSymbols(src, find) {
   const c = await CORE(), id = src.byo, s = c.srcById(id) || {}, rows = [], seen = new Set();
   const add = (code, desc, d, sym, cls) => { if (seen.has(sym)) return; seen.add(sym); rows.push({ code, desc: desc || (d && d.description) || '', cls, key: '', d, sym }); };
   for (const [p, cls] of [['fx', 'Forex'], ['idx', 'Indices']]) for (const t of find.tickers(p)) if (c.serves(id, p, t)) add(t, '', find(p, t), '', cls);
-  if (c.serves(id, 'byo', 'AAPL')) { const P = (await import('./byo-provider.js?v=1285')).POPULAR; for (const [t, n] of P) if (c.serves(id, 'byo', t)) add(t, n, find('byo', t), 'byo:' + t, 'Stocks'); }
+  if (c.serves(id, 'byo', 'AAPL')) { const P = (await import('./byo-provider.js?v=1286')).POPULAR; for (const [t, n] of P) if (c.serves(id, 'byo', t)) add(t, n, find('byo', t), 'byo:' + t, 'Stocks'); }
   for (const m of String((s.manage || '') + ' ' + (s.help || '')).matchAll(/byo:([A-Z0-9][A-Z0-9:!&-]*(?:\.[A-Z]\d{2})?(?: \d{2}-\d{2})?)/gi)) { const t = m[1]; if (c.serves(id, 'byo', t)) add(t, 'Example', null, 'byo:' + t, 'Examples'); }
   const typed = (q) => { const t = String(q || '').trim().toUpperCase(); return t && c.serves(id, 'byo', t) ? { code: t, desc: 'Open from ' + s.name, cls: 'Typed', key: '', d: null, sym: 'byo:' + t } : null; };
   return { rows, typed, note: rows.length ? '' : 'Type a symbol the way ' + (s.name || 'this feed') + ' names it.' };

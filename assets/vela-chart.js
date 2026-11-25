@@ -287,6 +287,62 @@ function holdWhenHidden(S){
     return invalidate.apply(this, arguments);
   };
 }
+
+// ONE TEARDOWN (bug 2026-11-25 "I removed all indicators, they are still on the chart", Mac app). Removing an indicator
+// stopped its instance and dropped its legend row, but what it had pushed to its renderer layer (scene.nativeData, pending
+// ranges) stayed. A layer with data counts as live (stkLayerFit), so its canvas kept its size and the old bubbles / profile
+// bars stayed on screen. Many overlays never put a model on the scene (Bar Stats, Big Trades ...), so the renderer cannot see
+// them; the orchestrator's registry can. Hide keeps the data on purpose (it is not this path).
+function installTeardown(O){
+  const proto = O && Object.getPrototypeOf(O);
+  if (!proto || proto.__stkTeardown || typeof proto.removeIndicator !== 'function') return;
+  proto.__stkTeardown = true;
+  const removeIndicator = proto.removeIndicator;
+  proto.removeIndicator = function (id) {
+    let gone = null;
+    try { const n = this.registry.get(id)?.native; if (n && n.type) gone = { type: n.type, channel: n.channel || n.type }; } catch (e) {}
+    const r = removeIndicator.apply(this, arguments);
+    try { if (gone) releaseLayerData(this, gone); } catch (e) { console.warn('TradeZoro: layer data release', e); }
+    return r;
+  };
+}
+function releaseLayerData(O, gone){
+  const R0 = O.renderer, R = R0 && (R0.scene ? R0 : R0.renderer), sc = R && R.scene;
+  if (!sc) return;
+  const left = O.registry.all().map((x) => x.native).filter(Boolean);
+  const sameType = left.some((n) => n.type === gone.type);
+  if (!left.some((n) => (n.channel || n.type) === gone.channel)) { sc.nativeData.delete(gone.channel); sc.nativePending.delete(gone.channel); }
+  if (!sameType && gone.type !== sc.priceStyle) { sc.nativeData.delete(gone.type); sc.nativeData.delete(gone.type + '-settings'); sc.nativePending.delete(gone.type); }
+  if (!sameType) for (const l of R.extLayers || []) {
+    if (l.def.id !== gone.type || l.owner != null || l.def.id === sc.priceStyle) continue;
+    try { R.clearLayerCanvas(l.canvas); } catch (e) {}
+  }
+  try { R.scheduler && R.scheduler.invalidate(4); } catch (e) {}
+}
+// DEV/TEST INVARIANT: after a removal nothing of a removed indicator may be alive. Returns the leaks (empty = ok).
+// Layer data keys are the indicator types/channels with no indicator left; live canvases are layers whose canvas
+// still has pixels although nothing owns them.
+window.__stkLeakCheck = function (chart) {
+  const out = [];
+  try {
+    const c = chart || window.STRYKER_VELA.context().cells[0].chart;
+    const R = c.renderer && c.renderer.extLayers ? c.renderer : c.renderer.renderer, sc = R.scene;
+    const types = new Set(), chans = new Set(), owners = new Set();
+    for (const m of sc.indicators.values()) { if (m.native) { types.add(m.native.type); if (m.native.channel) chans.add(m.native.channel); } owners.add(m.id); }
+    for (const h of c.indicators()) if (h.nativeType) types.add(h.nativeType);   // hidden ones keep their type
+    const reg = new Set([...(R.extLayers || [])].map((l) => l.def.id));
+    for (const k of sc.nativeData.keys()) {
+      const base = k.replace(/-settings$/, '');
+      if (reg.has(base) && !types.has(base) && !chans.has(k) && base !== sc.priceStyle && !(window.__stkAlwaysOn || []).includes(base)) out.push('data:' + k);
+    }
+    for (const l of R.extLayers || []) {
+      if (l.owner != null && !owners.has(l.owner)) out.push('layer:' + l.def.id + '#' + l.owner);
+      if (l.owner == null && l.canvas.width > 0 && !types.has(l.def.id) && l.def.id !== sc.priceStyle && !(window.__stkAlwaysOn || []).includes(l.def.id)) out.push('canvas:' + l.def.id);
+    }
+  } catch (e) { out.push('check-error:' + e); }
+  return out;
+};
+window.__stkAlwaysOn = ['stk_alerts', 'stk_sess', 'stk_events', 'stk_paper'];
 function lateLayers(R){
   holdWhenHidden(R && R.scheduler);
   const proto = R && Object.getPrototypeOf(R);
@@ -1069,7 +1125,7 @@ function legendFold(R) {
 
 // LATE LAYERS (see lateLayers): patch the renderer prototype once (shared by every cell, so grid
   // cells added later are covered too).
-  try { for (const c of ws.context().cells) { const r = c.chart.renderer; const R = r && r.extLayers ? r : r && r.renderer; lateLayers(R); visualOrder(R); legendFold(R); stopDots(R); R && R.inputsUI && R.inputsUI.syncFoldToggle(); } } catch (e) { console.warn('TradeZoro: late layers', e); }
+  try { for (const c of ws.context().cells) { const r = c.chart.renderer; const R = r && r.extLayers ? r : r && r.renderer; lateLayers(R); installTeardown(c.chart && c.chart.orchestrator); visualOrder(R); legendFold(R); stopDots(R); R && R.inputsUI && R.inputsUI.syncFoldToggle(); } } catch (e) { console.warn('TradeZoro: late layers', e); }
 
   // charts?symbol=NQ&date=2026-10-28 (from /market-stats): open that session on the chart.
   if (MSess && !BT) { try { MSess.openSessionFromLink(ws); } catch (e) { console.warn('TradeZoro: market stats link', e); } }

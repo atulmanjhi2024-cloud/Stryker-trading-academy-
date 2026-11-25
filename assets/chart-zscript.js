@@ -18,10 +18,10 @@
 // sessions, templates and saved layouts keep Zscript indicators. A Zscript source starts with //@zscript 1; Pine's
 // handle list skips those (chart-pine.js pineHandles).
 
-import { ZS_EXAMPLES } from './zs-editor/examples.js?v=1260';
-import * as Store from './zs-editor/store.js?v=1260';
-import { createShell, el, ib, ICONS, libRow, emptyState, renderDocs, descOf, ago, download, pickFile, fileName } from './chart-script-editor.js?v=1260';
-import { isFutures } from './chart-sym.js?v=1260';   // one futures test for every symbol form (CME_MINI:MNQ1!, MNQZ6 ...)
+import { ZS_EXAMPLES } from './zs-editor/examples.js?v=1261';
+import * as Store from './zs-editor/store.js?v=1261';
+import { createShell, el, ib, ICONS, libRow, emptyState, renderDocs, descOf, ago, download, pickFile, fileName } from './chart-script-editor.js?v=1261';
+import { isFutures } from './chart-sym.js?v=1261';   // one futures test for every symbol form (CME_MINI:MNQ1!, MNQZ6 ...)
 
 const LANG = 'zscript';
 const EXT_KEY = 'stryker.zscript';
@@ -40,7 +40,7 @@ export function titleOf(src){
 // ---------- the engine (Zscript stream 1: assets/zs/runner.js + index.js, SPEC.md section 11) ----------
 // Loaded on first use. Every compile and run happens in a sandboxed module worker (ZsRunner), never on the page.
 let engineP = null;
-const RUNNER_URL = './zs/runner.js?v=1260';
+const RUNNER_URL = './zs/runner.js?v=1261';
 function engine(){
   // one retry with a fresh URL: a failed module import stays failed for that exact URL until the page reloads
   if (!engineP) engineP = import(RUNNER_URL).catch(() => import(RUNNER_URL + '&retry=' + Date.now())).catch((e) => { engineP = null; throw e; });
@@ -64,7 +64,7 @@ let builtinsP = null;
 const sigOf = (f) => f.name + '(' + (f.params || []).map((p) => p.name + (p.def ? '=' + (p.def.var || JSON.stringify(p.def.v)) : '')).join(', ') + (f.variadic ? ', …' : '') + ')' + (f.ret && f.ret !== 'void' ? ' → ' + f.ret : '');
 export function loadBuiltins(){
   if (!builtinsP) {
-    builtinsP = import('./zs/catalog.js?v=1260').then((m) => {
+    builtinsP = import('./zs/catalog.js?v=1261').then((m) => {
       const c = m.catalogJSON(), out = [], seen = new Set();
       const add = (o) => { if (!seen.has(o.name)) { seen.add(o.name); out.push(o); } };
       c.keywords.forEach((k) => add({ name: k, kind: 'keyword', sig: k, doc: '' }));
@@ -221,7 +221,7 @@ const notified = new Set();   // one-time notices (per page)
 function notice(text, upgrade){
   if (!text || notified.has(text)) return;
   notified.add(text);
-  const action = upgrade === 'of' || upgrade === 'gex' ? { label: 'See plans', onClick: () => { import('./chart-pro-gate.js?v=1260').then((m) => m.upgrade(upgrade)).catch(() => {}); } } : undefined;
+  const action = upgrade === 'of' || upgrade === 'gex' ? { label: 'See plans', onClick: () => { import('./chart-pro-gate.js?v=1261').then((m) => m.upgrade(upgrade)).catch(() => {}); } } : undefined;
   try { window.showToast && window.showToast('info', String(text).slice(0, 300), { duration: 6000, action }); } catch (e) {}
 }
 
@@ -230,7 +230,7 @@ function notice(text, upgrade){
 // frames to the script's worker; request.security goes through the same session (the chart's own fetchSeries + series cache).
 let secSeq = 0;
 async function openHub(req, runner, uses, onFrames){
-  const { getHub } = await import('./zs/data/hub.js?v=1260');
+  const { getHub } = await import('./zs/data/hub.js?v=1261');
   const mk = req.market || {}, waits = new Map();
   let ready = null, again = 0; const readyP = new Promise((r) => { ready = r; setTimeout(r, 6000); });
   const sess = getHub().open({
@@ -282,10 +282,10 @@ let libP = null;
 function zsLib(){
   if (window.ZSLib) return Promise.resolve(window.ZSLib);
   if (!libP) {
-    addCss('/assets/creator.css?v=1260'); addCss('/assets/zs-library.css?v=1260');
-    libP = (window.CREATOR_CONFIG ? Promise.resolve() : addScript('/assets/creator-config.js?v=1260'))
-      .then(() => (window.CP ? null : addScript('/assets/creator-pay.js?v=1260')))
-      .then(() => addScript('/assets/zs-library.js?v=1260'))
+    addCss('/assets/creator.css?v=1261'); addCss('/assets/zs-library.css?v=1261');
+    libP = (window.CREATOR_CONFIG ? Promise.resolve() : addScript('/assets/creator-config.js?v=1261'))
+      .then(() => (window.CP ? null : addScript('/assets/creator-pay.js?v=1261')))
+      .then(() => addScript('/assets/zs-library.js?v=1261'))
       .then(() => { if (!window.ZSLib) throw new Error('library'); return window.ZSLib; })
       .catch((e) => { libP = null; throw e; });
   }
@@ -592,7 +592,7 @@ export function mountZscript(ws, opts){
 
   function ensureEditor(){
     if (!edP) {
-      edP = Promise.all([import('./zs-editor/editor.js?v=1260'), loadBuiltins()]).then(([m, builtins]) => {
+      edP = Promise.all([import('./zs-editor/editor.js?v=1261'), loadBuiltins()]).then(([m, builtins]) => {
         builtinsAll = builtins;
         edHost.innerHTML = '';
         ed = m.createZsEditor(edHost, { doc: draft != null ? draft : ZS_EXAMPLES[0].source, builtins, lint, wrap: S.wrap(), onRun: () => addToChart(), onSave: () => save(), onChange: () => { renderStatus(); } });

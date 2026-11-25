@@ -38,7 +38,7 @@
   function at(step, pr) { return pr.catch(function (e) { throw { step: step, e: e }; }); }
   user().then(function (u) {
     if (!u) return end('Sign in first', 'Sign in to TradeZoro, then allow ' + label + ' trading again.');
-    return Promise.all([import('./byo-core.js?v=1260'), import('./broker-trade.js?v=1260')]).then(function (m) {
+    return Promise.all([import('./byo-core.js?v=1261'), import('./broker-trade.js?v=1261')]).then(function (m) {
       var c = m[0], bt = m[1];
       var rec = bt.takeState(state, u.uid, broker);
       if (!rec) return end(label + ' trading was not allowed', 'The sign-in link expired. Start again from the Trade menu in the charts.');

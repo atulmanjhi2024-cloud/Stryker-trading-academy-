@@ -12,7 +12,14 @@
 import { CT, probeCtrader, ctraderTokenCall, ctraderCreds } from './byo-ctrader.js?v=1263';
 import { saveKeys, loadKeys, forgetKeys } from './byo-core.js?v=1263';
 
-export const TT = { WS: '/connect/ctrader/trade', STATE_KEY: 'tz-ctrader-trade-state', VAULT: 'ctrader-trade', SCOPE: 'trading', HB_MS: 20000, CALL_MS: 15000 };
+export const TT = { WS: '/connect/ctrader/trade', STATE_KEY: 'tz-ctrader-trade-state', VAULT: 'ctrader-trade', SCOPE: 'trading', HB_MS: 20000, CALL_MS: 15000,
+  // FASTORDER (25 Nov): the link is kept warm while the account is picked and the tab is visible: an unexpected close reopens it in
+  // the background (these waits, then every minute; never after a refusal 1008 or a sign-in that ended). Nothing is ever resent:
+  // a write in flight on a closing socket is 'unknown', as before.
+  REOPEN_MS: [300, 2000, 10000, 60000],
+  // the relay allows 2 writes a second: the browser waits only when 2 already went out in this window (was: 550 ms after EVERY write)
+  RATE_WIN_MS: 1100, FILL_WAIT_MS: 5000 };
+const perf = () => (globalThis.performance && performance.now ? performance.now() : Date.now());
 const MIN = 60000;
 const fail = (msg, o) => Object.assign(new Error(msg), o);
 const b64url = (u8) => btoa(String.fromCharCode(...u8)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
@@ -156,6 +163,9 @@ const CT_ERR = { NOT_ENOUGH_MONEY: 'Not enough money in the account for this ord
   NO_QUOTES: 'No price from the broker right now.', BAD_STOPS: 'The broker does not accept that stop loss / take profit.' };
 export const errText = (code, desc) => CT_ERR[String(code || '')] || ('The broker refused it' + (code ? ' (' + String(code).replace(/[^A-Z0-9_]/gi, '').slice(0, 40) + ')' : '') + '.');
 const RENEW = new Set(['gate_unreadable', 'renew']);
+// the fill price on an ExecutionEvent (deal, else the order's, else a new position's entry); null when there is none
+export const fillPrice = (pl) => { const v = n((pl && pl.deal && pl.deal.executionPrice) || (pl && pl.order && pl.order.executionPrice) || (pl && pl.position && pl.position.price)); return v > 0 ? v : null; };
+export const isFill = (pl) => /^(3|11|ORDER_FILLED|ORDER_PARTIAL_FILL|ORDER_PARTIALLY_FILLED)$/.test(String(pl && pl.executionType));
 export function answerOf(m) {
   if (m.relay === 'refused') throw fail(m.error || 'Not sent.', { code: m.code === 'unresolved' ? 'unresolved' : m.code || 'refused', status: 409 });
   if (m.relay === 'unknown') throw fail('No clear answer from cTrader for this order. It may or may not have gone through. Checking your orders; nothing will be sent again.', { code: 'unknown' });
@@ -163,7 +173,7 @@ export function answerOf(m) {
   if (m.payloadType === 2126) {
     const et = EXEC[n(pl.executionType)] || String(pl.executionType || '').replace(/^ORDER_/, '');
     if (/REJECTED/.test(et)) throw fail(errText(pl.errorCode), { code: 'rejected', status: 409 });
-    return { ok: true, status: et || 'ACCEPTED', orderId: String((pl.order && pl.order.orderId) || ''), positionId: String((pl.position && pl.position.positionId) || '') };
+    return { ok: true, status: et || 'ACCEPTED', orderId: String((pl.order && pl.order.orderId) || ''), positionId: String((pl.position && pl.position.positionId) || ''), price: fillPrice(pl) };
   }
   if (m.payloadType === 2132 || m.payloadType === 2142 || m.payloadType === 50) throw fail(errText(pl.errorCode, pl.description), { code: 'rejected', status: 409 });
   throw fail('Unexpected answer from cTrader.', { code: 'unknown' });
@@ -174,13 +184,14 @@ export class TradeLink {
   constructor(creds, d) {
     this.c = creds; this.d = d || {}; this.ws = null; this.ready = null; this.pend = new Map(); this.n = 0; this.ka = null; this.dead = false;
     this.names = new Map(); this.byName = new Map(); this.descs = new Map(); this.base = new Map(); this.details = new Map(); this.gates = null; this.gatesP = new Promise((r) => { this.gatesR = r; }); this.writing = null; this.onEvent = null; this.capLots = 10;
+    this.wts = []; this.watch = new Map(); this.reopenN = 0; this.detP = new Map();   // FASTORDER: write times, fill watchers, reopen backoff, details in flight
   }
   url() { const loc = this.d.location || globalThis.location; return (loc.protocol === 'https:' ? 'wss:' : 'ws:') + '//' + loc.host + TT.WS + '?account=' + encodeURIComponent(this.c.accountId) + '&env=' + (this.c.isLive ? 'live' : 'demo'); }
   open() {
     if (this.ready && !this.dead) return this.ready;
     this.dead = false;
     const WS = this.d.WS || globalThis.WebSocket;
-    this.onSock = new Set();
+    this.onSock = new Set(); this.detP = new Map();
     this.ready = (async () => {
       const at = await freshTrade(this.c, this.d);
       const idt = await (this.d.idToken ? this.d.idToken() : globalThis.firebase.auth().currentUser.getIdToken()).catch(() => { throw fail('Sign in again.', { status: 401 }); });
@@ -193,7 +204,10 @@ export class TradeLink {
       });
       // the relay renews a socket that used up its server budget (close 4001, nothing in flight): reopen it in the background so the
       // next order finds a ready link. At most once a minute (no reconnect loop); nothing is ever resent.
-      const sock = this.ws; if (sock) sock.onclose = (ev) => { const code = ev && ev.code; this.shut(code === 1008 ? 'The cTrader trading link was refused.' : 'The cTrader trading link closed.'); if (code === 4001) this.reopenSoon(); };
+      // FASTORDER: any other unexpected close (idle, 1 h session, network) reopens too while the account is picked and the tab is
+      // visible (TT.REOPEN_MS backoff), so a click never pays connect + app auth + account auth + symbols. Never after a refusal (1008)
+      // or an ended sign-in; nothing in flight is ever resent (shut() answers it 'unknown').
+      const sock = this.ws; if (sock) sock.onclose = (ev) => { const code = ev && ev.code; this.shut(code === 1008 ? 'The cTrader trading link was refused.' : 'The cTrader trading link closed.'); if (code === 4001) this.reopenSoon(); else if (code !== 1008) this.keepWarm(); };
       // heartbeats only while chart-live keeps the account picked; otherwise the relay's 60 s idle close frees the one trade socket
       this.ka = setInterval(() => { if (this.keep && !this.keep()) return; try { this.raw({ payloadType: 51, payload: {} }); } catch (e) { /* closed */ } }, TT.HB_MS);
       const list = await this.send(2149, { accessToken: at });
@@ -205,6 +219,10 @@ export class TradeLink {
       if (r.payloadType !== 2103) throw fail('cTrader refused the sign-in. Tap Allow trading again.', { status: 401, reconnect: true });
       const s = await this.send(2114, { ctidTraderAccountId: n(this.c.accountId) });   // not call(): that awaits open() = this promise
       for (const x of (s.payload && s.payload.symbol) || []) { const y = sym(x); if (y.name && x.enabled !== false) { this.names.set(y.id, y.name); if (!this.byName.has(y.name.toUpperCase())) this.byName.set(y.name.toUpperCase(), y.id); if (x.description) this.descs.set(y.name.toUpperCase(), String(x.description).trim()); if (x.baseAssetId) this.base.set(y.name.toUpperCase(), n(x.baseAssetId)); } }
+      this.reopenN = 0;
+      // a reopened socket: the relay checks sizes against what IT learned, so ask again now (in the background) for the symbols
+      // this page already used, instead of on the next click
+      const again = [...this.details.keys()]; if (again.length) setTimeout(() => { if (this.ready && !this.dead) this.loadDetails(again).catch(() => {}); }, 0);
     })();
     this.ready.catch(() => this.shut());
     return this.ready;
@@ -214,8 +232,13 @@ export class TradeLink {
     if (m.relay === 'ready') return ready();
     if (m.relay === 'gates') { this.gates = { consent: m.consent, blocked: m.blocked, switchOn: m.switchOn }; this.gatesR(this.gates); return; }
     if (m.relay === 'resolved') { if (this.onEvent) this.onEvent('resolved', m); return; }
+    if (m.relay === 'timing') { const w = this.watch.get(m.clientMsgId); if (w && m.t && typeof m.t === 'object') w.server = m.t; return; }
     const id = m.clientMsgId, p = this.pend.get(id);
     if (p) { this.pend.delete(id); clearTimeout(p.t); p.res(m); return; }
+    if (m.payloadType === 2126 && this.watch.size) {   // the FILL of a market order that cTrader first answered ORDER_ACCEPTED
+      const pl = m.payload || {}, oid = String((pl.order && pl.order.orderId) || '');
+      for (const [k, w] of this.watch) if (w.fill && (k === id || (oid && oid === w.orderId)) && isFill(pl)) { w.fill(fillPrice(pl)); w.fill = null; }
+    }
     if (m.payloadType === 2126 || m.payloadType === 2123) { if (this.onEvent) this.onEvent('exec', m); }
     if (m.payloadType === 2147 || m.payloadType === 2148 || m.payloadType === 2164) this.shut('Your cTrader sign-in ended. Tap Allow trading again.');
   }
@@ -233,26 +256,59 @@ export class TradeLink {
   // only for the size picker); this.onSock = the symbol ids loaded on the current socket
   async detail(symbolId) {
     if (this.details.has(symbolId) && this.onSock && this.onSock.has(symbolId)) return this.details.get(symbolId);
-    const m = await this.call(2116, { symbolId: [symbolId] });
-    for (const s of (m.payload && m.payload.symbol) || []) this.onSock.add(n(s.symbolId));
-    for (const s of (m.payload && m.payload.symbol) || []) this.details.set(n(s.symbolId), { ...s, lotSize: n(s.lotSize), minVolume: n(s.minVolume), maxVolume: n(s.maxVolume), stepVolume: n(s.stepVolume), digits: n(s.digits) });
+    await this.open();
+    await (this.detP.get(symbolId) || this.loadDetails([symbolId]));
     return this.details.get(symbolId);
   }
+  // one SymbolByIdReq for these ids on the current socket; a second caller for the same id waits for the same answer (FASTORDER)
+  loadDetails(ids) {
+    const sock = this.onSock, P = this.detP;
+    const p = this.call(2116, { symbolId: ids }).then((m) => {
+      for (const s of (m.payload && m.payload.symbol) || []) { sock.add(n(s.symbolId)); this.details.set(n(s.symbolId), { ...s, lotSize: n(s.lotSize), minVolume: n(s.minVolume), maxVolume: n(s.maxVolume), stepVolume: n(s.stepVolume), digits: n(s.digits) }); }
+    }).finally(() => { for (const i of ids) if (P.get(i) === p) P.delete(i); });
+    for (const i of ids) P.set(i, p);
+    return p;
+  }
+  // FASTORDER: the order panel opened / the chart's symbol changed: open the link and load that symbol's size rules now, not on the click
+  warm(name) {
+    if (this.keep && !this.keep()) return Promise.resolve();
+    return this.open().then(() => { const id = name ? this.byName.get(String(name).toUpperCase()) : 0; return id ? this.detail(id) : null; }).catch(() => null);
+  }
+  keepWarm() {
+    if (this.keep && !this.keep()) return;
+    const doc = this.d.document || globalThis.document; if (doc && doc.hidden) return;   // a hidden tab rests; it reopens when shown
+    const ms = TT.REOPEN_MS[Math.min(this.reopenN, TT.REOPEN_MS.length - 1)]; this.reopenN++;
+    clearTimeout(this.reT); this.reT = setTimeout(() => { if (!this.ready && (!this.keep || this.keep())) this.open().catch(() => {}); }, ms);
+  }
+  // the browser's own latency marks for one of its writes (ms from the click), stored on that order's log row by the relay
+  marks(key, m) {
+    const pl = {}; for (const k of ['c_cf', 'c_open', 'c_send', 'c_ack', 'c_toast', 'c_fill']) { const v = Math.round(Number(m && m[k])); if (Number.isInteger(v) && v >= 0 && v <= 600000) pl[k] = v; }
+    try { if (Object.keys(pl).length) this.raw({ clientMsgId: key, payloadType: 9001, payload: pl }); } catch (e) { /* closed: the marks are only lost */ }
+  }
   // one write: the key is the chart's idempotency key; never retried here
-  async write(type, payload, key) {
+  // lat (optional): { t0 } -> filled in with open / send / ack (performance.now() values)
+  async write(type, payload, key, lat) {
     if (this.writing) throw fail('Another order is still on its way. Wait for its answer.', { code: 'busy', status: 409 });
-    if (!this.lastWrite) this.lastWrite = 0;
     this.writing = key;
     try {
       await this.open();
-      const gap = this.lastWrite + 550 - Date.now(); if (gap > 0) await new Promise((r) => setTimeout(r, gap));   // the relay takes 2 a second
-      this.lastWrite = Date.now();
+      if (lat) lat.open = perf();
+      // the relay takes 2 writes a second: wait only if 2 already went out in the last RATE_WIN_MS (a first order never waits)
+      const t = Date.now(); this.wts = this.wts.filter((x) => t - x < TT.RATE_WIN_MS);
+      if (this.wts.length >= 2) { const gap = this.wts[0] + TT.RATE_WIN_MS - t; if (gap > 0) await new Promise((r) => setTimeout(r, gap)); }
+      this.wts.push(Date.now()); this.lastWrite = Date.now();
+      const w = { server: null, fill: null, orderId: '' }; this.watch.set(key, w); while (this.watch.size > 20) this.watch.delete(this.watch.keys().next().value);
+      if (lat) { lat.send = perf(); lat.watch = w; }
       const m = await this.send(type, { ctidTraderAccountId: n(this.c.accountId), ...payload }, key);
+      if (lat) lat.ack = perf();
       // the relay could not confirm the trading access ('gate_unreadable') or is renewing its link ('renew'): NOTHING was sent.
       // Reopen the link once in the background (a fresh server request) so the member's own retry finds it ready. Never resent here.
       if (m.relay === 'refused' && RENEW.has(m.code)) this.renew();
       else this.renewed = false;
-      return answerOf(m); }
+      const r = answerOf(m);
+      // a market order cTrader answered ORDER_ACCEPTED: r.fill resolves with the fill price (or null after FILL_WAIT_MS)
+      if (w && lat && lat.market && !/FILL/.test(r.status)) { w.orderId = r.orderId; r.fill = new Promise((res) => { w.fill = res; setTimeout(() => { if (w.fill) { w.fill = null; res(null); } }, TT.FILL_WAIT_MS); }); }
+      return r; }
     finally { this.writing = null; }
   }
   renew() { if (this.renewed) return; this.renewed = true; this.shut(); this.reopenSoon(true); }
@@ -312,10 +368,10 @@ export function ctOps(link, { lastPrice } = {}) {
         const last = lastPrice ? lastPrice() : null;
         const q = buildNewOrder(b, { details: link.details, symbolId: sid, account: n(link.c.accountId), last, capLots: link.capLots });
         if (q.error) throw fail(q.error, { status: 400 });
-        return link.write(q[0], q[1], key);
+        return link.write(q[0], q[1], key, b.lat ? Object.assign(b.lat, { market: b.type === 'market' || b.orderType === 'market' }) : undefined);
       }
-      if (b.op === 'cancel') return link.write(2108, { orderId: n(b.orderId) }, key);
-      if (b.op === 'modify') { const d = b.stopPrice !== undefined ? { stopPrice: Number(b.stopPrice) } : { limitPrice: Number(b.limitPrice) }; return link.write(2109, { orderId: n(b.orderId), ...d }, key); }
+      if (b.op === 'cancel') return link.write(2108, { orderId: n(b.orderId) }, key, b.lat);
+      if (b.op === 'modify') { const d = b.stopPrice !== undefined ? { stopPrice: Number(b.stopPrice) } : { limitPrice: Number(b.limitPrice) }; return link.write(2109, { orderId: n(b.orderId), ...d }, key, b.lat); }
       if (b.op === 'flatten') {   // close every position in the symbol, one at a time (the relay's account lock takes them in turn)
         const st = (await ops.data('live')).data, same = (x) => String(x).toUpperCase() === String(b.symbol).toUpperCase();
         const mine = st.positions.filter((p) => same(p.symbol)), work = st.orders.filter((o) => same((o.legs[0] || {}).symbol));

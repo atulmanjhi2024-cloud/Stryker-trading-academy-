@@ -48,6 +48,7 @@ function field(kind, v) {
     case 'ot': return v === 1 || v === 2 || v === 3;                                     // market | limit | stop
     case 'tif': return v === 2 || v === 3 || v === 4;                                    // GTC | IOC | FOK
     case 'rows': return Number.isInteger(v) && v >= 1 && v <= 500;
+    case 'ms': return Number.isInteger(v) && v >= 0 && v <= 600000;                       // a latency mark in ms (trading relay, frame 9001)
     default: return false;
   }
 }

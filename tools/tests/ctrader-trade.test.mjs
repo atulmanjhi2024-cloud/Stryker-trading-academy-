@@ -62,7 +62,7 @@ const writesUp = (u) => u.filter((x) => [2106, 2108, 2109, 2110, 2111].includes(
 
 // ---- allow-list (schema + rebuild) ----
 await t('trade allow-list: exactly the asked types; data relay untouched', () => {
-  assert.deepEqual(Object.keys(TRADE_ALLOW).map(Number).sort((a, b) => a - b), [51, 2102, 2106, 2108, 2109, 2110, 2111, 2112, 2114, 2116, 2121, 2124, 2133, 2149, 2175]);
+  assert.deepEqual(Object.keys(TRADE_ALLOW).map(Number).sort((a, b) => a - b), [51, 2102, 2106, 2108, 2109, 2110, 2111, 2112, 2114, 2116, 2121, 2124, 2133, 2149, 2175, 9001]);   // 9001 = our own latency marks, never forwarded (FASTORDER)
   for (const ty of [2106, 2108, 2109, 2110, 2111, 2112, 2121, 2124, 2133, 2175]) assert.ok(!(ty in CLIENT_ALLOW), 'data relay never takes ' + ty);
   for (const ty of [2126, 2132, 2122, 2125, 2134, 2176, 2142, 50]) assert.ok(TRADE_SERVER_ALLOW.has(ty), 'event ' + ty + ' passes back');
   for (const ty of [2100, 2137, 2145, 2127, 2156, 2143, 2173, 2104]) assert.equal(checkClientFrame(f({ payloadType: ty, payload: { ctidTraderAccountId: ACC, symbolId: 1 } }), TRADE_ALLOW).ok, false, 'type ' + ty + ' refused');

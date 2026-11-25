@@ -158,18 +158,21 @@ export async function handle(request, env, deps = {}, ctx = null) {
       if (Number(b.limitPrice) > 0) mod = { limitPrice: r(b.limitPrice) }; else if (Number(b.stopPrice) > 0) mod = { stopPrice: r(b.stopPrice) }; else return err(400, 'TradeZoro: enter the new price.', 'shape');
     }
     if (op === 'flatten' && !SYM.test(String(b.symbol || ''))) return err(400, 'TradeZoro: pick a symbol first.', 'shape');
-    // the gates (parallel; every one fails closed)
-    const [sw, cs, bl] = await Promise.all([liveSwitchOn(env, deps).then((v) => v, () => 'x'), hasConsent(env, deps, uid).then((v) => v, () => 'x'), memberBlocked(env, deps, uid).then((v) => v, () => 'x')]);
-    if (sw === 'x') return err(503, MSG.switch_unreadable, 'switch_unreadable');
-    if (sw === false) return err(403, MSG.switched_off, 'switched_off');
-    if (cs === 'x') return err(503, MSG.consent_unreadable, 'consent_unreadable');
-    if (cs !== true) return err(403, MSG.consent_needed, 'consent_needed');
-    if (bl === 'x' || bl === true) return err(bl === true ? 403 : 503, bl === true ? MSG.member_blocked : MSG.switch_unreadable, bl === true ? 'member_blocked' : 'switch_unreadable');
-    let audit;
-    const entry = { uid, src: 'chart', venue: broker, env: envName, account: acct, op, symbol: o ? o.symbol : String(b.symbol || ''), side: o ? o.side : '', qty: o ? o.qty : 0, type: o ? o.type : op, orderId: String(b.orderId || '') };
-    try { audit = await openAudit(env, deps, entry, 'b3-' + broker.slice(0, 2) + '-' + key); }
-    catch (e) { return e.duplicate ? err(409, MSG.duplicate, 'duplicate') : err(503, MSG.audit, 'audit'); }
+    // the gates and the order log row (FASTORDER 25 Nov: all in parallel, was gates THEN log row = 2 Firestore round trips; every gate
+    // fails closed). The order goes to the broker only when every gate said yes AND the log row exists. A refusal finishes OUR row
+    // 'rejected' (a duplicate key's earlier row is never touched).
     const defer = deps.defer || ((p) => { const q = Promise.resolve(p).catch(() => {}); if (ctx && ctx.waitUntil) ctx.waitUntil(q); return q; });
+    const entry = { uid, src: 'chart', venue: broker, env: envName, account: acct, op, symbol: o ? o.symbol : String(b.symbol || ''), side: o ? o.side : '', qty: o ? o.qty : 0, type: o ? o.type : op, orderId: String(b.orderId || '') };
+    const [sw, cs, bl, au] = await Promise.all([liveSwitchOn(env, deps).then((v) => v, () => 'x'), hasConsent(env, deps, uid).then((v) => v, () => 'x'), memberBlocked(env, deps, uid).then((v) => v, () => 'x'),
+      openAudit(env, deps, entry, 'b3-' + broker.slice(0, 2) + '-' + key).then((a) => ({ a }), (e) => ({ e: e || true }))]);
+    const no = (st, msg, code) => { if (au.a) defer(au.a.finish({ result: 'rejected', reason: code, origin: 'ours' })); return err(st, msg, code); };
+    if (sw === 'x') return no(503, MSG.switch_unreadable, 'switch_unreadable');
+    if (sw === false) return no(403, MSG.switched_off, 'switched_off');
+    if (cs === 'x') return no(503, MSG.consent_unreadable, 'consent_unreadable');
+    if (cs !== true) return no(403, MSG.consent_needed, 'consent_needed');
+    if (bl === 'x' || bl === true) return no(bl === true ? 403 : 503, bl === true ? MSG.member_blocked : MSG.switch_unreadable, bl === true ? 'member_blocked' : 'switch_unreadable');
+    if (au.e) return au.e.duplicate ? err(409, MSG.duplicate, 'duplicate') : err(503, MSG.audit, 'audit');
+    const audit = au.a;
     let res;
     try {
       if (op === 'place') res = await ad.place(x, acct, o, key);

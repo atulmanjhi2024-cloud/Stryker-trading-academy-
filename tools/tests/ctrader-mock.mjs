@@ -1,7 +1,9 @@
 // MOCK cTrader for the trading tests (Node + browser). A fake WebSocket class for assets/ctrader-trade.js whose other end is the REAL
 // relay rules (functions/connect/ctrader/_relay.js + _trade.js) talking to a fake cTrader server below. Nothing leaves the process.
 // All numbers are Sample data. M (state) knobs: reject ('NOT_ENOUGH_MONEY' -> OrderErrorEvent), silent (no answer to a write),
-// dropOnWrite (the link drops mid-order), scope (0 = view-only token), gates overrides, deals (DealListRes rows), histFail (history calls error).
+// dropOnWrite (the link drops mid-order), scope (0 = view-only token), gates overrides.
+// Latency knobs (FASTORDER): fsMs = each Firestore call (gate read, lock, audit row) takes this long; ctMs = cTrader answers a write
+// after this long; twoStep = a market order is answered ORDER_ACCEPTED first, then ORDER_FILLED fillMs later (like the live server).
 import { createRelay } from '../../functions/connect/ctrader/_relay.js';
 import { tradeHooks } from '../../functions/connect/ctrader/_trade.js';
 
@@ -20,14 +22,15 @@ export function mockState(over = {}) {
 }
 export function makeWS(M, { now = () => Date.now() } = {}) {
   const later = (fn) => setTimeout(fn, 5);
+  const fs = () => (M.fsMs ? new Promise((r) => setTimeout(r, M.fsMs)) : Promise.resolve());
   return class FakeWS {
     constructor(url) {
       this.readyState = 0; this.url = url; const self = this;
       const g = {
-        isAdmin: async () => { M.gate.adminReads = (M.gate.adminReads || 0) + 1; if (M.gate.adminFail > 0) { M.gate.adminFail--; throw new Error('Firestore error (503)'); } return M.gate.admin !== false; }, switchOn: async () => M.gate.switchOn !== false, consent: async () => M.gate.consent !== false, blocked: async () => !!M.gate.blocked,
-        audit: async (entry, id) => { if (M.audits[id]) { const e = new Error('duplicate'); e.duplicate = true; throw e; } M.audits[id] = { ...entry, result: 'attempt' }; return { id, finish: async (r) => Object.assign(M.audits[id], r) }; },
+        isAdmin: async () => { await fs(); M.gate.adminReads = (M.gate.adminReads || 0) + 1; if (M.gate.adminFail > 0) { M.gate.adminFail--; throw new Error('Firestore error (503)'); } return M.gate.admin !== false; }, switchOn: async () => { await fs(); M.gate.switchReads = (M.gate.switchReads || 0) + 1; return M.gate.switchOn !== false; }, consent: async () => { await fs(); return M.gate.consent !== false; }, blocked: async () => { await fs(); return !!M.gate.blocked; },
+        audit: async (entry, id) => { await fs(); M.auditAt = M.auditAt || {}; M.auditAt[id] = Date.now(); if (M.audits[id]) { const e = new Error('duplicate'); e.duplicate = true; throw e; } M.audits[id] = { ...entry, result: 'attempt' }; return { id, finish: async (r) => Object.assign(M.audits[id], r) }; },
         patchAudit: async (id, r) => Object.assign(M.audits[id] || {}, r),
-        lock: { take: async (k) => { if (M.lock) return { ...M.lock }; M.lock = { key: k, at: now() }; return true; }, peek: async () => M.lock, release: async (k) => { if (M.lock && M.lock.key === k) M.lock = null; } },
+        lock: { take: async (k) => { await fs(); if (M.lock) return { ...M.lock }; M.lock = { key: k, at: now() }; return true; }, peek: async () => M.lock, release: async (k) => { await fs(); if (M.lock && M.lock.key === k) M.lock = null; } },
         defer: (p) => { p.catch(() => {}); }
       };
       const client = { send: (x) => later(() => self.onmessage && self.onmessage({ data: x })), close: (code) => self._closed(code) };
@@ -54,9 +57,9 @@ export function makeWS(M, { now = () => Date.now() } = {}) {
       if (t === 2124) return R(2125, { position: M.positions, order: M.orders });
       if (t === 2121) return R(2122, { trader: { ctidTraderAccountId: ACC, balance: M.balance, moneyDigits: 2, depositAssetId: 1 } });
       if (t === 2112) return R(2113, { asset: [{ assetId: 1, name: 'USD' }, { assetId: 2, name: 'EUR' }] });
-      if (t === 2175) { if (M.histFail) return R(2142, { errorCode: 'INTERNAL_ERROR', description: 'Sample failure' }); return R(2176, { order: (M.history || []) }); }
-      if (t === 2133) { if (M.histFail) return R(2142, { errorCode: 'INTERNAL_ERROR', description: 'Sample failure' }); return R(2134, { deal: (M.deals || []), hasMore: false }); }
+      if (t === 2175) return R(2176, { order: (M.history || []) });
       if (t === 51) return;
+      if ([2106, 2108, 2109, 2110, 2111].includes(t) && M.ctMs && !m._late) { (M.upAt = M.upAt || {})[m.clientMsgId] = Date.now(); M.sent.pop(); return setTimeout(() => this._ct({ ...m, _late: true }), M.ctMs); }
       if ([2106, 2108, 2109, 2110, 2111].includes(t)) {
         if (M.dropOnWrite) { M.dropOnWrite = false; return this.relay.onUpClose(); }
         if (M.silent) return;
@@ -67,6 +70,7 @@ export function makeWS(M, { now = () => Date.now() } = {}) {
           if (p.orderType === 1) {
             const pos = { positionId: id + 1000, positionStatus: 1, price: 18000.5, tradeData: { symbolId: p.symbolId, volume: p.volume, tradeSide: p.tradeSide, label: p.label } };
             M.positions.push(pos);
+            if (M.twoStep) { R(2126, { executionType: 2, order: { orderId: id, orderStatus: 1, clientOrderId: p.clientOrderId, tradeData: pos.tradeData } }); return setTimeout(() => R(2126, { executionType: 3, order: { orderId: id, orderStatus: 2, clientOrderId: p.clientOrderId, tradeData: pos.tradeData }, position: pos, deal: { executionPrice: 18000.75 } }), M.fillMs || 0); }
             return R(2126, { executionType: 3, order: { orderId: id, orderStatus: 2, clientOrderId: p.clientOrderId, tradeData: pos.tradeData }, position: pos });
           }
           const o = { orderId: id, orderStatus: 1, orderType: p.orderType, limitPrice: p.limitPrice, stopPrice: p.stopPrice, tradeData: { symbolId: p.symbolId, volume: p.volume, tradeSide: p.tradeSide, label: p.label } };

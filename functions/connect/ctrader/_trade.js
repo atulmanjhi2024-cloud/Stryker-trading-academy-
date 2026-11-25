@@ -35,7 +35,10 @@ export const TRADE_ALLOW = {
   2108: { [P]: 'i!', orderId: 'i!' },                              // CancelOrderReq
   2110: { [P]: 'i!', positionId: 'i!', stopLoss: 'px', takeProfit: 'px' },   // AmendPositionSLTPReq
   2111: { [P]: 'i!', positionId: 'i!', volume: 'i!' },             // ClosePositionReq
-  51: {}                                                           // Heartbeat
+  51: {},                                                          // Heartbeat
+  // NOT a cTrader type: the browser's latency marks for one of ITS writes (FASTORDER 25 Nov). Always dropped by the relay, never
+  // forwarded; only accepted for a key this socket itself sent, merged into that order's audit row (numbers only)
+  9001: { c_open: 'ms', c_send: 'ms', c_ack: 'ms', c_toast: 'ms', c_cf: 'ms', c_fill: 'ms' }
 };
 export const WRITES = new Set([2106, 2109, 2108, 2110, 2111]);
 export const TRADE_SERVER_ALLOW = new Set([2103, 2150, 2113, 2115, 2117, 2122, 2123, 2125, 2126, 2132, 2176, 2134, 2142, 50, 51, 2147, 2148, 2164]);
@@ -107,7 +110,15 @@ export function volumeErr(v, sym, capLots) {
 // failure was shown as "admins and beta testers only". Now: a GOOD answer (admin/beta yes, switch on, consent yes, not blocked) is
 // kept per socket for GATE_TTL[name]; a NO is never kept (re-read on the next write); an ERROR is never kept (thrown = fail closed).
 // warm(names) refreshes entries in the background (after a write, at app auth) so the next order finds them fresh.
-export const GATE_TTL = { isAdmin: 5 * 60000, switchOn: 30000, consent: 30000, blocked: 30000 };
+// FASTORDER (25 Nov): the master switch is kept at most 5 s per socket (= the isolate memo in liveSwitchOn), so switching live
+// trading off stops orders within 5 s. It costs no order time: every gate read runs in parallel with the lock and the audit row.
+export const GATE_TTL = { isAdmin: 5 * 60000, switchOn: 5000, consent: 30000, blocked: 30000 };
+export const WARM_KEYS = ['isAdmin', 'consent', 'blocked'];   // background refresh (the switch is read with every write instead)
+// FASTORDER: one hung Firestore call must not stall an order. Past this the write is refused (nothing sent) and anything that
+// still succeeds later is cleaned up (our lock released, our audit row finished as rejected).
+export const PHASE_MS = 8000;
+// latency marks: the browser's own marks for a write (frame 9001) are patched onto its audit row (mark fields only)
+const MAX_SENT = 50;   // keys this socket sent whose marks may still arrive (oldest dropped first)
 const GOOD = { isAdmin: (v) => v === true, switchOn: (v) => v === true, consent: (v) => v === true, blocked: (v) => v === false };
 export function gateCache(read, { now = () => Date.now(), ttl = GATE_TTL } = {}) {
   const e = new Map(), pend = new Map();
@@ -147,9 +158,18 @@ export function tradeHooks({ uid, account, envName, g, now = () => Date.now(), c
   const syms = new Map(), names = new Map(), orders = new Map(), positions = new Map();
   let ws = [];   // write times (rate)
   const refuse = (key, code, extra) => relay && relay.toClient({ relay: 'refused', clientMsgId: key || '', code, error: (extra && extra.error) || MSG[code] || 'Not sent.' });
+  // FASTORDER: keys this socket forwarded and finished -> the browser's marks (frame 9001) may still come for them. The RESULT is
+  // written at once as before (never delayed); the marks are a second PATCH limited to the mark fields only (updateMask), skipped
+  // when the socket's subrequest budget is low. At most MAX_SENT keys are remembered; marks for any other key are dropped.
+  const sent = new Map();
   const finish = (res) => {
     const f = inflight; inflight = null; if (!f) return f;
-    g.defer(f.audit.finish(res).catch(() => {}));
+    const tm = f.tm || null, ans = now();
+    const timing = tm ? { s_gate: tm.gate, s_lock: tm.lock, s_audit: tm.audit, s_pre: tm.pre, s_ct: Math.max(0, ans - f.at), s_total: Math.max(0, ans - tm.t0) } : {};
+    g.defer(f.audit.finish({ ...res, ...timing }).catch(() => {}));
+    if (f.sent) { sent.set(f.key, { at: ans, marked: false }); while (sent.size > MAX_SENT) sent.delete(sent.keys().next().value); }
+    // the browser's own split (after the answer frame): numbers only
+    if (tm && relay) { const k = f.key; Promise.resolve().then(() => relay && relay.toClient({ relay: 'timing', clientMsgId: k, t: timing })); }
     // the next write on this socket waits for this release (else it would find its own finished lock and call it unresolved)
     if (res.result === 'unknown') held = { key: f.key, at: f.at }; else { settling = true; releasing = Promise.resolve().then(() => g.lock.release(f.key)).catch(() => {}).finally(() => { settling = false; }); g.defer(releasing); }
     return f;
@@ -197,6 +217,12 @@ export function tradeHooks({ uid, account, envName, g, now = () => Date.now(), c
     intercept(c) {
       const key = c.frame && JSON.parse(c.frame).clientMsgId;
       if (typeof key === 'string' && /^tz/i.test(key)) { relay.end(1008, 'not allowed'); return 'drop'; }   // 'tz…' ids are the relay's own
+      // the browser's latency marks: never forwarded; kept only for a key this socket itself sent and has not logged yet
+      if (c.type === 9001) {
+        const s = typeof key === 'string' ? sent.get(key) : null;
+        if (s && !s.marked && now() - s.at < 120000 && (!B || B.left() >= WRITE_COST + 1)) { s.marked = true; g.defer(Promise.resolve().then(() => g.patchAudit('ct-' + key, { ...c.payload })).catch(() => {})); }
+        return 'drop';
+      }
       if (!WRITES.has(c.type)) return undefined;
       const p = c.payload;
       if (!(typeof key === 'string' && KEY.test(key))) { refuse(key, 'key'); return 'drop'; }
@@ -232,28 +258,57 @@ export function tradeHooks({ uid, account, envName, g, now = () => Date.now(), c
       // not enough subrequests left on this socket for one whole write: nothing sent, the socket renews (the browser reopens it)
       if (B && (B.capHit() || B.left() < WRITE_COST)) { refuse(key, 'renew'); renew(); return 'drop'; }
       lastWrite = t;
-      inflight = { key, at: t, type: c.type, audit: null, sent: false };
+      inflight = { key, at: t, type: c.type, audit: null, sent: false, tm: null };
       const mine = inflight;
+      // FASTORDER (25 Nov, advisor-reviewed): the gates, the account lock and the audit row run IN PARALLEL (they were one after
+      // another: 3 Firestore round trips, ~750 ms from India). The frame goes out ONLY when all three succeeded. On any refusal,
+      // only what THIS write created is undone: our own lock (released by its key) and our own audit row (finished 'rejected').
+      // A 409 audit row (an earlier attempt with this key) or a lock held by another key is never touched. One decision, once.
       return (async () => {
-        const v = await Promise.all([g.isAdmin(), g.switchOn(), g.consent(), g.blocked()].map((x) => Promise.resolve(x).then((y) => ({ y }), () => ({ err: true }))));
-        const [ad, sw, cs, bl] = v;
-        // an ERROR reading admin / beta is "couldn't confirm" (gate_unreadable), never "not an admin"; only a real NO says not_admin
+        const t0 = now(), tm = { t0, gate: 0, lock: 0, audit: 0, pre: 0 };
+        await releasing;   // the previous write's lock release on this socket (stays serial, else a spurious 'unresolved')
+        const soft = (x) => Promise.resolve().then(x).then((y) => ({ y }), (e) => ({ err: e || true }));
+        // undo = what THIS write created and must take back (set once, at the decision). A step that answers after the decision
+        // (the PHASE_MS timeout) is taken back the moment it answers.
+        let undo = null, lk = null, au = null;
+        const dropLock = () => g.defer(Promise.resolve().then(() => g.lock.release(key)).catch(() => {}));
+        const dropAudit = (r, why) => g.defer(Promise.resolve().then(() => r.finish({ result: 'rejected', message: why })).catch(() => {}));
+        const lockP = soft(() => g.lock.take(key)).then((r) => { lk = r; tm.lock = now() - t0; if (undo && r.y === true) dropLock(); return r; });
+        const auditP = soft(() => g.audit(entry, 'ct-' + key)).then((r) => { au = r; tm.audit = now() - t0; if (undo && r.y) dropAudit(r.y, undo); return r; });
+        const gateP = Promise.all([g.isAdmin(), g.switchOn(), g.consent(), g.blocked()].map((x) => soft(() => x))).then((r) => { tm.gate = now() - t0; return r; });
+        let to; const late = new Promise((r) => { to = setTimeout(() => r('timeout'), PHASE_MS); });
+        const all = await Promise.race([Promise.all([gateP, lockP, auditP]), late]); clearTimeout(to);
+        tm.pre = now() - t0;
+        const refuseUndo = (why, code, extra) => {
+          undo = why;   // from here on a late answer is taken back by its own handler above
+          if (lk && lk.y === true) dropLock();
+          if (au && au.y) dropAudit(au.y, why);
+          if (inflight === mine) inflight = null;
+          if (code) refuse(key, code, extra);
+        };
+        if (all === 'timeout') { refuseUndo('timeout', 'lock'); return; }
+        const gv = all[0];
+        // the same order of answers as before: gates first, then the lock, then the audit row.
+        // An ERROR reading admin / beta is "couldn't confirm" (gate_unreadable), never "not an admin"; only a real NO says not_admin
+        const [ad, sw, cs, bl] = gv.map((r) => (r.err ? { err: true } : { y: r.y }));
         const no = ad.err ? 'gate_unreadable' : !ad.y ? 'not_admin' : sw.err ? 'switch_unreadable' : !sw.y ? 'switched_off' : bl.err ? 'switch_unreadable' : bl.y ? 'member_blocked' : cs.err ? 'consent_unreadable' : !cs.y ? 'consent_needed' : '';
         if (no) {
-          if (inflight === mine) inflight = null; refuse(key, no);
-          if (B && B.capHit()) { renew(); return; }   // the platform cap was hit: this socket can't read anything any more
-          if (no !== 'not_admin') g.defer(g.audit({ ...entry }, 'ct-' + key + '-r').then((a) => a.finish({ result: 'rejected', message: no })).catch(() => {}));
+          // our own audit row becomes the 'rejected' record; if it could not be created (not a duplicate), a '-r' row as before
+          refuseUndo(no, no);
+          if (au.err && !au.err.duplicate && no !== 'not_admin') g.defer(g.audit({ ...entry }, 'ct-' + key + '-r').then((x) => x.finish({ result: 'rejected', message: no })).catch(() => {}));
+          if (B && B.capHit()) renew();   // the platform cap was hit: this socket can't read anything any more
           return;
         }
-        await releasing;
-        let lk;
-        try { lk = await g.lock.take(key); } catch (e) { lk = null; }
-        if (lk !== true) { if (inflight === mine) inflight = null; if (lk && lk.key) { held = lk; ask(); refuse(key, 'unresolved'); } else refuse(key, 'lock'); return; }
-        let a;
-        try { a = await g.audit(entry, 'ct-' + key); }
-        catch (e) { if (inflight === mine) inflight = null; g.defer(Promise.resolve(g.lock.release(key)).catch(() => {})); refuse(key, e && e.duplicate ? 'duplicate' : 'audit'); return; }
-        if (inflight !== mine) { g.defer(a.finish({ result: 'rejected', message: 'socket closed before send' }).catch(() => {})); g.defer(Promise.resolve(g.lock.release(key)).catch(() => {})); return; }
-        mine.audit = a; mine.at = now();
+        if (lk.err || lk.y !== true) {
+          const h = lk.err ? null : lk.y;
+          if (h && h.key) { refuseUndo('lock held', ''); held = h; ask(); refuse(key, 'unresolved'); } else refuseUndo('lock', 'lock');
+          return;
+        }
+        if (au.err) { const d = !!au.err.duplicate; refuseUndo(d ? 'duplicate' : 'audit', d ? 'duplicate' : 'audit'); return; }
+        // the socket closed while the checks ran (closed() cleared inflight): nothing is sent
+        if (inflight !== mine) { refuseUndo('socket closed before send', ''); return; }
+        const a = au.y;
+        mine.audit = a; mine.tm = tm; mine.at = now();
         if (!relay.forward(frame)) { finish({ result: 'rejected', message: 'not sent: link closed' }); refuse(key, 'audit', { error: 'The cTrader link closed, nothing was sent.' }); return; }
         mine.sent = true;
       })();

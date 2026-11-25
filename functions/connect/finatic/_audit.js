@@ -61,7 +61,7 @@ export async function openAudit(env, deps, entry, docId) {
   if (r.status === 401) { dropToken(); at = await accessToken(env, f); r = await create(at); }   // cached token revoked/expired early
   if (r.status === 409) { const e = new Error('duplicate'); e.duplicate = true; throw e; }
   if (!r.ok) throw why(fsWhy(r.status, 'write the audit log'));
-  return { id, finish: async (res) => { try { const mask = Object.keys(res).map((k) => 'updateMask.fieldPaths=' + k).join('&'); await f(base + '/' + encodeURIComponent(id) + '?' + mask, { method: 'PATCH', headers: { authorization: 'Bearer ' + at, 'content-type': 'application/json' }, body: JSON.stringify({ fields: fields(res) }) }); } catch (e) { /* attempt row already exists */ } } };
+  return { id, finish: async (res) => { try { const mask = Object.keys(res).map((k) => 'updateMask.fieldPaths=' + k).join('&') + '&currentDocument.exists=true'; await f(base + '/' + encodeURIComponent(id) + '?' + mask, { method: 'PATCH', headers: { authorization: 'Bearer ' + at, 'content-type': 'application/json' }, body: JSON.stringify({ fields: fields(res) }) }); } catch (e) { /* attempt row already exists */ } } };
 }
 
 // Kill switch: settings/liveTrading. -> true (live writes allowed) | false (switched off); throws (e.reason set) when it cannot be read

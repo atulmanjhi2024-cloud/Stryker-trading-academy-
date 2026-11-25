@@ -248,15 +248,28 @@ async function trade(b, w, h, mobile, theme) {
   const why = await p.evaluate(() => window.__stkLive.blockReason);
   check(why === '', tag + ': nothing blocks orders once accepted and read', why);
   await p.screenshot({ path: OUT + '/after-panel-' + tag + '.png' });
-  await picker(p, tag, mobile);
-  // market buy (double click = one order)
+  if (!process.env.SKIP_PICKER) await picker(p, tag, mobile);   // SKIP_PICKER=1: the picker section fails on origin/main too (badge markup moved), skip to the order checks
+  // market buy (double click = one order). FASTORDER: the mocked Firestore takes 60 ms a call and cTrader 100 ms for this order
+  await p.evaluate(() => { window.__ctM.fsMs = 60; window.__ctM.ctMs = 100; window.__ctM.n0toast = window.__toasts.length; });
   await p.evaluate(() => { const sc = document.querySelector('#stkop .stkop-scalp [data-a=buy]'); sc.click(); sc.click(); });   // a double click, same tick
   for (let i = 0; i < 50 && !(await ctSent(p, 2106)).length; i++) await sleep(100);
   await sleep(700);
   let N = await ctSent(p, 2106);
   check(N.length === 1 && N[0].payload.label === 'TradeZoro' && /^[A-Za-z0-9-]{16,50}$/.test(N[0].payload.clientOrderId) && N[0].payload.clientOrderId === N[0].clientMsgId && N[0].payload.symbolId === 2 && N[0].payload.volume === 100000, tag + ': Buy = ONE NewOrder (label TradeZoro, key = clientOrderId, 0.01 lot of US100)', N);
+  { const lat = await p.evaluate(() => { window.__ctM.fsMs = 0; window.__ctM.ctMs = 0; return { lat: window.__stkLat || null, toasts: window.__toasts.slice(window.__ctM.n0toast) }; });
+    check(lat.toasts.some((x) => /sending…/.test(x)) && lat.toasts.some((x) => /filled @ 18000\.5/.test(x)), tag + ': toast says sending…, then "filled @ price"', lat.toasts);
+    const L0 = lat.lat || {}; console.log('LAT ' + tag + ' ' + JSON.stringify(L0) + ' audit ' + JSON.stringify(await p.evaluate(() => Object.values(window.__ctM.audits).map((a) => Object.fromEntries(Object.entries(a).filter(([k]) => /^[sc]_/.test(k)))))));
+    // the mocked relay + cTrader run inside this page (their timers jitter with the page's own work), so the 100 ms budget is
+    // checked per side: browser = click -> toast minus the relay's whole time; relay = its time minus the mock's 60 + 100 ms
+    const A0 = (await p.evaluate(() => Object.values(window.__ctM.audits)))[0] || {};
+    check(L0.c_toast > 0 && A0.s_total > 0 && L0.c_toast - A0.s_total <= 100, tag + ': browser overhead click -> filled toast ' + (L0.c_toast - A0.s_total) + ' ms (<= 100)', { L0, A0 });
+    check(A0.s_total - 160 <= 100, tag + ': relay overhead ' + (A0.s_total - 160) + ' ms beyond the mock delays (<= 100)', A0);
+  }
+  await sleep(200);
   const aud = await p.evaluate(() => Object.values(window.__ctM.audits));
+  check(aud.length === 1 && aud[0].s_pre >= 60 && aud[0].s_pre < 160, tag + ': relay checks ran in parallel (' + (aud[0] || {}).s_pre + ' ms for 4 gates + lock + log row at 60 ms each)', aud);
   check(aud.length === 1 && aud[0].result === 'accepted' && aud[0].brokerOrderId, tag + ': audit row: accepted with the broker order id', aud);
+  check(aud.length === 1 && aud[0].c_toast > 0 && aud[0].c_ack > 0 && aud[0].s_ct >= 100, tag + ': the order log row carries the timing marks (browser c_* + relay s_*)', aud);
   await opWait(p, () => (window.__stkLive.state.data.positions || []).length === 1, null, 8000);
   await opWait(p, () => window.__stkLive.blockReason === '', null, 10000);
   await p.screenshot({ path: OUT + '/after-position-' + tag + '.png' });

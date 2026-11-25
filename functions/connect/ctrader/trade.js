@@ -10,7 +10,7 @@ import { verifyIdToken, wsTokenOf } from '../../api/chart/_rt.js';
 import { accessFor } from '../../api/beta/_lib.js';
 import { normEmail } from '../../../assets/beta-config.mjs';
 import { createRelay, LIMITS } from './_relay.js';
-import { tradeHooks, TLIMITS, gateCache, WRITE_COST } from './_trade.js';
+import { tradeHooks, TLIMITS, gateCache, WRITE_COST, WARM_KEYS } from './_trade.js';
 import { openAudit, liveSwitchOn, DOCS, fields, fsCall } from '../finatic/_audit.js';
 import { hasConsent, memberBlocked, store } from '../finatic/_owner.js';
 
@@ -29,24 +29,52 @@ async function rateLimited(env, request) {
 }
 
 // the shared account lock: brokerLocks/ct_<account> { key, uid, at }. Server-written only (no client rule: the catch-all denies).
+// FASTORDER (25 Nov): the lock is released in ONE round trip: the create's own updateTime is kept and the DELETE carries it as a
+// precondition (Firestore deletes it only if it is still exactly our document). Firestore answers a failed precondition with 400
+// FAILED_PRECONDITION (or 404 when it is gone): both = "not ours any more", done. Only a network / 5xx error falls back to the
+// old read-then-delete, and that delete carries the read's updateTime too. Lock docs are never patched in place.
 export function accountLock(env, deps, uid, account) {
   if (deps.lock) return deps.lock;
-  const path = 'brokerLocks/ct_' + account, S = store(env, deps);
+  const path = 'brokerLocks/ct_' + account, S = store(env, deps), mine = new Map();   // key -> updateTime of OUR create
+  const held = (h) => (h && h.key ? { key: String(h.key), at: Number(h.at) || 0 } : { key: '', at: 0 });
+  const del = (ut) => fsCall(env, deps, 'DELETE', DOCS + path + (ut ? '?currentDocument.updateTime=' + encodeURIComponent(ut) : ''));
+  const gone = async (r) => { if (r.ok || r.status === 404) return true; if (r.status === 400) { const j = await r.json().catch(() => null); if (j && j.error && j.error.status === 'FAILED_PRECONDITION') return true; } return false; };
   return {
     async take(key) {
-      try { await S.create(path, { key, uid, at: Date.now() }); return true; }
-      catch (e) { if (!e.duplicate) throw e; const h = await S.get(path); return h && h.key ? { key: String(h.key), at: Number(h.at) || 0 } : { key: '', at: 0 }; }
+      if (deps.store) {   // tests: the in-memory store
+        try { await S.create(path, { key, uid, at: Date.now() }); return true; }
+        catch (e) { if (!e.duplicate) throw e; return held(await S.get(path)); }
+      }
+      const r = await fsCall(env, deps, 'POST', DOCS + 'brokerLocks?documentId=' + encodeURIComponent('ct_' + account), { fields: fields({ key, uid, at: Date.now() }) });
+      if (r.status === 409) return held(await S.get(path));
+      if (!r.ok) throw new Error('lock create ' + r.status);
+      const j = await r.json().catch(() => null);
+      if (j && j.updateTime) { mine.set(key, j.updateTime); if (mine.size > 20) mine.delete(mine.keys().next().value); }
+      return true;
     },
     async peek() { const h = await S.get(path); return h && h.key ? { key: String(h.key), at: Number(h.at) || 0 } : null; },
     async release(key) {   // only the holder's key releases it
-      const h = await S.get(path); if (!h || h.key !== key) return;
-      const r = await fsCall(env, deps, 'DELETE', DOCS + path); if (!r.ok && r.status !== 404) throw new Error('lock delete');
+      if (deps.store) { const h = await S.get(path); if (!h || h.key !== key) return; const r = await del(''); if (!r.ok && r.status !== 404) throw new Error('lock delete'); return; }
+      const ut = mine.get(key);
+      if (ut) {
+        let r = null; try { r = await del(ut); } catch (e) { r = null; }
+        if (r && (await gone(r))) { mine.delete(key); return; }
+        if (r && r.status < 500 && r.status !== 429) throw new Error('lock delete ' + r.status);
+      }
+      // fallback (no updateTime kept, or a network / 5xx error): read, then delete only that exact version
+      const raw = await fsCall(env, deps, 'GET', DOCS + path);
+      if (raw.status === 404) { mine.delete(key); return; }
+      if (!raw.ok) throw new Error('lock read ' + raw.status);
+      const doc = await raw.json().catch(() => null), k = doc && doc.fields && doc.fields.key && doc.fields.key.stringValue;
+      if (k !== key) { mine.delete(key); return; }
+      const r = await del(doc.updateTime); if (!(await gone(r))) throw new Error('lock delete');
+      mine.delete(key);
     }
   };
 }
 async function patchAudit(env, deps, id, res) {
   if (deps.patchAudit) return deps.patchAudit(id, res);
-  const mask = Object.keys(res).map((k) => 'updateMask.fieldPaths=' + k).join('&');
+  const mask = Object.keys(res).map((k) => 'updateMask.fieldPaths=' + k).join('&') + '&currentDocument.exists=true';   // never creates a row
   await fsCall(env, deps, 'PATCH', DOCS + 'brokerOrderAudit/' + encodeURIComponent(id) + '?' + mask, { fields: fields(res) });
 }
 
@@ -113,7 +141,7 @@ export async function handle(request, env, deps = {}, ctx = null) {
     switchOn: () => cache.get('switchOn'),
     consent: () => cache.get('consent'),
     blocked: () => cache.get('blocked'),
-    warm: () => { defer(cache.warm()); },
+    warm: () => { defer(cache.warm(WARM_KEYS)); },
     budget,
     ended: () => done(),   // a relay-side close (renew, not allowed) frees this uid's socket slot at once, so the reopen isn't 'other_tab'
     audit: (entry, id) => openAudit(env, deps, entry, id),

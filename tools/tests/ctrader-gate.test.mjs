@@ -80,14 +80,15 @@ await t('mayTrade does not depend on the ID token being fresh (a token past its 
 });
 
 // ---- the per-socket gate cache ----
-await t('gate cache: a yes is kept (admin 5 min, switch / consent / block 30 s); a no and an error are never kept', async () => {
+await t('gate cache: a yes is kept (admin 5 min, consent / block 30 s, switch 5 s); a no and an error are never kept', async () => {
   let clock = 0, reads = { isAdmin: 0, switchOn: 0, consent: 0, blocked: 0 }; const val = { isAdmin: true, switchOn: true, consent: true, blocked: false }, err = {};
   const read = Object.fromEntries(Object.keys(reads).map((k) => [k, async () => { reads[k]++; if (err[k]) throw new Error('503'); return val[k]; }]));
   const c = gateCache(read, { now: () => clock });
-  assert.deepEqual(GATE_TTL, { isAdmin: 300000, switchOn: 30000, consent: 30000, blocked: 30000 });
+  assert.deepEqual(GATE_TTL, { isAdmin: 300000, switchOn: 5000, consent: 30000, blocked: 30000 });
   for (const k of Object.keys(reads)) await c.get(k);
+  clock = 4000; await c.get('switchOn'); assert.equal(reads.switchOn, 1, 'switch: kept 5 s (FASTORDER)');
   clock = 29000; for (const k of Object.keys(reads)) await c.get(k);
-  assert.deepEqual(reads, { isAdmin: 1, switchOn: 1, consent: 1, blocked: 1 }, 'all from the cache');
+  assert.deepEqual(reads, { isAdmin: 1, switchOn: 2, consent: 1, blocked: 1 }, 'all from the cache but the switch (re-read after 5 s)');
   clock = 31000; await c.get('switchOn'); await c.get('isAdmin'); assert.equal(reads.switchOn, 2); assert.equal(reads.isAdmin, 1);
   clock = 301000; await c.get('isAdmin'); assert.equal(reads.isAdmin, 2);
   val.switchOn = false; clock = 400000; assert.equal(await c.get('switchOn'), false); assert.equal(await c.get('switchOn'), false); assert.equal(reads.switchOn, 4, 'a NO (switched off) is re-read every time');
@@ -150,11 +151,11 @@ await t('counter(): counts every fetch, flags the platform cap error, starts wit
   await assert.rejects(b.f('x')); assert.equal(b.left(), l0 - 1); assert.equal(b.capHit(), true);
   const b2 = counter(async () => new Response('{}'), 10); for (let i = 0; i < 6; i++) await b2.f('x'); assert.equal(b2.capHit(), true, 'own budget used up');
 });
-await t('kill switch turned OFF while "on" is cached: writes are refused within the 30 s TTL (and every write after re-reads)', async () => {
+await t('kill switch turned OFF while "on" is cached: writes are refused within the 5 s TTL (FASTORDER) (and every write after re-reads)', async () => {
   let clock = 0, on = true, reads = 0; const c = gateCache({ isAdmin: async () => true, switchOn: async () => { reads++; return on; }, consent: async () => true, blocked: async () => false }, { now: () => clock });
   assert.equal(await c.get('switchOn'), true); on = false;
   clock = GATE_TTL.switchOn - 1; assert.equal(await c.get('switchOn'), true, 'inside the TTL the cached on is used');
-  clock = GATE_TTL.switchOn + 1; assert.equal(await c.get('switchOn'), false, 'refused after at most 30 s'); assert.equal(await c.get('switchOn'), false); assert.equal(reads, 3);
+  clock = GATE_TTL.switchOn + 1; assert.equal(await c.get('switchOn'), false, 'refused after at most 5 s'); assert.equal(await c.get('switchOn'), false); assert.equal(reads, 3);
 });
 await t('a last-good FALLBACK value of the switch (Firestore failed twice) is used once but never kept', async () => {
   let clock = 0, reads = 0; const c = gateCache({ isAdmin: async () => true, switchOn: async () => { reads++; return { v: true, keep: false }; }, consent: async () => true, blocked: async () => false }, { now: () => clock });

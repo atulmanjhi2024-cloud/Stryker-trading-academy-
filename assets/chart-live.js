@@ -92,7 +92,8 @@ const data = (op, extra) => { const o = ownOps(extra && extra.accountId); return
 // finatic/copy.js). The reply is the leader's own reply plus copy.results.
 const COPY_OPS = ['place', 'modify', 'cancel', 'flatten'];
 const order = (b, timing) => {
-  if (isOwn(S.acct)) return ownOps(S.acct.id).order(b);   // never copy-traded: copy trading stays on the broker-link accounts
+  // our own links get the click's latency record (b.lat, never sent anywhere but the browser's own trade socket's 9001 marks)
+  if (isOwn(S.acct)) return ownOps(S.acct.id).order(timing && timing.lat && S.acct.ct ? Object.assign({}, b, { lat: timing.lat }) : b);   // never copy-traded: copy trading stays on the broker-link accounts
   const lead = Object.assign({ src: 'chart', userId: S.userId, accountId: S.acct.id }, S.acct.mt && b.op !== 'env' && b.op !== 'schema' ? { venue: 'mt' } : {}, b), cp = window.__stkCopy;
   if (cp && COPY_OPS.includes(b.op) && cp.active(S.acct.id)) return call('/connect/finatic/copy', { op: 'fan', lead }, timing).then((r) => { try { cp.after(lead, r); } catch (e) {} return r; });
   return call('/connect/finatic/order', lead, timing);
@@ -370,6 +371,7 @@ async function pick(id) {
   S.day = { at: 0, busy: false, key: '', fills: [], truncated: false, sig: '' }; balance(id, true);
   // 'env' also pre-warms the server (Finatic session + kill switch cached) and the browser's connection; reads start in parallel
   read(); readKill(); loadFronts(); b3Feed(a);
+  if (a.ct && CT.link) ctWarm();   // FASTORDER: the link and this chart's symbol rules load now, not on the first click
   await envCheck();
   schemaCheck();
   render();
@@ -458,7 +460,9 @@ setInterval(() => {
   read();
 }, POLL_MS);
 window.addEventListener('beforeunload', (e) => { if (groupOpen()) { e.preventDefault(); e.returnValue = ''; } });
-document.addEventListener('visibilitychange', () => { if (!document.hidden && S.acct) { S.hiddenAt = 0; read(); } });
+document.addEventListener('visibilitychange', () => { if (!document.hidden && S.acct) { S.hiddenAt = 0; read(); if (S.acct.ct) ctWarm(); } });
+// FASTORDER: open the cTrader link (if a close let it rest) and load the chart symbol's size rules, in the background
+function ctWarm() { try { const i = P && P.activeSymbol ? infoMt(P.activeSymbol()) : null; CT.link.warm(i && i.code); } catch (e) {} }
 ['pointerdown', 'keydown'].forEach((ev) => window.addEventListener(ev, () => { S.lastAct = Date.now(); }, { passive: true, capture: true }));
 
 function gate() { return L.readsOk({ lastOkStart: S.lastOkStart, lastWriteAt: S.lastWriteAt, unknown: S.unknown, now: now(), maxAge: STALE_MS }); }
@@ -696,10 +700,20 @@ export function enableLive() {
 
 // ------------------------------------------------------------------------------------------ writes
 // pending: optional "sending" line drawn on the chart right away (L.pendingLine), removed when the answer arrives
-async function write(body, what, pending) {
+// FASTORDER (25 Nov): a cTrader write is timed hop by hop from the click (lat.t0, set in place / placeMt): link ready (c_open), sent on
+// the socket (c_send), cTrader's answer back (c_ack), toast shown (c_toast), the fill of a market order (c_fill). The marks go to
+// that order's log row (brokerOrderAudit, admin-read) through the relay, so the Owner's next live orders give real numbers.
+// The toast says "sending…" at once, then what cTrader answered: "filled @ price" (market) or "accepted" (limit / stop).
+async function write(body, what, pending, lat) {
   S.busy = true; S.lastWriteAt = now(); S.pending = pending || null; render();
-  const tm = { op: body.op, t0: performance.now() };
-  try { const r = await order(body, tm); tm.ok = true; toast(r.settled ? L.settledText(what, r) : what + ' sent. ' + (r.status ? 'Broker status: ' + r.status + '.' : ''), 'success'); return r; }
+  const tm = { op: body.op, t0: lat && lat.t0 ? lat.t0 : performance.now(), lat: lat || null };
+  const ct = !!(lat && S.acct && S.acct.ct);
+  if (ct && body.op === 'place') toast(what + ' sending…', 'info');
+  try {
+    const r = await order(body, tm); tm.ok = true;
+    if (ct) { ctToast(what, r, lat); return r; }
+    toast(r.settled ? L.settledText(what, r) : what + ' sent. ' + (r.status ? 'Broker status: ' + r.status + '.' : ''), 'success'); return r;
+  }
   catch (e) {
     // the server's message says what the broker answered and whether a read already looked for the order (21 Nov)
     if (e.code === 'unknown' || e.network) { S.unknown = true; toast(e.code === 'unknown' && e.message ? e.message : 'No answer from TradeZoro (your connection dropped). The order may or may not have gone through. Check your positions and working orders before you send it again.', 'error'); }
@@ -708,7 +722,27 @@ async function write(body, what, pending) {
   } finally {
     tm.ms = performance.now() - tm.t0; S.rtt = tm; S.busy = false; S.pending = null; S.lastWriteAt = now(); render();
     fastReads();
+    if (ct && !lat.wait) ctMarks(body, lat);
   }
+}
+const ms0 = (lat, k) => (lat && lat[k] ? Math.max(0, Math.round(lat[k] - lat.t0)) : undefined);
+function ctMarks(body, lat) {
+  if (!lat || lat.sentMarks || !CT.link || !body.idemKey) return; lat.sentMarks = true;
+  const m = { c_cf: ms0(lat, 'cf'), c_open: ms0(lat, 'open'), c_send: ms0(lat, 'send'), c_ack: ms0(lat, 'ack'), c_toast: ms0(lat, 'toast'), c_fill: ms0(lat, 'fillAt') };
+  S.lat = Object.assign({ at: Date.now(), op: body.op }, m, lat.watch && lat.watch.server ? lat.watch.server : {}); window.__stkLat = S.lat;
+  CT.link.marks(body.idemKey, m);
+}
+const pxTxt = (v, tick) => { const d = tick > 0 ? Math.max(0, Math.min(8, Math.round(-Math.log10(tick)))) : 2; return Number(v).toFixed(d); };
+function ctToast(what, r, lat) {
+  const st = String(r.status || ''), tick = lat.tick || 0;
+  const done = (msg) => { toast(msg, 'success'); lat.toast = performance.now(); };
+  if (/FILL/.test(st)) { lat.fillAt = lat.ack; done(what + ' filled' + (r.price ? ' @ ' + pxTxt(r.price, tick) : '') + '.'); return; }
+  if (r.fill && typeof r.fill.then === 'function') {   // a market order cTrader accepted first: the fill event follows
+    lat.wait = true;
+    r.fill.then((p) => { lat.wait = false; if (p) { lat.fillAt = performance.now(); done(what + ' filled @ ' + pxTxt(p, tick) + '.'); } else done(what + ': cTrader accepted it. The fill shows in your positions.'); ctMarks(lat.body, lat); });
+    return;
+  }
+  done(what + (/ACCEPTED|PENDING/.test(st) || !st ? ': order accepted by cTrader.' : ' sent. cTrader status: ' + st.toLowerCase().replace(/_/g, ' ') + '.'));
 }
 // read soon after a write (fill / working order shows within ~¼ s), then a few more, then the normal poll
 let fastT = [];
@@ -742,6 +776,7 @@ async function place(sym, o, src) {
 // MetaTrader: lots, the broker symbol, market / limit / stop (limit / stop only when the chart is the broker's own instrument), no TradeZoro size limit
 // every server guard of the futures path applies (kill switch, audit, read gate)
 async function placeMt(sym, o, src) {
+  const lat = S.acct && S.acct.ct ? { t0: performance.now() } : null;
   if (!S.envBusy && (!S.env || now() - S.envAt > ENV_MAX_AGE)) await envCheck();
   if (isOwn(S.acct) && S.env && S.env.consent === false && S.env.blocked !== true) { enableLive(); return null; }   // one-time step; nothing sent
   const why = blockReason(); if (why) { if (/^Pick the .* symbol/.test(why)) toastAct(why, 'Choose', () => openSymPicker(sym), 'error'); else toast(why, 'error'); return null; }
@@ -756,7 +791,8 @@ async function placeMt(sym, o, src) {
   const body = Object.assign(b.body, { idemKey: uuid() }, i.ct && o.sl != null ? { sl: o.sl } : {}, i.ct && o.tp != null ? { tp: o.tp } : {});
   if (i.ct) { const sig = JSON.stringify(Object.assign({}, body, { idemKey: '' })), t = now(); if (S.lastSend && S.lastSend.sig === sig && t - S.lastSend.at < L.DUP_MS) return null; S.lastSend = { sig, at: t }; }   // double-click guard
   const desc = sideWord(o.side) + ' ' + lotTxt(qty) + ' ' + i.code + ' ' + (o.type === 'market' ? 'MARKET' : o.type.toUpperCase() + ' @ ' + px(Number(body.limitPrice || body.stopPrice)));
-  return write(body, desc + (src ? ' (' + src + ')' : ''), i.map.same ? L.pendingLine(body, i.last) : null);
+  if (lat) { lat.tick = i.tick; lat.body = body; lat.cf = performance.now(); }   // c_cf: the chart's own checks done, the order leaves
+  return write(body, desc + (src ? ' (' + src + ')' : ''), i.map.same ? L.pendingLine(body, i.last) : null, lat);
 }
 const MT_NO_SLTP = 'Stop loss and take profit for MetaTrader: set them in MetaTrader for now.';
 const CT_NO_SLTP = 'This chart’s prices are not your broker’s prices for this symbol, so stop loss and take profit can’t be set from here.';

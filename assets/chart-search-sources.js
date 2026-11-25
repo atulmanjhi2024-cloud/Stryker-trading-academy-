@@ -18,6 +18,18 @@ const USUAL = ['NQ1!', 'ES1!', 'YM1!', 'RTY1!', 'GC1!', 'SI1!', 'CL1!', 'EURUSD'
 const FIN_ROOTS = ['NQ', 'MNQ', 'ES', 'MES', 'YM', 'MYM', 'RTY', 'M2K', 'GC', 'MGC', 'SI', 'SIL', 'CL', 'MCL', 'NG', 'HG', 'MHG', 'ZN', 'ZB', '6E'];
 const CORE = () => import('./byo-core.js?v=1266');
 
+// broker energy / metal names our pool may not carry -> the futures chart whose icon they share (row logo only; no trading key)
+const ICON_ALIAS = { USOIL: 'CL1!', XTIUSD: 'CL1!', UKOIL: 'BZ1!', BRENT: 'BZ1!', XBRUSD: 'BZ1!', XNGUSD: 'NG1!', NATGAS: 'NG1!', NGAS: 'NG1!', XPTUSD: 'PL1!', XPDUSD: 'PA1!', COPPER: 'HG1!', XCUUSD: 'HG1!' };
+// a broker row -> [prefix, ticker, desc, type] for symLogo (assets/symbol-logos.js): our chart's symbol when there is one, else the
+// mapped instrument, else the code as a stock ticker (AAPL.US / #AAPL / AAPL.OQ -> AAPL); unknown names fall back to the initials badge
+export function iconOf(r) {
+  if (r.d) return [r.d.prefix || r.d.provider, r.d.ticker, r.d.description, r.d.type];
+  const up = String(r.code || '').toUpperCase(), m = mapCode(up), a = ICON_ALIAS[up.replace(/[^A-Z0-9]/g, '')];
+  if (m && m.charts && m.charts[0]) return [m.charts[0][0], m.charts[0][1], '', ''];
+  if (a) return ['futures', a, '', 'futures'];
+  return ['', up.replace(/^#/, '').replace(/[._](US|USA|OQ|O|N|NAS|NYSE|NASDAQ|CFD)$/, ''), r.desc, r.cls === 'Stocks' ? 'stock' : ''];
+}
+
 // broker symbol -> { key, cls, charts: [[provider, ticker], ...] } | null.  US100 / USTEC / NAS100.cash -> NDX -> futures:NQ1!;
 // EURUSD / EURUSDm / EURUSD.pro -> fx:EURUSD; BTCUSD -> binance BTCUSDT; NQZ6 / NQ (futures broker) -> futures:NQ1!.
 export function mapCode(code, futures) {
@@ -66,9 +78,11 @@ export async function loadSymbols(src, find) {
   if (src.kind === 'ct' || src.kind === 'mt') {
     const lv = window.__stkLive; let list = [];
     try { list = lv && lv.srcSymbols ? await lv.srcSymbols(src.id) : []; } catch (e) { list = []; }
-    if (list.length) return { rows: list.map((x) => { const m = mapCode(x.code), d = m && target(m.charts); return row(x.code, x.desc, m, d); }).sort((a, b) => a.cls.localeCompare(b.cls) || a.code.localeCompare(b.code)), note: '' };
+    // cTrader: a symbol with no TradeZoro chart charts from the account's own prices (byo:CT:<name>, assets/byo-ctrader.js ctacct)
+    const own = (code, d) => (!d && src.kind === 'ct' ? 'byo:CT:' + code : '');
+    if (list.length) return { rows: list.map((x) => { const m = mapCode(x.code), d = m && target(m.charts); return row(x.code, x.desc, m, d, own(x.code, d)); }).sort((a, b) => a.cls.localeCompare(b.cls) || a.code.localeCompare(b.code)), note: '' };
     const seen = new Set(), rows = [];
-    for (const s of USUAL) { const k = L.mtChartKey(s); if (!k) continue; for (const c of k.cands.slice(0, k.key.length === 6 ? 1 : 4)) { if (seen.has(c)) continue; seen.add(c); const m = mapCode(c); rows.push(row(c, '', m, m && target(m.charts))); } }
+    for (const s of USUAL) { const k = L.mtChartKey(s); if (!k) continue; for (const c of k.cands.slice(0, k.key.length === 6 ? 1 : 4)) { if (seen.has(c)) continue; seen.add(c); const m = mapCode(c), d = m && target(m.charts); rows.push(row(c, '', m, d, own(c, d))); } }
     return { rows, note: src.kind === 'ct' ? 'Your cTrader symbol list could not be loaded right now; showing the usual names. Sign in to cTrader again from the Trade menu if this stays.' : 'MetaTrader doesn’t share its full list; showing the usual names.' };
   }
   if (src.kind === 'fin') {

@@ -4,6 +4,7 @@
 // transparent box; the few marks that vanish on one theme get a per-file filter, see INVERT_DARK), loaded lazily; no venue file = a neutral letter chip.
 // Data vendors are NOT venues and never get a logo. Education only. Not financial advice.
 import { fxMark, fxCss } from './fx-flags.js?v=1266';
+import { symLogoOf } from './symbol-logos.js?v=1266';
 const DIR = '/assets/venue-logos/';
 // lower-case venue / exchange code -> file stem. CME Group's own mark covers CME, CBOT, NYMEX and COMEX (all CME Group
 // exchanges). NYSE (NYSE, AMEX, ARCA) has no usable official file, so it gets the letter chip. Never a wrong picture.
@@ -109,15 +110,26 @@ export function mountVenueLogos(ws) {
       const sym = activeSym(), pre = /^([^:]+):/.exec(sym);
       let own = ''; try { own = pre && /^byo$/i.test(pre[1]) && byoLabel ? (byoLabel(sym) || {}).id || '' : ''; } catch (e) {}
       const f = venueFile(pre ? pre[1] : '', sym.replace(/^[^:]+:/, ''), own);
-      const have = b.querySelector(':scope > .vlogo, :scope > .fxm');
-      if (have && have.dataset.k === (f || sym)) return;
+      const have = b.querySelector(':scope > .slg');
+      if (have && have.dataset.k === (f || sym) && have.dataset.s === sym) return;
       if (have) have.remove();
       if (!pre) return;
-      const c = chip(f, venueLabel(pre[1], sym), /^fx$/i.test(pre[1]) ? sym : ''); c.dataset.k = f || sym;
+      const c = symLogoOf(sym, 20); c.dataset.k = f || sym; c.dataset.s = sym;   // the symbol's own logo (Owner 24 Nov); the venue shows in the badge/text
       b.classList.add('has-vlogo'); b.insertBefore(c, b.firstChild);
     });
   };
   paintHeader();
+  // status-line avatar (chart legend line, every multi-chart cell): the engine draws initials on a coloured disc; swap in the symbol logo
+  const paintAvatars = () => document.querySelectorAll('.vela-statusline .vela-sl-avatar').forEach((a) => {
+    const row = a.closest('.vela-statusline'), t = ((row.querySelector('.vela-sl-symbol') || {}).textContent || '').trim();
+    let sym = activeSym(); if (!t) return;
+    if (sym.replace(/^[^:]+:/, '') !== t) sym = t;
+    if (a.firstElementChild && a.firstElementChild.dataset.s === sym) return;
+    const l = symLogoOf(sym, 18); l.dataset.s = sym;   // kept inside the engine's own avatar span (the engine swaps that span on symbol change)
+    a.style.background = 'none'; a.replaceChildren(l);
+  });
+  paintAvatars();
+  new MutationObserver(paintAvatars).observe(document.body, { childList: true, subtree: true });
   try { ws.on('state:changed', paintHeader); } catch (e) {}
   const hdr = document.querySelector('.vela-widget-symbol');
   if (hdr) new MutationObserver(paintHeader).observe(hdr, { childList: true });
@@ -130,7 +142,7 @@ export function mountVenueLogos(ws) {
       const v = p[1].toLowerCase();
       let f = '';
       if (v === 'futures') f = 'cme'; else f = venueFile(v, p[2]);
-      if (v === 'idx') return;
+      if (v === 'idx' || v === 'fx' || r.querySelector('.stkw-logo')) return;   // the row already carries the symbol's own logo
       const c = chip(f, venueLabel(p[1], p[2]), v === 'fx' ? p[2] : ''); c.classList.add('stkw-sym-v'); s.after(c);
     });
     document.querySelectorAll('.stk-symin-btn:not([data-vl])').forEach((b) => {

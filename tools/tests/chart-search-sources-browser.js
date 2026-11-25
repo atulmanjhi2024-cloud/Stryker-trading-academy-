@@ -19,12 +19,15 @@ fs.mkdirSync(OUT, { recursive: true });
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 let fail = 0;
 const check = (ok, msg, x) => { if (!ok) fail++; console.log((ok ? 'PASS ' : 'FAIL ') + msg + (!ok && x !== undefined ? ' ' + JSON.stringify(x).slice(0, 600) : '')); };
+// extra cTrader symbols (Sample data): crypto / index / energy / forex pairs with no TradeZoro chart / a stock CFD
+const EXTRA = [{ symbolId: 7, symbolName: 'BTCUSD', digits: 2, desc: 'Bitcoin vs US Dollar' }, { symbolId: 8, symbolName: 'US30', digits: 2, desc: 'Wall Street 30' }, { symbolId: 9, symbolName: 'WTI', digits: 3, desc: 'US Crude Oil' },
+  { symbolId: 10, symbolName: 'AUDCAD', digits: 5, desc: 'Australian Dollar vs Canadian Dollar' }, { symbolId: 11, symbolName: 'AUDCHF', digits: 5, desc: 'Australian Dollar vs Swiss Franc' }, { symbolId: 12, symbolName: 'AAPL.US', digits: 2, desc: 'Apple Inc (CFD)' }];
 const ACC = '123e4567-e89b-12d3-a456-426614174000', MT = '223e4567-e89b-12d3-a456-426614174001', US = '0aaa1111-2222-3333-4444-555566667777';
 
-async function open(b, { w, h, mobile, theme, admin = true, broker = true, byo = true }) {
+async function open(b, { w, h, mobile, theme, admin = true, broker = true, byo = true, extra = false }) {
   const ctx = await b.newContext({ viewport: { width: w, height: h }, deviceScaleFactor: mobile ? 2 : 1, isMobile: !!mobile, hasTouch: !!mobile });
   await ctx.addInitScript(stub);
-  await ctx.addInitScript(({ t, admin, US, broker }) => {
+  await ctx.addInitScript(({ t, admin, US, broker, EX }) => {
     window.__stkLiveTest = { isAdmin: () => admin, isBeta: () => false, last: () => 28750, fastRetry: true,
       ctCreds: broker ? { access: 'ACCESSTOKENsample1', refresh: 'REFRESHsample1', exp: Date.now() + 30 * 864e5, accountId: 77, isLive: false, login: 5551234, kind: 'trade' } : null,
       ctDeps: { idToken: async () => 'IDT', save: async () => {} } };
@@ -34,7 +37,8 @@ async function open(b, { w, h, mobile, theme, admin = true, broker = true, byo =
       localStorage.setItem('stryker_install_prompt_shown_u1', '1'); localStorage.setItem('stryker_push_prompt_shown_u1', '1');
       localStorage.setItem('stryker_theme', t === 'light' ? 'day' : 'night'); localStorage.setItem('stryker_broker_sync_user_u1', US);
     } catch (e) {}
-  }, { t: theme, admin, US, broker });
+    window.__EXTRA = EX;
+  }, { t: theme, admin, US, broker, EX: extra ? EXTRA : [] });
   await ctx.route(/^https?:\/\/(?!127\.0\.0\.1|localhost|cdn\.jsdelivr\.net)/, (r) => r.abort());
   await ctx.route('**/connect/ctrader/token*', (r) => r.fulfill({ json: { configured: true, client_id: 'CID_sample1' } }));
   const F = { calls: [] };
@@ -54,7 +58,7 @@ async function open(b, { w, h, mobile, theme, admin = true, broker = true, byo =
   p.on('pageerror', (e) => errors.push(String(e)));
   p.on('dialog', (d) => d.dismiss());
   await p.goto(BASE + '/charts.html', { waitUntil: 'domcontentloaded' });
-  if (broker) await p.evaluate(async () => { const m = await import('/tools/tests/ctrader-mock.mjs'); const M = m.mockState({}); window.__ctM = M; window.__stkLiveTest.ctDeps.WS = m.makeWS(M); });
+  if (broker) await p.evaluate(async () => { const m = await import('/tools/tests/ctrader-mock.mjs'); const M = m.mockState({ extra: window.__EXTRA }); window.__ctM = M; window.__stkLiveTest.ctDeps.WS = m.makeWS(M); });
   await p.waitForFunction(() => window.__stkHeavyReady && window.STRYKER_VELA && window.STRYKER_VELA.chart && window.__stkSearch, null, { timeout: 60000 });
   if (broker) await p.waitForFunction(() => window.__stkLive && window.__stkLive.state && window.__stkLive.state.accounts.length >= 3, null, { timeout: 20000 }).catch(() => {});
   if (byo) await p.waitForFunction(() => performance.getEntriesByType('resource').some((e) => /\/assets\/byo-core\.js\?v=/.test(e.name)), null, { timeout: 20000 });
@@ -173,13 +177,48 @@ async function desktop(b, theme) {
   await pickSrc(p, 'ct-77');
   await p.focus('.stkss-input'); await p.keyboard.type('SAMPLEX'); await sleep(250);
   l = await list(p);
-  check(/Charting for SAMPLEX isn’t available yet/.test(l.side) && (l.rows[0] || {}).to === 'No chart yet', tag + ': no matching chart: the details pane says so', l.side);
+  check(/charts from your cTrader account’s own prices/.test(l.side) && (l.rows[0] || {}).to === 'Broker prices', tag + ': no TradeZoro chart: "Broker prices" + the pane says it charts from cTrader', [l.side, l.rows[0]]);
   await p.screenshot({ path: OUT + '/nochart-' + tag + '.png' });
-  await p.keyboard.press('Enter'); await sleep(300);
-  check(await p.evaluate(() => window.__stkSearch.isOpen()), tag + ': Enter on a symbol with no chart keeps the panel open');
   check(!errors.length, tag + ': no page errors', errors);
   const sent = await p.evaluate(() => (window.__ctM ? window.__ctM.sent.filter((m) => [2106, 2107, 2108, 2109, 2111, 2110].includes(m.payloadType)).length : 0));
   check(sent === 0, tag + ': no order frames reached the mocked cTrader', sent);
+  await ctx.close();
+}
+// Owner 25 Nov "add symbols to broker as well": every broker row has the symbol's own icon (coin / index mark / oil / two flags / company
+// logo, never initials for a known symbol), the details header too; a symbol with no TradeZoro chart (AUDCAD) opens a chart from the
+// cTrader account's own trendbars (fixture) labelled "via cTrader", and nothing ever says "No chart yet".
+async function brokersyms(b, theme, w = 1440) {
+  const tag = 'syms-' + w + '-' + theme;
+  const { ctx, p, errors } = await open(b, { w, h: w < 600 ? 844 : 900, mobile: w < 600, theme, extra: true });
+  await openSearch(p); await pickSrc(p, 'ct-77');
+  await p.waitForFunction(() => [...document.querySelectorAll('.stkss-row-src')].every((r) => !r.querySelector('.slg-b') || r.dataset.code === 'SAMPLEX'), null, { timeout: 5000 }).catch(() => {});
+  await sleep(600);
+  const rows = await p.evaluate(() => [...document.querySelectorAll('.stkss-row-src')].slice(0, 30).map((r) => { const ic = r.querySelector('.stkss-ic'), s = ic && ic.querySelector('.slg'), b = ic && ic.getBoundingClientRect(), g = s && s.getBoundingClientRect(), img = s && s.querySelector('img');
+    return { code: r.dataset.code, kind: !s ? 'none' : s.classList.contains('slg-b') ? 'initials' : img ? 'img' : s.querySelector('svg') ? 'svg' : 'other', loaded: !img || (img.complete && img.naturalWidth > 0), to: r.querySelector('.stkss-to').textContent,
+      box: b && [Math.round(b.width), Math.round(b.height)], cOff: b && g ? Math.round(Math.max(Math.abs((b.left + b.width / 2) - (g.left + g.width / 2)), Math.abs((b.top + b.height / 2) - (g.top + g.height / 2))) * 10) / 10 : 99,
+      rowOff: (() => { const rb = r.getBoundingClientRect(), cy = (x) => x.top + x.height / 2; return Math.round(Math.max(...[b, r.querySelector('.stkss-tk').getBoundingClientRect(), r.querySelector('.stkss-sd').getBoundingClientRect(), r.querySelector('.stkss-to').getBoundingClientRect()].map((x) => Math.abs(cy(x) - cy(rb)))) * 10) / 10; })() }; }));
+  console.log('ROWS ' + tag + ' ' + JSON.stringify(rows.map((r) => r.code + ':' + r.kind + ':' + r.to)));
+  check(rows.length === 12 && rows.every((r) => r.kind !== 'none' && r.kind !== 'initials' && r.loaded), tag + ': every broker row has a symbol icon (img / svg / flags), none fall back to initials', rows.filter((r) => r.kind === 'none' || r.kind === 'initials' || !r.loaded));
+  const by = Object.fromEntries(rows.map((r) => [r.code, r]));
+  check(by.BTCUSD.kind === 'img' && by.US30.kind === 'svg' && by.WTI.kind === 'svg' && by.AUDCAD.kind === 'svg' && by.XAUUSD.kind === 'svg' && by['AAPL.US'].kind === 'img', tag + ': BTC coin, Dow mark, oil drop, AUD/CAD flags, gold, Apple logo', by);
+  check(rows.every((r) => r.box[0] === 36 && r.box[1] === 36 && r.cOff <= 1 && r.rowOff <= 1), tag + ': icons 36 px like the main list, centred, one row centre (1 px)', rows.map((r) => [r.code, r.box, r.cOff, r.rowOff]));
+  check(rows.every((r) => r.to && r.to !== 'No chart yet') && by.AUDCAD.to === 'Broker prices' && by.US30.to === 'YM1!', tag + ': "Opens chart" shows our symbol or "Broker prices", never "No chart yet"', rows.map((r) => r.code + '=' + r.to));
+  const al = await align(p); check(ok1(al), tag + ': header / rows / columns aligned, no horizontal scroll', al);
+  await p.screenshot({ path: OUT + '/brokersyms-' + w + '-' + theme + '.png' });
+  // AUDCAD: details pane header icon + opens a chart from the broker's prices
+  await p.focus('.stkss-input'); await p.keyboard.type('AUDCAD'); await sleep(400);
+  const sh = await p.evaluate(() => { const h = document.querySelector('.stkss-shead-row'), s = h && h.querySelector('.slg'), t = h && h.querySelector('.stkss-shead-t'); if (!s) return null; const a = s.getBoundingClientRect(), b = t.getBoundingClientRect(); return { svg: !!s.querySelector('svg'), w: a.width, off: Math.abs((a.top + a.height / 2) - (b.top + b.height / 2)), side: document.querySelector('.stkss-side').innerText }; });
+  check(sh && sh.svg && (sh.w === 40 || w < 600) && sh.off <= 1 && /cTrader account’s own prices/.test(sh.side), tag + ': details header has the AUD/CAD flags, centred with the name; pane explains the broker prices', sh);
+  if (w >= 1000) await p.screenshot({ path: OUT + '/brokersyms-audcad-' + w + '-' + theme + '.png' });
+  await p.click('.stkss-row-src[data-code="AUDCAD"]');
+  await p.waitForFunction(() => { try { const c = window.__stkAxisTags.cellsOf()[0], R = window.__stkAxisTags.rendererOf(c); return /CT:AUDCAD/.test(window.STRYKER_VELA.active.symbol) && R.scene.bars.length > 50; } catch (e) { return false; } }, null, { timeout: 20000 }).catch(() => {});
+  const ch = await p.evaluate(() => { const c = window.__stkAxisTags.cellsOf()[0], R = window.__stkAxisTags.rendererOf(c), bars = R.scene.bars; return { sym: window.STRYKER_VELA.active.symbol, n: bars.length, last: bars.length ? bars[bars.length - 1].close : null, open: window.__stkSearch.isOpen(), credit: (document.querySelector('.stkchart-credit') || {}).textContent || '', head: (document.querySelector('.vela-header, header') || {}).innerText || '' }; });
+  check(!ch.open && /^byo:CT:AUDCAD$/i.test(ch.sym) && ch.n > 50 && ch.last > 0.8 && ch.last < 1, tag + ': clicking AUDCAD opens byo:CT:AUDCAD with the broker\'s bars (fixture)', ch);
+  check(/via cTrader|your cTrader/.test(ch.credit + ' ' + ch.head), tag + ': chart source reads cTrader', [ch.credit, ch.head.slice(0, 200)]);
+  const M = await p.evaluate(() => ({ bars: window.__ctM.bars || 0, orders: window.__ctM.sent.filter((m) => [2106, 2107, 2108, 2109, 2110, 2111].includes(m.payloadType)).length }));
+  check(M.bars > 0 && M.orders === 0, tag + ': bars came from GetTrendbars on the data relay; no order frames', M);
+  await p.screenshot({ path: OUT + '/brokersyms-chart-' + w + '-' + theme + '.png' });
+  check(!errors.length, tag + ': no page errors', errors);
   await ctx.close();
 }
 async function member(b) {
@@ -234,6 +273,7 @@ async function widths(b) {   // the tab row stays one row with the chip at 1280 
     if (!only || only === 'm') await member(b);
     if (!only || only === 'p') { await phone(b, 390, 'dark'); await phone(b, 390, 'light'); await phone(b, 412, 'dark'); }
     if (!only || only === 'w') await widths(b);
+    if (!only || only === 's') { await brokersyms(b, 'dark'); await brokersyms(b, 'light'); await brokersyms(b, 'dark', 390); }
   } catch (e) { fail++; console.log('FAIL crashed ' + (e && e.stack || e)); }
   await b.close();
   console.log(fail ? fail + ' FAILED' : 'ALL PASS');

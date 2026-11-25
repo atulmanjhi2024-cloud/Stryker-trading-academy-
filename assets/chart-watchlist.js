@@ -158,6 +158,7 @@ function symIndex(feed){
 // Normalise anything a member types or uploads to one of OUR symbols, or null.
 // Accepts "NQ1!", "NQ", "CME_MINI:NQ1!", "futures:NQ1!", "BTCUSDT", "BINANCE:BTCUSDT", "binance:BTCUSDT".
 import { canonicalSymbol as canonicalFormula } from './chart-formula-core.js?v=1266';
+import { symLogoOf } from './symbol-logos.js?v=1266';
 import { isFutures } from './chart-sym.js?v=1266';   // one futures test for every symbol form (CME_MINI:MNQ1!, MNQZ6 ...)
 export function normalizeSymbol(raw, feed){
   let s = String(raw || '').trim().replace(/^["']|["']$/g, '');
@@ -477,20 +478,9 @@ export function mountWatchlist(ws, o){
     return n || tickerOf(sym);
   }
   function logo(sym){
-    const t = tickerOf(sym).toUpperCase();
-    const base = isFut(sym) ? rootOf(sym) : t.replace(/[-_/]?(USDT|USDC|USD1|USDS|BUSD|USD|EUR|PERP)$/i, '') || t;
-    const wrap = el('span', { class: 'stkw-logo', 'aria-hidden': 'true' });
-    const fallback = () => {
-      wrap.replaceChildren();
-      try { wrap.style.background = Core && Core.categoricalColor ? Core.categoricalColor(t) : '#2962ff'; } catch (e) { wrap.style.background = '#2962ff'; }
-      wrap.textContent = base.replace(/[^A-Za-z0-9]/g, '').slice(0, 2) || '?';
-    };
-    let url = null;
-    try { url = ws.feed.symbolIcon(sym); } catch (e) {}
-    if (!url) { fallback(); return wrap; }
-    const img = el('img', { alt: '', src: url, loading: 'lazy' });
-    img.addEventListener('error', fallback, { once: true });
-    wrap.appendChild(img);
+    const d = meta(sym);
+    const wrap = symLogoOf(sym, 20, d && d.description, d && d.type);
+    wrap.classList.add('stkw-logo');
     return wrap;
   }
 

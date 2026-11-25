@@ -24,6 +24,7 @@ import { parseFormula, bodyOf } from './chart-formula-core.js?v=1266';
 import { resolveLegs } from './chart-formula.js?v=1266';
 import { venueChip } from './venue-logos.js?v=1266';
 import { fxMark } from './fx-flags.js?v=1266';
+import { symLogo } from './symbol-logos.js?v=1266';
 import { getInfo } from './chart-symbol-info.js?v=1266';
 
 const PHONE_MAX = 700;
@@ -253,8 +254,8 @@ export function mountSearch(ws, o = {}) {
   filterBtn.addEventListener('click', () => setFilters(!S.filters));
 
   // ---------------- your brokers & feeds (assets/chart-search-sources.js, loaded on the first open) ----------------
-  let SRC = null;
-  const srcMod = () => SRC || (SRC = import('./chart-search-sources.js?v=1266'));
+  let SRC = null, SRCM = null;
+  const srcMod = () => SRC || (SRC = import('./chart-search-sources.js?v=1266').then((m) => { SRCM = m; return m; }));
   const srcKey = (x) => x.id;
   async function refreshSources() {
     try { const m = await srcMod(); const l = await m.listSources(); const sig = (a) => (a || []).map((x) => x.id + x.ok + x.label).join('|'); if (sig(l) !== sig(S.srcs) || !S.srcs) { S.srcs = l; if (!srcMenu.hidden) paintMenu(); } }
@@ -453,11 +454,16 @@ export function mountSearch(ws, o = {}) {
       S.rows.length ? el('div', { class: 'stkss-cols', 'aria-hidden': 'true' }, [el('span', { text: 'Symbol' }), el('span', { text: 'Description' }), el('span', { text: 'Opens chart' })]) : null);
     if (c.note && S.rows.length) listHead.appendChild(el('p', { class: 'stkss-lhead-n', text: c.note }));
   }
-  // a broker row: symbol · description · our chart for it (no prices: the brokers here don't stream them to the search, no made-up numbers)
+  // a broker row: logo + symbol · description · our chart for it, or "Broker prices" when it charts from the broker's own prices (no prices
+  // in the list: the brokers here don't stream them to the search, no made-up numbers)
+  const ownPx = (r) => /^byo:CT:/.test(r.sym || '');
+  const srcTo = (r) => (r.d ? r.d.ticker : ownPx(r) ? 'Broker prices' : r.sym ? r.sym.replace(/^byo:/, '') : '');
+  const srcLogo = (r, size) => { const a = SRCM ? SRCM.iconOf(r) : ['', r.code, r.desc, '']; return symLogo(a[0], a[1], a[2], a[3], size); };
   function srcRowEl(d, i) {
-    const r = d.__src, to = r.d ? r.d.ticker : r.sym ? r.sym.replace(/^byo:/, '') : '';
+    const r = d.__src, to = srcTo(r);
+    const ic = el('span', { class: 'stkss-ic stkss-ic-fx', 'aria-hidden': 'true' }); ic.appendChild(srcLogo(r, 36));
     return el('div', { class: 'stkss-row stkss-row-src', role: 'option', id: 'stkss-o' + i, 'data-i': String(i), 'data-sym': symFor(d), 'data-code': r.code, 'aria-selected': 'false', 'aria-label': r.code + (r.desc ? ', ' + r.desc : '') + ', via ' + S.src.name },
-      [el('span', { class: 'stkss-tk', text: r.code }), el('span', { class: 'stkss-sd', text: r.desc }), el('span', { class: 'stkss-to' + (to ? '' : ' is-none'), text: to || 'No chart yet' })]);
+      [el('span', { class: 'stkss-srcsym' }, [ic, el('span', { class: 'stkss-tk', text: r.code })]), el('span', { class: 'stkss-sd', text: r.desc }), el('span', { class: 'stkss-to' + (to ? '' : ' is-none'), text: to || 'No chart yet' })]);
   }
   function rowEl(d, i) {
     if (d.__src) return srcRowEl(d, i);
@@ -465,7 +471,7 @@ export function mountSearch(ws, o = {}) {
     const star = el('button', { type: 'button', class: 'stkss-star', tabindex: '-1', 'aria-label': 'Favourite ' + d.ticker, 'aria-pressed': String(favs.has(sym)), html: svg(IC.star, 18) });
     if (d.__formula) star.hidden = true;
     const ic = el('span', { class: 'stkss-ic stkss-ic-' + c, 'aria-hidden': 'true' });
-    if (d.__formula) ic.innerHTML = svg(IC.ratio, 18); else if (c === 'forex' && fxMark(d.ticker, 36)) { ic.classList.add('stkss-ic-fx'); ic.appendChild(fxMark(d.ticker, 36)); } else ic.textContent = initials(d);
+    if (d.__formula) ic.innerHTML = svg(IC.ratio, 18); else { ic.classList.add('stkss-ic-fx'); ic.appendChild(symLogo(d.prefix || d.provider, d.ticker, d.description, d.type, 36)); }
     const tk = el('span', { class: 'stkss-tk' }); tk.appendChild(hl(String(d.ticker), cur.hits.get(d)));
     const line1 = el('span', { class: 'stkss-l1' }, [tk, statusTag(d, i)]);
     const tl = d.__formula ? '' : TYPE_LABEL[c] || '', vl = d.__formula ? '' : VENUE_LABEL[v] || (v ? v.toUpperCase() : '');
@@ -600,19 +606,20 @@ export function mountSearch(ws, o = {}) {
   }
   function sideSrc(d) {
     const r = d.__src, src = S.src, want = sideKey; side.classList.remove('is-empty');
-    side.appendChild(el('div', { class: 'stkss-shead stkss-shead-src' }, [el('h3', { class: 'stkss-shead-t', text: r.code }), el('span', { class: 'stkss-shead-s', text: r.desc || 'via ' + src.name }), el('span', { class: 'stkss-tag stkss-tag-via', text: 'via ' + src.name + (src.label ? ' · ' + src.label : '') })]));
+    side.appendChild(el('div', { class: 'stkss-shead stkss-shead-src' }, [el('div', { class: 'stkss-shead-row' }, [srcLogo(r, 40), el('h3', { class: 'stkss-shead-t', text: r.code })]), el('span', { class: 'stkss-shead-s', text: r.desc || 'via ' + src.name }), el('span', { class: 'stkss-tag stkss-tag-via', text: 'via ' + src.name + (src.label ? ' · ' + src.label : '') })]));
     if (src.kind === 'ct') {   // the broker's spec (read-only SymbolById); rows we don't have are left out
       const kv = el('dl', { class: 'stkss-kv', 'aria-busy': 'true' }); side.appendChild(kv);
       (async () => { let rows = []; try { const lv = window.__stkLive, m = await srcMod(), sp = lv && lv.srcSpec ? await lv.srcSpec(src.id, r.code) : null; rows = m.specRows(sp); } catch (e) { rows = []; }
         if (sideKey !== want) return; kv.removeAttribute('aria-busy'); if (!rows.length) { kv.remove(); return; }
         for (const [k, v] of rows) kv.append(el('div', { class: 'stkss-kv-r' }, [el('dt', { text: k }), el('dd', { text: v })])); })();
     }
-    const target = r.d || (r.sym ? { ticker: r.sym.replace(/^byo:/, ''), description: '', __sym: r.sym } : null);
+    const target = r.d || (ownPx(r) ? { ticker: r.code, description: 'prices from ' + src.name, __sym: r.sym } : r.sym ? { ticker: r.sym.replace(/^byo:/, ''), description: '', __sym: r.sym } : null);
     if (!target) { side.appendChild(el('p', { class: 'stkss-note stkss-note-x', role: 'status', text: 'Charting for ' + r.code + ' isn’t available yet.' })); return; }
     const l = el('div', { class: 'stkss-slist' });
     l.appendChild(sideRow(target.ticker, 'Open on the active chart' + (target.description ? ' · ' + target.description : ''), [], symFor(d), d));
     side.appendChild(el('h3', { class: 'stkss-sec-h', text: 'Chart' })); side.appendChild(l);
-    if (r.key && (S.src.kind === 'ct' || S.src.kind === 'mt')) side.appendChild(sideNote('Trading on this chart uses ' + r.code + ' on this account.'));
+    if (ownPx(r)) side.appendChild(sideNote('No TradeZoro chart for ' + r.code + ', so it charts from your ' + src.name + ' account\u2019s own prices while it is connected.'));
+    else if (r.key && (S.src.kind === 'ct' || S.src.kind === 'mt')) side.appendChild(sideNote('Trading on this chart uses ' + r.code + ' on this account.'));
     else if (S.src.kind === 'byo') side.appendChild(sideNote('Prices come from your ' + S.src.name + ' feed while it is connected.'));
   }
   function sideInfo(d) {
@@ -638,6 +645,7 @@ export function mountSearch(ws, o = {}) {
     const r = d.__src, src = S.src, target = r.d ? symOf(r.d) : r.sym;
     if (!target) { renderSide(d); if (o.toast) o.toast('Charting for ' + r.code + ' isn’t available yet.', 'info'); return; }
     try { const m = await srcMod(); m.remember(src, r); } catch (e) {}
+    if (ownPx(r)) { try { const lv = window.__stkLive; if (lv && lv.ctFeed) await lv.ctFeed(); } catch (e) {} }   // the account's feed is registered before the chart asks
     if (r.d) addRecent(r.d);
     close();
     try { ws.active.setSymbol(target); } catch (e) { console.warn('TradeZoro search: open', e); if (o.toast) o.toast('Could not open ' + r.code + '.', 'error'); }

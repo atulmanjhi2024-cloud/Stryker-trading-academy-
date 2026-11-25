@@ -687,5 +687,5 @@ export function route(kind, ticker) {
 export function labelFor(sym) {
   const m = /^(fx|idx|byo):(.+)$/i.exec(String(sym || ''));
   const r = m && route(m[1].toLowerCase(), m[2]);
-  return r ? { id: r.id, name: srcById(r.id).name, status: r.rec.status } : null;
+  return r ? { id: r.id, name: (srcById(r.id) || r.ad).name, status: r.rec.status } : null;   // ctacct (byo-ctrader.js) is not in SOURCES
 }

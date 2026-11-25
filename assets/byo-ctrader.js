@@ -69,6 +69,7 @@ export const ctraderCreds = (j, prev, now = Date.now()) => ({ ...(prev || {}), a
 const idToken = (d) => (d && d.idToken ? d.idToken() : globalThis.firebase.auth().currentUser.getIdToken());
 // Refresh before expiry (one tab at a time). A refused refresh = "Reconnect cTrader".
 export async function fresh(c, d) {
+  if (d && d.fresh) return d.fresh(c, d);   // the trading account's feed (ctacct below): its own refresh + vault entry, never this one
   if (c.exp - Date.now() > CT.REFRESH_BEFORE) return c.access;
   const run = async () => {
     if (c.exp - Date.now() > CT.REFRESH_BEFORE) return c.access;
@@ -171,21 +172,23 @@ export function symbolOf(t) {
 const PERIOD = { '1': 1, '5': 5, '15': 7, '30': 8, '60': 9, '240': 10, D: 12, W: 13, M: 14 };
 const SPAN = { '1': MIN, '5': 5 * MIN, '15': 15 * MIN, '30': 30 * MIN, '60': 60 * MIN, '240': 240 * MIN, D: 864e5, W: 7 * 864e5, M: 31 * 864e5 };
 const PX = 1e5;   // cTrader prices are integers in 1/100000
-const symCache = new WeakMap();   // creds -> Map(key -> { id, digits }); memory only, per account
-async function symbolId(c, key, d) {
+const symCache = new WeakMap();   // creds -> Map(key -> { id, desc }); memory only, per account
+async function symbolId(c, key, d) { return (await symRec(c, key, d)).id; }
+async function symRec(c, key, d) {
+  key = String(key).replace(/^CT:/, '');
   let m = symCache.get(c);
   if (!m) {
     const r = await sessionOf(c, d).call(2114, {});
     m = new Map();
     for (const s of (r.payload && r.payload.symbol) || []) {
       const k = String(s.symbolName || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
-      if (k && s.enabled !== false && !m.has(k)) m.set(k, { id: s.symbolId });
+      if (k && s.enabled !== false && !m.has(k)) m.set(k, { id: s.symbolId, desc: String(s.description || '').trim() });
     }
     symCache.set(c, m);
   }
   const hit = m.get(key);
   if (!hit) throw fail('Your cTrader account does not list ' + key, { status: 404 });
-  return hit.id;
+  return hit;
 }
 const round = (x) => Math.round(x * PX) / PX;
 const barOf = (t) => {
@@ -203,7 +206,7 @@ export const ctrader = {
   fresh,
   async check(c, d) { await fresh(c, d); if (!c.accountId) throw fail('Pick your cTrader account', { status: 0 }); const s = sessionOf(c, d); const rel = s.hold(); try { await s.open(); } finally { rel(); } },
   async getBars(c, ticker, timeframe, range = {}, d) {
-    const key = symbolOf(ticker), tf = normTf(timeframe), per = PERIOD[tf];
+    const key = (this && this.symbolOf ? this.symbolOf : symbolOf)(ticker), tf = normTf(timeframe), per = PERIOD[tf];
     if (!key || !per) return [];
     const s = sessionOf(c, d), rel = s.hold();
     try {
@@ -247,6 +250,33 @@ export const ctrader = {
   },
   subscribe(hub, ticker, timeframe, seed, onBar) { return hub.add(symbolOf(ticker), candleBuilder(timeframe, seed, onBar)); }
 };
+
+// ---------- the member's cTrader TRADING account as a chart feed (symbol search broker view, admins + beta testers) ----------
+// A broker symbol with no TradeZoro chart opens byo:CT:<broker name> and charts from that account's own trendbars (2137) + live spots
+// (2127) over the same view-only data relay (/connect/ctrader/ws: market-data messages only, no order message can pass). The trading
+// sign-in's token is refreshed and saved by its own freshTrade (assets/ctrader-trade.js), so it never lands in the data sign-in entry.
+// Not listed in SOURCES: it is the trading account, shown in the search as that account, not as a separate feed.
+const ctKey = (t) => { const m = /^(?:byo:)?CT:(.+)$/i.exec(String(t || '')); const k = m && m[1].replace(/[^A-Za-z0-9]/g, '').toUpperCase(); return k && k.length <= 32 ? 'CT:' + k : null; };
+export function useTradeAccount(creds, freshTrade, deps, core) {
+  const D = Object.assign(Object.create(deps || null), { fresh: freshTrade });   // inherits WS / idToken set later (tests)
+  ADAPTERS.ctacct = {
+    id: 'ctacct', name: 'cTrader', symbolOf: ctKey,
+    async info(t, c) {
+      const k = ctKey(t); if (!k) return undefined;
+      let r = null, dg = 5; try { r = await symRec(c, k, D); const x = await sessionOf(c, D).call(2116, { symbolId: [r.id] }); const sd = ((x.payload && x.payload.symbol) || [])[0]; if (sd && Number.isInteger(+sd.digits)) dg = +sd.digits; } catch (e) { /* defaults */ }
+      const nm = k.slice(3), ps = Math.pow(10, Math.max(0, Math.min(dg, 8)));
+      return { ticker: k, tickerid: 'BYO:' + k, prefix: 'BYO', description: ((r && r.desc) || nm) + ' · via cTrader', type: symbolOf(nm) ? (CRYPTO.test(nm) ? 'crypto' : 'forex') : 'cfd', market: symbolOf(nm) ? (CRYPTO.test(nm) ? 'crypto' : 'forex') : 'cfd', currency: '', mintick: 1 / ps, pricescale: ps, minmove: 1, pointvalue: 1, timezone: 'Etc/UTC', session: '24x7' };
+    },
+    fresh: (c) => freshTrade(c, D),
+    check: async () => {},
+    getBars: (c, t, tf, range) => ctrader.getBars.call({ ...ctrader, symbolOf: ctKey }, c, t, tf, range, D),
+    hub: (c, onStatus) => ctrader.hub(c, onStatus, D),
+    subscribe(hub, t, tf, seed, onBar) { return hub.add(ctKey(t), candleBuilder(tf, seed, onBar)); }
+  };
+  ROUTERS.ctacct = (kind, t) => kind === 'byo' && !!ctKey(t);
+  const rec = core.statusRec('ctacct');
+  if (!rec || rec.creds !== creds) core.activate('ctacct', creds, D);
+}
 
 // ---------- registration ----------
 ADAPTERS.ctrader = ctrader;

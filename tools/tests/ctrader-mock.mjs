@@ -1,9 +1,9 @@
 // MOCK cTrader for the trading tests (Node + browser). A fake WebSocket class for assets/ctrader-trade.js whose other end is the REAL
 // relay rules (functions/connect/ctrader/_relay.js + _trade.js) talking to a fake cTrader server below. Nothing leaves the process.
 // All numbers are Sample data. M (state) knobs: reject ('NOT_ENOUGH_MONEY' -> OrderErrorEvent), silent (no answer to a write),
-// dropOnWrite (the link drops mid-order), scope (0 = view-only token), gates overrides.
-// Latency knobs (FASTORDER): fsMs = each Firestore call (gate read, lock, audit row) takes this long; ctMs = cTrader answers a write
-// after this long; twoStep = a market order is answered ORDER_ACCEPTED first, then ORDER_FILLED fillMs later (like the live server).
+// dropOnWrite (the link drops mid-order), scope (0 = view-only token), gates overrides, extra (more broker symbols, Sample data).
+// The socket URL picks the relay: /connect/ctrader/trade = trading rules (_trade.js hooks), /connect/ctrader/ws = the view-only data relay
+// (plain _relay.js rules), which also answers GetTrendbars (2137) with Sample data bars and SubscribeSpots (2127).
 import { createRelay } from '../../functions/connect/ctrader/_relay.js';
 import { tradeHooks } from '../../functions/connect/ctrader/_trade.js';
 
@@ -22,22 +22,22 @@ export function mockState(over = {}) {
 }
 export function makeWS(M, { now = () => Date.now() } = {}) {
   const later = (fn) => setTimeout(fn, 5);
-  const fs = () => (M.fsMs ? new Promise((r) => setTimeout(r, M.fsMs)) : Promise.resolve());
   return class FakeWS {
     constructor(url) {
       this.readyState = 0; this.url = url; const self = this;
       const g = {
-        isAdmin: async () => { await fs(); M.gate.adminReads = (M.gate.adminReads || 0) + 1; if (M.gate.adminFail > 0) { M.gate.adminFail--; throw new Error('Firestore error (503)'); } return M.gate.admin !== false; }, switchOn: async () => { await fs(); M.gate.switchReads = (M.gate.switchReads || 0) + 1; return M.gate.switchOn !== false; }, consent: async () => { await fs(); return M.gate.consent !== false; }, blocked: async () => { await fs(); return !!M.gate.blocked; },
-        audit: async (entry, id) => { await fs(); M.auditAt = M.auditAt || {}; M.auditAt[id] = Date.now(); if (M.audits[id]) { const e = new Error('duplicate'); e.duplicate = true; throw e; } M.audits[id] = { ...entry, result: 'attempt' }; return { id, finish: async (r) => Object.assign(M.audits[id], r) }; },
+        isAdmin: async () => { M.gate.adminReads = (M.gate.adminReads || 0) + 1; if (M.gate.adminFail > 0) { M.gate.adminFail--; throw new Error('Firestore error (503)'); } return M.gate.admin !== false; }, switchOn: async () => M.gate.switchOn !== false, consent: async () => M.gate.consent !== false, blocked: async () => !!M.gate.blocked,
+        audit: async (entry, id) => { if (M.audits[id]) { const e = new Error('duplicate'); e.duplicate = true; throw e; } M.audits[id] = { ...entry, result: 'attempt' }; return { id, finish: async (r) => Object.assign(M.audits[id], r) }; },
         patchAudit: async (id, r) => Object.assign(M.audits[id] || {}, r),
-        lock: { take: async (k) => { await fs(); if (M.lock) return { ...M.lock }; M.lock = { key: k, at: now() }; return true; }, peek: async () => M.lock, release: async (k) => { await fs(); if (M.lock && M.lock.key === k) M.lock = null; } },
+        lock: { take: async (k) => { if (M.lock) return { ...M.lock }; M.lock = { key: k, at: now() }; return true; }, peek: async () => M.lock, release: async (k) => { if (M.lock && M.lock.key === k) M.lock = null; } },
         defer: (p) => { p.catch(() => {}); }
       };
       const client = { send: (x) => later(() => self.onmessage && self.onmessage({ data: x })), close: (code) => self._closed(code) };
       const up = { send: (x) => later(() => self._ct(JSON.parse(x))), close: () => {} };
-      this.hooks = tradeHooks({ uid: 'admin1', account: ACC, envName: /env=live/.test(url) ? 'live' : 'demo', g, now });
+      const data = /\/connect\/ctrader\/ws/.test(String(url));
+      this.hooks = data ? null : tradeHooks({ uid: 'admin1', account: ACC, envName: /env=live/.test(url) ? 'live' : 'demo', g, now });
       this.relay = createRelay({ client, up, clientId: 'CID', clientSecret: 'SECRET-sample', hooks: this.hooks, now });
-      this.hooks.bind(this.relay);
+      if (this.hooks) this.hooks.bind(this.relay);
       this.timer = setInterval(() => this.relay.tick(), 200);
       later(() => { this.readyState = 1; this.relay.start(); });
       M.socket = this; M.sockets = (M.sockets || 0) + 1;
@@ -52,14 +52,21 @@ export function makeWS(M, { now = () => Date.now() } = {}) {
       if (t === 2100) return this.relay.onUp(JSON.stringify({ payloadType: 2101, payload: {} }));
       if (t === 2149) return this.relay.onUp(JSON.stringify({ payloadType: 2150, clientMsgId: m.clientMsgId, payload: { permissionScope: M.scope, ctidTraderAccount: [{ ctidTraderAccountId: ACC, isLive: false, traderLogin: 5551234 }] } }));
       if (t === 2102) return R(2103, {});
-      if (t === 2114) return R(2115, { symbol: SYMS.map((s) => ({ symbolId: s.symbolId, symbolName: s.symbolName, description: DESC[s.symbolName.toUpperCase()], baseAssetId: s.symbolName === 'EURUSD' ? 2 : undefined, enabled: true })) });
-      if (t === 2116) return R(2117, { symbol: SYMS.filter((s) => p.symbolId.includes(s.symbolId)).map(DETAIL) });
+      const all = SYMS.concat(M.extra || []);
+      if (t === 2114) return R(2115, { symbol: all.map((s) => ({ symbolId: s.symbolId, symbolName: s.symbolName, description: s.desc || DESC[s.symbolName.toUpperCase()], baseAssetId: s.symbolName === 'EURUSD' ? 2 : undefined, enabled: true })) });
+      if (t === 2116) return R(2117, { symbol: all.filter((s) => p.symbolId.includes(s.symbolId)).map(DETAIL) });
+      if (t === 2137) {   // Sample data trendbars: a gentle wave around 0.90000 (prices in 1/100000)
+        const per = { 1: 1, 5: 5, 7: 15, 8: 30, 9: 60, 10: 240, 12: 1440 }[p.period] || 60, n = Math.min(p.count || 300, 300), end = Math.floor((p.toTimestamp || now()) / 60000 / per) * per;
+        M.bars = (M.bars || 0) + 1;
+        return R(2138, { trendbar: Array.from({ length: n }, (_, i) => { const low = 90000 + Math.round(400 * Math.sin(i / 9)) + i * 2; return { utcTimestampInMinutes: end - (n - 1 - i) * per, low, deltaOpen: 30, deltaHigh: 80, deltaClose: 50, volume: 100 + i }; }) });
+      }
+      if (t === 2127) { M.spots = (M.spots || 0) + 1; return R(2128, {}); }
+      if (t === 2129) return R(2130, {});
       if (t === 2124) return R(2125, { position: M.positions, order: M.orders });
       if (t === 2121) return R(2122, { trader: { ctidTraderAccountId: ACC, balance: M.balance, moneyDigits: 2, depositAssetId: 1 } });
       if (t === 2112) return R(2113, { asset: [{ assetId: 1, name: 'USD' }, { assetId: 2, name: 'EUR' }] });
       if (t === 2175) return R(2176, { order: (M.history || []) });
       if (t === 51) return;
-      if ([2106, 2108, 2109, 2110, 2111].includes(t) && M.ctMs && !m._late) { (M.upAt = M.upAt || {})[m.clientMsgId] = Date.now(); M.sent.pop(); return setTimeout(() => this._ct({ ...m, _late: true }), M.ctMs); }
       if ([2106, 2108, 2109, 2110, 2111].includes(t)) {
         if (M.dropOnWrite) { M.dropOnWrite = false; return this.relay.onUpClose(); }
         if (M.silent) return;
@@ -70,7 +77,6 @@ export function makeWS(M, { now = () => Date.now() } = {}) {
           if (p.orderType === 1) {
             const pos = { positionId: id + 1000, positionStatus: 1, price: 18000.5, tradeData: { symbolId: p.symbolId, volume: p.volume, tradeSide: p.tradeSide, label: p.label } };
             M.positions.push(pos);
-            if (M.twoStep) { R(2126, { executionType: 2, order: { orderId: id, orderStatus: 1, clientOrderId: p.clientOrderId, tradeData: pos.tradeData } }); return setTimeout(() => R(2126, { executionType: 3, order: { orderId: id, orderStatus: 2, clientOrderId: p.clientOrderId, tradeData: pos.tradeData }, position: pos, deal: { executionPrice: 18000.75 } }), M.fillMs || 0); }
             return R(2126, { executionType: 3, order: { orderId: id, orderStatus: 2, clientOrderId: p.clientOrderId, tradeData: pos.tradeData }, position: pos });
           }
           const o = { orderId: id, orderStatus: 1, orderType: p.orderType, limitPrice: p.limitPrice, stopPrice: p.stopPrice, tradeData: { symbolId: p.symbolId, volume: p.volume, tradeSide: p.tradeSide, label: p.label } };

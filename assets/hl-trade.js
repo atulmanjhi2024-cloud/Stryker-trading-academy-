@@ -52,7 +52,7 @@ export function mountHlTrade(ws, opts) {
 }
 async function loadCore() {
   if (C) return C;
-  C = await import('./hl-trade-core.js?v=1272');
+  C = await import('./hl-trade-core.js?v=1273');
   limiter = C.makeLimiter();
   return C;
 }

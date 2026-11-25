@@ -35,7 +35,7 @@
 // Tests: tests/finatic/chart-live.test.mjs (core + server, mocked broker), tools/tests/chart-live-browser.js (mocked endpoints only),
 // tools/tests/ctrader-trade.test.mjs + tools/tests/ctrader-trade-browser.js (mocked cTrader frames).
 // Education only. Not financial advice.
-import * as L from './chart-live-core.js?v=1296';
+import * as L from './chart-live-core.js?v=1297';
 
 const POLL_MS = 10000, STALE_MS = 25000, IDLE_MS = 15 * 60000, HIDDEN_MS = 2 * 60000;
 const DISCLAIMER = 'Education only. Not financial advice.';
@@ -338,7 +338,7 @@ async function disconnect(id) {
   if (a.ct) {   // cTrader: forget the trading sign-in on this device (the view-only data sign-in is not touched)
     if (S.acct && S.acct.id === id) await leave(true);
     try { if (CT.link) CT.link.shut(); await CT.mod.forgetTradeCreds(); } catch (e) { return { ok: false, error: 'Could not forget the cTrader sign-in.' }; }
-    CT.acct = CT.link = CT.ops = CT.creds = null; delete S.bal[id]; import('./byo-core.js?v=1296').then((c) => { if (c.statusRec('ctacct')) c.forget('ctacct'); }).catch(() => {}); await loadAccounts();
+    CT.acct = CT.link = CT.ops = CT.creds = null; delete S.bal[id]; import('./byo-core.js?v=1297').then((c) => { if (c.statusRec('ctacct')) c.forget('ctacct'); }).catch(() => {}); await loadAccounts();
     toast('cTrader trading disconnected on this device. To remove TradeZoro’s access fully, revoke it in your cTrader ID settings.', 'success');
     return { ok: true, wasActive: false };
   }
@@ -357,7 +357,7 @@ async function disconnect(id) {
 // (Owner 19 Nov: a new broker could not be added because the saved session auto-reconnected and closed). reconnect(): the quiet path
 // for an expired connection, reloads the saved one without the portal (the portal is one tap away if that fails).
 function openSync(portal) {
-  import('./finatic-journal-ui.js?v=1296').then((m) => m.openBrokerSync({ uid, mode: 'chart', portal, onConnected: () => { loadAccounts().then(() => toast('Broker connected. Pick the account in the panel.', 'success')); } }))
+  import('./finatic-journal-ui.js?v=1297').then((m) => m.openBrokerSync({ uid, mode: 'chart', portal, onConnected: () => { loadAccounts().then(() => toast('Broker connected. Pick the account in the panel.', 'success')); } }))
     .catch(() => toast('Could not open the broker connection.', 'error'));
 }
 const connect = () => openSync(true), reconnect = () => openSync(false);
@@ -501,7 +501,7 @@ function blockReason() {
 function loadFronts() {
   if (S.fronts) return;
   S.fronts = {};
-  import('./chart-symbol-info.js?v=1296').then((m) => m.getInfo()).then((d) => { S.fronts = L.frontsOf(d && d.syms); render(); }).catch(() => { S.fronts = null; });
+  import('./chart-symbol-info.js?v=1297').then((m) => m.getInfo()).then((d) => { S.fronts = L.frontsOf(d && d.syms); render(); }).catch(() => { S.fronts = null; });
 }
 function info(sym) {
   if (S.acct && S.acct.mt) return infoMt(sym);
@@ -952,7 +952,7 @@ function ctPnlOne(code, p, price) {
 // the latest bid / ask of a cTrader symbol: the trading account's own price stream, else the broker chart's last price (= its bid)
 let QUO = null;
 function quoteFor(code) {
-  if (!QUO) import('./byo-ctrader.js?v=1296').then((m) => { QUO = m.quoteOf; }).catch(() => {});
+  if (!QUO) import('./byo-ctrader.js?v=1297').then((m) => { QUO = m.quoteOf; }).catch(() => {});
   const q = QUO ? QUO(code) : null; if (q && q.bid > 0 && Date.now() - q.at < 120000) return q;   // stale (> 2 min): fall back
   let b = P && P.lastPrice ? P.lastPrice('byo:CT:' + code) : undefined;
   if (!(b > 0) && TEST && TEST.quote) { const t = TEST.quote(code); if (t) return t; }
@@ -1499,8 +1499,8 @@ async function ctAllowed() {
 }
 async function loadCt() {
   try {
-    CT.mod = CT.mod || await import('./ctrader-trade.js?v=1296');
-    if (!QUO) import('./byo-ctrader.js?v=1296').then((m) => { QUO = m.quoteOf; }).catch(() => {});   // the bid / ask for the SL / TP checks and the ask tag
+    CT.mod = CT.mod || await import('./ctrader-trade.js?v=1297');
+    if (!QUO) import('./byo-ctrader.js?v=1297').then((m) => { QUO = m.quoteOf; }).catch(() => {});   // the bid / ask for the SL / TP checks and the ask tag
     window.__stkCt = { open: () => CT.mod.startTradeSignIn(uid).catch((e) => toast(e.message || 'Could not open cTrader.', 'error')), get connected() { return !!CT.acct; }, get link() { return TEST ? CT.link : null; } };
     const c = TEST && TEST.ctCreds ? TEST.ctCreds : await CT.mod.loadTradeCreds();   // test: localhost fixture creds + a mocked socket
     if (!c || !c.access || !c.accountId) { CT.acct = null; return; }
@@ -1518,7 +1518,7 @@ async function loadCt() {
 // useTradeAccount: trendbars + spots over the view-only data relay). Re-registered after a sign-in change clears the own-data feeds.
 function ctFeed() {
   if (!CT.creds || !CT.mod) return Promise.resolve(false);
-  return Promise.all([import('./byo-ctrader.js?v=1296'), import('./byo-core.js?v=1296')]).then(([b, c]) => { CT.byo = b; if (CT.creds) b.useTradeAccount(CT.creds, CT.mod.freshTrade, TEST && TEST.ctDeps ? TEST.ctDeps : undefined, c); return true; }, () => false);
+  return Promise.all([import('./byo-ctrader.js?v=1297'), import('./byo-core.js?v=1297')]).then(([b, c]) => { CT.byo = b; if (CT.creds) b.useTradeAccount(CT.creds, CT.mod.freshTrade, TEST && TEST.ctDeps ? TEST.ctDeps : undefined, c); return true; }, () => false);
 }
 window.addEventListener('tz:byo', (e) => { if (e.detail && e.detail.id === '*' && CT.acct) ctFeed(); });
 // ---- BROKERS 3 (admins and beta testers): tastytrade / TradeStation / OANDA trading sign-ins become live accounts
@@ -1532,7 +1532,7 @@ function b3Feed(a) {
 }
 async function loadB3() {
   try {
-    B3S.mod = B3S.mod || await import('./broker-trade.js?v=1296');
+    B3S.mod = B3S.mod || await import('./broker-trade.js?v=1297');
     const d = TEST && TEST.b3Deps ? TEST.b3Deps : undefined, list = [];
     await Promise.all(Object.keys(B3S.mod.BROKERS).map(async (k) => {
       B3S.cfg[k] = await B3S.mod.probe(k, d);
@@ -1590,7 +1590,7 @@ function b3OandaSheet() {
   setTimeout(() => tok.focus(), 30);
 }
 function mountCopyTrading() {
-  import('./chart-copy.js?v=1296').then((m) => m.mountCopy({ live: window.__stkLive, paper: P, toast })).catch((e) => console.warn('TradeZoro: copy trading', e));   // Trade menu > Copy trading
+  import('./chart-copy.js?v=1297').then((m) => m.mountCopy({ live: window.__stkLive, paper: P, toast })).catch((e) => console.warn('TradeZoro: copy trading', e));   // Trade menu > Copy trading
 }
 // beta tester? (assets/beta.js, loaded async by auth.js / app-nav.js; waits up to 10 s for it). Local test hook: __stkLiveTest.isBeta.
 function betaReady() {

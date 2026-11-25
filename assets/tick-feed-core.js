@@ -8,7 +8,9 @@
 // charts of that symbol (they re-read their bars and join again). Reconnect: backoff 0.5 s doubling to 15 s (+ jitter), then tsub
 // since=<last seq> for every symbol, so nothing is missed. Heartbeat: the hub pings every 5 s; 15 s of silence = dead, reconnect.
 // Close: only when no chart is joined (after LINGER_MS, so a reload or a timeframe switch keeps the socket).
-export const FEED_DEF = { RING: 20000, DEAD_MS: 15000, BACKOFF_MS: 500, BACKOFF_MAX_MS: 15000, LINGER_MS: 20000 };
+// TICKGAP (24 Nov 2026): the hub pings every 5 s; DEAD_MS 15 s (checked every 2.5 s) let a half-open socket freeze every chart for up to
+// 17.5 s, and the backoff could reach 15 s. Now 11 s (checked every second) and at most 8 s between tries.
+export const FEED_DEF = { RING: 20000, DEAD_MS: 11000, WATCH_MS: 1000, BACKOFF_MS: 500, BACKOFF_MAX_MS: 8000, LINGER_MS: 20000 };
 
 export class TickFeedCore {
   constructor(o) {
@@ -91,9 +93,9 @@ export class TickFeedCore {
       if (!this.ws) return;
       if (this.now() - this.lastMsg > this.o.DEAD_MS) { this.kill('silent'); return; }
       const t = this.o.token ? this.o.token() : ''; if (t && t !== this.sentTok) this.auth(t);   // a refreshed ID token reaches the hub on the open socket
-      this.watchH = this.T(tick, 2500);
+      this.watchH = this.T(tick, this.o.WATCH_MS);
     };
-    this.watchH = this.T(tick, 2500);
+    this.watchH = this.T(tick, this.o.WATCH_MS);
   }
   kill(why) { const ws = this.ws; if (!ws) return; this.ws = null; this.open = false; this.n.closes++; try { ws.close(4000, why); } catch (e) {} this.state(); if (this.joins.size) this.retry(); }
   close(why) { if (this.retryH) { this.CT(this.retryH); this.retryH = null; } const ws = this.ws; this.ws = null; this.open = false; if (ws) { this.n.closes++; try { ws.close(1000, why); } catch (e) {} } this.state(); }

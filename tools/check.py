@@ -692,10 +692,12 @@ def check_phantom():
 
 
 def check_days_load():
-    """Chart setting 'Days of history to load' (member GK): caps, menu, per-timeframe store. tools/tests/chart-days-load.test.mjs."""
-    r = subprocess.run(['node', 'tools/tests/chart-days-load.test.mjs'], capture_output=True, text=True, cwd=ROOT, timeout=60)
-    if r.returncode != 0:
-        fail('days-load: ' + (r.stdout + r.stderr).strip()[-300:])
+    """Chart setting 'Days of history to load' (member GK): caps, menu, per-timeframe store. tools/tests/chart-days-load.test.mjs.
+    Also the QQQ / SPY polled forming candle (Discord 24 Nov): tools/tests/idx-forming-candle.test.mjs."""
+    for t in ('chart-days-load.test.mjs', 'idx-forming-candle.test.mjs'):
+        r = subprocess.run(['node', 'tools/tests/' + t], capture_output=True, text=True, cwd=ROOT, timeout=60)
+        if r.returncode != 0:
+            fail(t + ': ' + (r.stdout + r.stderr).strip()[-300:])
 
 
 def check_finatic():

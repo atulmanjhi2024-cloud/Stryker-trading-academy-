@@ -1,0 +1,36 @@
+name: MT host tunnel (one-time setup)
+# MetaTrader cloud (tools/mthost): makes the MT host on our server reachable for the Pages function, with no manual Cloudflare login.
+# Runs on a push to mtops/** (or by hand once this file is on main). Steps, all through the Cloudflare API with CLOUDFLARE_API_TOKEN:
+#   1) checks the token can manage Tunnels, DNS and Pages (stops with the exact missing permission if not),
+#   2) creates (or reuses) the named tunnel "tzmt-host", routes https://mt-host.<zone> to http://127.0.0.1:8787 on our server,
+#   3) makes a NEW shared secret and sets MT_HOST_URL + MT_HOST_SECRET as Pages secrets (production),
+#   4) seals the tunnel token + secret with our server's PUBLIC key (tools/mthost/deliver.pub.pem; private key only on the server)
+#      and uploads the sealed file as a short-lived artifact. tools/mthost/install-tunnel.sh on the server opens it.
+# Nothing secret is printed: values are masked and only ever leave this job encrypted.
+on:
+  push:
+    branches: ['mtops/**']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  tunnel:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+      - name: Tunnel, DNS, Pages secrets
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: python3 tools/mthost/mt-tunnel.py
+      - name: Upload sealed delivery
+        uses: actions/upload-artifact@v4
+        with:
+          name: mt-tunnel-sealed
+          path: /tmp/mtdeliver/sealed.tar
+          retention-days: 1
+          if-no-files-found: error

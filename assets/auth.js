@@ -94,6 +94,22 @@ const firebaseConfig = {
   appId: "1:950576868151:web:0f204f6debee99beda08b2"
 };
 
+// CALLABLES NEVER NEED PUSH (Discord bug 24 Nov, Mac desktop app: the Market Data Agreement failed with "Registration failed -
+// push service not available"). The Functions SDK asks Firebase Messaging for this device's push token on EVERY callable when
+// firebase-messaging-compat is on the page and notifications are granted; where the browser has no push service (the Electron desktop
+// app, some Chromium builds) that request rejects and the SDK fails the whole call. None of our functions read that token, so every
+// Functions instance, whenever its script loads and whatever region, is handed out with the push lookup switched off. One place for
+// all ~27 httpsCallable uses. Test: tools/tests/mda-push-browser.js (real SDK, push failing like the app).
+// shortcut: reaches into the compat SDK's internals (_getService, _delegate.contextProvider), pinned 10.14.1; re-check on an SDK upgrade.
+function tzNoPushForCallables(svc) {
+  try { const cp = svc && svc._delegate && svc._delegate.contextProvider; if (cp && !cp.__tzNoPush) { cp.getMessagingToken = () => Promise.resolve(undefined); cp.__tzNoPush = true; } } catch (e) {}
+  return svc;
+}
+try {
+  const P = firebase.app && firebase.app.App && firebase.app.App.prototype, get = P && P._getService;
+  if (get && !get.__tz) { P._getService = function (name) { const s = get.apply(this, arguments); return /^functions/.test(String(name)) ? tzNoPushForCallables(s) : s; }; P._getService.__tz = true; }
+} catch (e) { console.warn('TradeZoro: callable push guard not installed', e); }
+
 let auth = null;
 try {
   firebase.initializeApp(firebaseConfig);

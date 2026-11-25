@@ -76,11 +76,16 @@
       var r = answers(); if (btn.disabled) return;
       var fns = null; try { fns = firebase.app().functions(); } catch (e) {}
       err.hidden = true; btn.disabled = true; btn.textContent = 'Saving…';
-      if (!fns) { err.textContent = 'Could not save right now. Please try again.'; err.hidden = false; btn.textContent = 'Accept and continue'; btn.disabled = false; return; }
+      if (!fns) { err.textContent = 'Couldn\'t save just now. Please try again.'; err.hidden = false; btn.textContent = 'Accept and continue'; btn.disabled = false; return; }
       fns.httpsCallable('acceptMarketDataAgreement')({ name: nm.value.trim(), answers: r.a, confirmed: true }).then(function () {
         if (onDone) onDone();
       }).catch(function (e) {
-        err.textContent = (e && e.message) || 'Could not save. Please try again.'; err.hidden = false;
+        // Members never see raw browser / SDK text (it said "Registration failed - push service not available" in the desktop app,
+        // 24 Nov). The server's own answers to the member (functions-src/marketData.js HttpsError) are kept: they say what to fix.
+        console.warn('TradeZoro: market data agreement not saved', e);
+        var code = String(e && e.code || '').replace(/^functions\//, '');
+        err.textContent = /^(invalid-argument|failed-precondition|unauthenticated)$/.test(code) && e.message ? e.message : 'Couldn\'t save just now. Please try again.';
+        err.hidden = false;
         btn.textContent = 'Accept and continue'; sync();
       });
     });
@@ -88,7 +93,19 @@
   }
 
   // One-time modal over ZoroCharts. Closing it just hides it; it comes back next visit.
+  // Already signed (the current version on students/{uid}): no form again, onDone runs as if just signed (Discord 24 Nov: a member who
+  // had signed was asked again when the server could not confirm him). A failed read shows the form: the server re-checks anyway.
   function modal(onDone) {
+    var u = null; try { u = typeof auth !== 'undefined' && auth && auth.currentUser; } catch (e) {}
+    if (!u || typeof db === 'undefined' || !db) return openModal(onDone);
+    db.collection('students').doc(u.uid).get().then(function (d) {
+      if (d.exists && accepted(d.data())) {
+        try { if (window.showToast) window.showToast('info', 'Your market data agreement is already on file.'); } catch (e) {}
+        if (onDone) onDone();
+      } else openModal(onDone);
+    }).catch(function () { openModal(onDone); });
+  }
+  function openModal(onDone) {
     var scrim = document.createElement('div'); scrim.className = 'mda-scrim';
     var dlg = document.createElement('div'); dlg.className = 'mda-dlg'; dlg.setAttribute('role', 'dialog'); dlg.setAttribute('aria-modal', 'true');
     var x = document.createElement('button'); x.type = 'button'; x.className = 'mda-x'; x.setAttribute('aria-label', 'Close'); x.textContent = '\u00d7';
@@ -107,7 +124,7 @@
       if (!u) return; un();
       db.collection('students').doc(u.uid).get().then(function (d) {
         var s = d.exists ? d.data() : {};
-        if (s.liveFeed === true && !accepted(s)) setTimeout(function () { modal(); }, 1500);
+        if (s.liveFeed === true && !accepted(s)) setTimeout(function () { openModal(); }, 1500);
       }).catch(function () {});
     });
   }

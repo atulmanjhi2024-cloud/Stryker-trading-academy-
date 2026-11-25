@@ -114,7 +114,16 @@ export function liveSubscribe(open, backfill, timeframe, onBarRaw) {
   };
   const connect = () => {
     const my = ++gen;
-    try { unsub = open((b) => { if (stopped || my !== gen) return; if (holding) holding.push(b); else deliver(b); }); }
+    // TICKGAP (24 Nov 2026): while a back-fill runs (up to BACKFILL_WAIT_MS), an update of the SAME forming candle the chart already shows
+    // goes through at once, and from then on the new feed is continuous with the chart, so its later candles go straight through too (a
+    // minute that turns over mid back-fill no longer waits). Before the first such update, newer candles still wait for the back-fill.
+    // The candle used to sit still for the whole back-fill on every return to the tab (often 1-2.5 s, the "stuck" feeling).
+    try { unsub = open((b) => {
+      if (stopped || my !== gen) return;
+      const h = holding;
+      if (h && b && h.at != null && (b.time === h.at || (h.live && b.time > h.at))) { h.live = Math.max(h.live || 0, b.time); deliver(b); return; }
+      if (h) h.push(b); else deliver(b);
+    }); }
     catch (e) { unsub = null; }
   };
   const close = () => { gen++; const u = unsub; unsub = null; try { if (u) u(); } catch (e) {} };
@@ -123,6 +132,7 @@ export function liveSubscribe(open, backfill, timeframe, onBarRaw) {
     if (stopped || busy) return;
     busy = true; lastResync = Date.now();
     const q = holding = [];
+    q.at = lastTime;
     close();
     connect();
     try {
@@ -133,7 +143,7 @@ export function liveSubscribe(open, backfill, timeframe, onBarRaw) {
           new Promise((r) => setTimeout(() => r(null), BACKFILL_WAIT_MS))
         ]);
         if (!stopped && Array.isArray(got)) {
-          got.slice().sort((a, b) => a.time - b.time).forEach((b) => { if (b.time >= lastTime) deliver(b); });
+          got.slice().sort((a, b) => a.time - b.time).forEach((b) => { if (b.time >= lastTime && !(q.live && b.time <= q.live)) deliver(b); });   // never pull a live-updated candle back to the back-fill's copy
         }
       }
     } catch (e) { /* the new feed still runs */ }

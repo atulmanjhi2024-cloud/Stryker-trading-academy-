@@ -6964,6 +6964,33 @@ input[type=checkbox].stkg-sw.stkg-sw:focus-visible, input[type=checkbox].stkw-sw
   .stkws-more b{ font-weight:600; }
 }
 @media (prefers-reduced-motion: no-preference){ .stkws-tab, .stkws-row, .stkws-plus{ transition:background-color .15s cubic-bezier(.2,0,0,1), color .15s cubic-bezier(.2,0,0,1); } }
+/* Owner 24 Nov: workspace tabs are BROWSER TABS (desktop, >= 901 px where the 48px header holds them). The header's own bottom border is the
+   baseline; the active tab sits on it, wraps it (1px outline, top corners 8px, bottom corners flare out 8px) and has the toolbar's surface, so tab + toolbar are one piece.
+   Inactive tabs: no box, 1px dividers (hidden next to the active tab and on hover); hover highlight = a rounded ::before faded in (opacity only). */
+@media (min-width:901px){
+  body.charts-page .mobile-topnav .stkws-strip{ align-self:flex-end; align-items:flex-end; height:40px; margin:0 0 -1px; }
+  body.charts-page .mobile-topnav .stkws-tabs{ align-items:flex-end; height:40px; gap:0; margin-left:0; }
+  body.charts-page .mobile-topnav .stkws-tabrow{ align-items:flex-end; height:40px; gap:0; padding:0 8px; }
+  body.charts-page .mobile-topnav .stkws-strip .stkws-menu{ align-self:center; margin-bottom:7px; }
+  body.charts-page .mobile-topnav .stkws-tab{ flex:0 1 200px; width:200px; min-width:120px; max-width:220px; height:40px; box-sizing:border-box; padding:0 8px 9px 12px; border:1px solid transparent; border-bottom:0; border-radius:8px 8px 0 0; background:transparent; font-weight:500; transition:none; }
+  body.charts-page .mobile-topnav .stkws-tab.pinned{ flex:0 0 auto; width:auto; min-width:0; max-width:120px; }
+  body.charts-page .mobile-topnav .stkws-tab:hover:not(.on){ background:transparent; color:var(--ink-0); }
+  body.charts-page .mobile-topnav .stkws-tab > *{ position:relative; z-index:1; }
+  body.charts-page .mobile-topnav .stkws-tab::before{ content:""; position:absolute; z-index:0; left:4px; right:4px; top:3px; bottom:11px; border-radius:6px; background:var(--bg-3); opacity:0; pointer-events:none; }
+  body.charts-page .mobile-topnav .stkws-tab:hover:not(.on)::before{ opacity:1; }
+  body.charts-page .mobile-topnav .stkws-tab:not(.on):not(:last-child)::after{ content:""; position:absolute; right:0; top:12px; height:16px; width:1px; background:var(--line); }
+  body.charts-page .mobile-topnav .stkws-tab:has(+ .on)::after, body.charts-page .mobile-topnav .stkws-tab:has(+ :hover)::after, body.charts-page .mobile-topnav .stkws-tab:hover::after{ opacity:0; }
+  body.charts-page .mobile-topnav .stkws-tab.on{ position:relative; z-index:2; background:var(--bg-0); border-color:var(--line); color:var(--ink-0); font-weight:600; }
+  body.charts-page .mobile-topnav .stkws-tab.on::before, body.charts-page .mobile-topnav .stkws-tab.on::after{ content:""; position:absolute; bottom:-1px; width:8px; height:8px; opacity:1; background:none; border-radius:0; pointer-events:none; }
+  body.charts-page .mobile-topnav .stkws-tab.on::before{ left:-8px; top:auto; right:auto; background:radial-gradient(circle at 0 0, transparent 7px, var(--line) 7px, var(--line) 8px, var(--bg-0) 8px); }
+  body.charts-page .mobile-topnav .stkws-tab.on::after{ right:-8px; left:auto; top:auto; height:8px; width:8px; background:radial-gradient(circle at 100% 0, transparent 7px, var(--line) 7px, var(--line) 8px, var(--bg-0) 8px); }
+  body.charts-page .mobile-topnav .stkws-tab.on .stkws-x{ opacity:1; }
+  body.charts-page .mobile-topnav .stkws-tab.stkws-drag{ background:var(--bg-3); }
+  body.charts-page .mobile-topnav .stkws-plus, body.charts-page .mobile-topnav .stkws-more{ align-self:flex-end; margin-bottom:10px; width:28px; height:28px; border-radius:50%; color:var(--ink-3); }
+  body.charts-page .mobile-topnav .stkws-more{ width:auto; min-width:28px; border-radius:14px; }
+  body.charts-page .mobile-topnav .stkws-more[hidden]{ display:none; }
+  body.charts-page .mobile-topnav .stkws-plus:hover, body.charts-page .mobile-topnav .stkws-more:hover{ background:var(--bg-3); color:var(--ink-0); }
+}
 
 /* ---- Charts phase 3: Pine Script editor (assets/chart-pine.js) ----
    Desktop/tablet: a panel docked over the right edge of the chart area.

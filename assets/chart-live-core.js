@@ -326,7 +326,7 @@ export function acctInfo(x) {
   const alnum = number.replace(/[^A-Za-z0-9]/g, '');
   return { id, broker, number, alt, last4: alnum.slice(-4), text: number ? broker + ' ' + number : broker,
     brokerId: str(x && (x.brokerId || x.broker_id)).toLowerCase(), brokerAccountId: str(x && (x.brokerAccountId || x.broker_account_id)),
-    mt: mtPlatform(x),
+    mt: mtPlatform(x), host: !!(x && x.host), hostId: str(x && x.hostId), readOnly: !!(x && x.readOnly), server: str(x && x.server),
     grantId: str(x && (x.grantId || x.grant_id || x.accountGrantId || x.account_grant_id)), currency: str(x && (x.currencyCode || x.currency_code || x.currency)).toUpperCase(), sync: syncInfo(x) };
 }
 // what every live surface shows for an account: the Owner's own label (Edit details) wins, else the broker's account name.

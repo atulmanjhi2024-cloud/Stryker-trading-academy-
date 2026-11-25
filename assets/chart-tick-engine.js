@@ -144,7 +144,7 @@ export function teSubscribe(root, tf, onBar, fallback) {
     catch (e) {
       if (stopped) return;
       if (!ok && fallback) { teStatus.lane = 'fallback'; stopped = true; clearInterval(quiet); old = fallback(); return; }
-      fails++; timer = setTimeout(go, Math.min(30000, 1000 * Math.pow(2, fails))); return;
+      fails++; timer = setTimeout(go, Math.min(5000, 500 * Math.pow(2, fails))); return;   // TICKGAP: was up to 30 s with the candle still; 1 s doubling to 5 s
     }
     ok = true;
     if (!L2) L2 = await L2p;

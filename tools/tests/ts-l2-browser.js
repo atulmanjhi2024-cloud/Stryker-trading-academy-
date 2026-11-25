@@ -319,9 +319,10 @@ async function crossedBook(b) {
       check(cd.tail.every((t, i, a) => i === 0 || a[i] - a[i - 1] === 60000) || process.env.CME_CLOSED, tag + ': no gap in the last 15 candles', cd.tail.slice(-5));
       check(await p.evaluate(() => { const pl = document.getElementById('stkdp'); return !pl || pl.hidden || getComputedStyle(pl).display === 'none'; }), tag + ': delayed pill hidden while Live L2 feeds the chart');
       await p.evaluate(() => window.__l2ws.close());
-      await sleep(700);
-      check(await p.evaluate(() => !(window.__stkL2Live && window.__stkL2Live.has('NQ'))), tag + ': L2 drop releases the candle feed');
-      check(await p.evaluate(() => { const pl = document.getElementById('stkdp'); return !!pl && !pl.hidden; }), tag + ': delayed pill is back after the drop');
+      // TICKGAP (24 Nov): a drop now reconnects at once (was 1.5 s+ backoff), so the feed must come BACK live, not sit on delayed
+      await sleep(2500);
+      check(await p.evaluate(() => !!(window.__stkL2Live && window.__stkL2Live.has('NQ'))), tag + ': L2 drop reconnects to live within 2.5 s');
+      check(await p.evaluate(() => { const pl = document.getElementById('stkdp'); return !pl || pl.hidden || getComputedStyle(pl).display === 'none'; }), tag + ': delayed pill hidden again after the reconnect');
       await sleep(4000);   // the hook reconnects on its own backoff
       const n = nSock;
       check(n === 1, tag + ': ONE browser socket shared by dom + imbalance (+ ladder)', n);

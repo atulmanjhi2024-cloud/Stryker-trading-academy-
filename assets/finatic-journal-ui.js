@@ -13,7 +13,8 @@ export const BROKER_AVAILABLE = {
   'ctrader': 'gate',            // our own cTrader API link: true for admins + beta testers only (window.__stkCt, set by chart-live.js); everyone else "Coming soon"
   'interactive-brokers': false, // the Finatic order API has no Interactive Brokers adapter (its order schema lists none), so nothing can be traded
   'metatrader-4': true,         // our MT path (venue 'mt', Finatic mt4 adapter); Owner enabled it 21 Nov; only tested with stubs, no live order log yet
-  'metatrader-5': true,         // same as MetaTrader 4 (Finatic mt5 adapter); the hosted-terminal path (w-mtcloud) is not merged
+  'metatrader-5': 'gate',       // Owner 24 Nov: hosted sign-in (login + password + server on our server) for admins + beta testers only (window.__stkMtHost);
+                                //   members see "Coming soon" (the MT4 tile keeps the own-MetaTrader + EA path). Members back on: set true.
   'ninjatrader': false,         // Owner 24 Nov: coming soon (runs on the same Tradovate backend that fails via Finatic)
   'rithmic': false,             // Finatic connect returns "permission denied (code 13)": not enabled for our app
   'tastytrade': true,           // Finatic tasty_trade adapter exists; no failed orders on record
@@ -175,6 +176,12 @@ export function openBrokerSync({ uid, onConnected, portal, admin } = {}) {
     } catch (e) { drawStart(e.message || 'Could not disconnect.'); }
   }
   async function startConnect(brokerId, tile) {
+    // Hosted MetaTrader 5 (login, password, server signed in on TradeZoro's server): chart only, admins + beta testers only
+    // (window.__stkMtHost, set by chart-live.js after the same check as cTrader; the /connect/mt/* server re-checks every call).
+    // Everyone else, MetaTrader 4, and the journal keep the existing path below.
+    if (onConnected && brokerId === 'metatrader-5' && window.__stkMtHost) {
+      return import('./mt-connect-ui.js?v=1270').then((m) => { close(); m.openMtConnect({ platform: 'mt5', onConnected: (acc) => { try { onConnected([acc]); } catch (e) {} } }); }).catch(() => drawStart('Could not open the sign-in. Try again.'));
+    }
     const win = window.open('', '_blank');           // opened on the tap so pop-up blockers allow it
     sheet.querySelectorAll('.fjs-tile').forEach((t) => { t.disabled = true; });
     tile.querySelector('.fjs-tn').innerHTML = '<span class="rjs-spin"></span>Opening';
@@ -186,7 +193,7 @@ export function openBrokerSync({ uid, onConnected, portal, admin } = {}) {
       S.step = 'wait'; draw();
     } catch (e2) { if (win) win.close(); const notSet = e2.status === 503 && (!e2.code || e2.code === 'not_set_up'); drawStart(notSet ? '' : (e2.message || 'Could not start.')); if (notSet) drawNotSetUp(); }
   }
-  const brokerOn = (id) => (id === 'ctrader' ? !!window.__stkCt : BROKER_AVAILABLE[id] !== false);
+  const brokerOn = (id) => (id === 'ctrader' ? !!window.__stkCt : id === 'metatrader-5' && BROKER_AVAILABLE[id] === 'gate' ? !!window.__stkMtHost : BROKER_AVAILABLE[id] !== false);
   function drawStart(error) {
     if (!(S.accounts[0] && S.accounts[0].sync)) { S.accounts = []; S.lstate = 'loading'; }   // the server knows the member's connection, so always ask
     sheet.innerHTML = head('Connect your broker', onConnected ? 'Trade and sync your accounts from the chart' : 'Pull your fills into the journal. Read only: it never places or changes an order.') + err(error) +

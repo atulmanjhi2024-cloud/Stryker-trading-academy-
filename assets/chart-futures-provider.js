@@ -887,7 +887,16 @@ export class IdxProvider extends FuturesProvider {
     const k = quoteKey(ticker);
     let known = null, liveT = 0;
     const live = () => !!(window.__stkL2Live && window.__stkL2Live.has(k));
-    const poll = (b) => { if (live() && b.time <= liveT) return; known = b; onBar(b); };
+    // QQQ "a full candle behind" (Discord 24 Nov): off the live lane (the hub refused, e.g. while the server could not confirm the
+    // member) the forming minute comes from the poll, and the server's newest row is ONE price (o = h = l = c, volume 0). Taken as is,
+    // each poll redrew the forming candle as a dash at the newest price, so it only took shape when the minute closed. A flat row for
+    // the candle the chart already has is folded in (open kept, high / low widened); a real bar (any range or volume) replaces it.
+    const poll = (b) => {
+      if (live() && b.time <= liveT) return;
+      if (known && known.time === b.time && b.open === b.high && b.high === b.low && b.low === b.close && !b.volume) b = { time: b.time, open: known.open, high: Math.max(known.high, b.close), low: Math.min(known.low, b.close), close: b.close, volume: known.volume };
+      if (!known || b.time >= known.time) known = b;   // each poll hands the closed minute AND the forming one: known stays the newest
+      onBar(b);
+    };
     this.hubBar = (b) => {
       liveT = Math.max(liveT, b.time);
       if (known && known.time === b.time) b = { time: b.time, open: known.open, high: Math.max(known.high, b.high), low: Math.min(known.low, b.low), close: b.close, volume: known.volume };

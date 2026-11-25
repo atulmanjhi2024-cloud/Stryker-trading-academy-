@@ -46,6 +46,7 @@ const uuid = () => (crypto.randomUUID ? crypto.randomUUID() : 'k' + Date.now().t
 const TEST = /^(127\.0\.0\.1|localhost)$/.test(location.hostname) ? window.__stkLiveTest : null;   // test hooks: localhost only
 const now = () => (TEST && TEST.now ? TEST.now() : Date.now());
 
+import * as MH from './mt-host.js?v=1270';
 let P = null, uid = '', toastFn = null, isAdmin = false;
 export const TERMS_VERSION = '2026-11-21';   // = functions/connect/finatic/_owner.js LIVE_TERMS_VERSION
 const S = {
@@ -70,7 +71,7 @@ const lsUser = () => { try { return localStorage.getItem(lsUserKey()) || ''; } c
 async function call(url, body, timing, fresh) {
   let t; try { t = await firebase.auth().currentUser.getIdToken(!!fresh); } catch (e) { const er = new Error('Sign in again.'); er.status = 401; throw er; }
   let r;
-  try { r = await fetch(url, { method: 'POST', headers: { 'content-type': 'application/json', authorization: 'Bearer ' + t }, body: JSON.stringify(body), cache: 'no-store', keepalive: !!timing }); }
+  try { r = await fetch(url, body === undefined ? { headers: { authorization: 'Bearer ' + t }, cache: 'no-store' } : { method: 'POST', headers: { 'content-type': 'application/json', authorization: 'Bearer ' + t }, body: JSON.stringify(body), cache: 'no-store', keepalive: !!timing }); }
   catch (e) { const er = new Error('No answer from TradeZoro.'); er.status = 0; er.network = true; throw er; }
   if (r.status === 401 && !fresh) return call(url, body, timing, true);
   if (timing) timing.server = L.parseTiming(r.headers.get('server-timing'));
@@ -91,8 +92,16 @@ const data = (op, extra) => { const o = ownOps(extra && extra.accountId); return
 // copy route, which runs the leader order first and, only once it is accepted, one order per follower account (functions/connect/
 // finatic/copy.js). The reply is the leader's own reply plus copy.results.
 const COPY_OPS = ['place', 'modify', 'cancel', 'flatten'];
+// Hosted MetaTrader accounts (functions/connect/mt/[op].js): same panel, different door. env / consent stay on the order route.
+const hostCall = (op, args, extra) => call('/connect/mt/op', Object.assign({ accountId: S.acct.hostId, op, args: args || {} }, extra || {}));
+async function hostOrder(b, timing) {
+  if (b.op === 'schema') return { data: S.placeSchema || {} };
+  const h = MH.toHostOrder(b); if (h.error) { const e = new Error(h.error); e.status = 400; throw e; }
+  return MH.orderResult(await hostCall(h.op, h.args, { idemKey: b.idemKey }));
+}
 const order = (b, timing) => {
   if (isOwn(S.acct)) return ownOps(S.acct.id).order(b);   // never copy-traded: copy trading stays on the broker-link accounts
+  if (S.acct.host && b.op !== 'env' && b.op !== 'consent') return hostOrder(b, timing);
   const lead = Object.assign({ src: 'chart', userId: S.userId, accountId: S.acct.id }, S.acct.mt && b.op !== 'env' && b.op !== 'schema' ? { venue: 'mt' } : {}, b), cp = window.__stkCopy;
   if (cp && COPY_OPS.includes(b.op) && cp.active(S.acct.id)) return call('/connect/finatic/copy', { op: 'fan', lead }, timing).then((r) => { try { cp.after(lead, r); } catch (e) {} return r; });
   return call('/connect/finatic/order', lead, timing);
@@ -106,45 +115,18 @@ function mtMap() { try { const j = JSON.parse(localStorage.getItem(lsMapKey()) |
 function mtSaved(acct, key) { const m = mtMap()[acct]; const v = m && m[key]; return typeof v === 'string' && L.MT_SYM.test(v) ? v : ''; }
 export function mtSetSymbol(key, sym) {
   if (!S.acct || !S.acct.mt || !key) return false;
-  if (!mtRemember(S.acct.id, key, sym)) return false;
-  render(); return true;
-}
-// the same map for any of the member's MetaTrader / cTrader accounts (symbol search: picking a broker symbol remembers it)
-export function mtRemember(acctId, key, sym) {
-  const a = S.accounts.find((x) => x.id === acctId); if (!a || !a.mt || !key) return false;
   const v = String(sym || '').trim(); if (v && !L.MT_SYM.test(v)) return false;
-  const m = mtMap(); m[acctId] = Object.assign({}, m[acctId]); if (v) m[acctId][key] = v; else delete m[acctId][key];
+  const m = mtMap(); m[S.acct.id] = Object.assign({}, m[S.acct.id]); if (v) m[S.acct.id][key] = v; else delete m[S.acct.id][key];
   try { localStorage.setItem(lsMapKey(), JSON.stringify(m)); } catch (e) {}
-  return true;
-}
-// symbol search source filter (assets/chart-search-sources.js): [{ code, desc }] one account offers. cTrader = the link's symbol list
-// (opens the read-only link if needed: sign-in + symbol list, no orders); MetaTrader = the schema enum + positions / orders of the
-// picked account; [] = not known (another MetaTrader account, or the link failed).
-export async function srcSymbols(acctId) {
-  const ct = !!(CT.acct && acctId === CT.acct.id && CT.link);
-  if (ct) { try { await CT.link.open(); } catch (e) { return []; } }
-  else if (!S.acct || S.acct.id !== acctId || !S.acct.mt) return [];
-  return brokerSymbols(ct);
-}
-// symbol search details pane: the broker's spec for one symbol -> { d: ProtoOASymbol, base: asset name } | null. cTrader only (read-only
-// SymbolById + AssetList on the open link); MetaTrader and the others share no spec here.
-export async function srcSpec(acctId, code) {
-  if (!(CT.acct && acctId === CT.acct.id && CT.link)) return null;
-  const l = CT.link, up = String(code || '').toUpperCase(), id = l.byName.get(up); if (!id) return null;
-  const d = await l.detail(id);
-  if (!l.assets) l.assets = await l.call(2112, {}).then((x) => (x.payload && x.payload.asset) || [], () => null);
-  const a = (l.assets || []).find((x) => x && Number(x.assetId) === l.base.get(up));
-  return d ? { d, base: a ? String(a.name || a.displayName || '') : '' } : null;
+  render(); return true;
 }
 // -> { key, label, sym, cands, list, auto } for the chart, or null when the chart can't trade on MetaTrader
 export function mtFor(chartSym) {
   if (!S.acct || !S.acct.mt) return null;
   const k = L.mtChartKey(chartSym); if (!k) return null;
-  const list = S.acct.ct && CT.link && CT.link.byName.size ? [...CT.link.byName.values()].map((id) => CT.link.names.get(id)) : L.mtSymbolList(S.placeSchema, S.data.positions, S.data.orders), hits = L.mtMatches(k.key, list);   // cTrader: the live symbol list
+  const list = L.mtSymbolList(S.placeSchema, S.data.positions, S.data.orders), hits = L.mtMatches(k.key, list);
   const saved = mtSaved(S.acct.id, k.key);
-  const plain = hits.length > 1 ? L.mtPlain(k.key, hits) : null;   // US100 beats US100.cash / US100.r
-  const sym = saved || (hits.length === 1 ? hits[0] : plain || '');
-  if (sym && !saved && P && P.activeSymbol && L.mtChartKey(P.activeSymbol()) && L.mtChartKey(P.activeSymbol()).key === k.key) announceAuto(k, sym);
+  const sym = saved || (hits.length === 1 ? hits[0] : '');
   return { key: k.key, label: k.label, same: k.same, sym, auto: !saved && !!sym, cands: hits.length ? hits : k.cands, list, known: !!hits.length };
 }
 
@@ -163,6 +145,10 @@ async function loadAccounts() {
   } catch (e) { S.accounts = []; if (!e.needsConnect) S.loadErr = e.message; }
   if (CT.acct) S.accounts.push(CT.acct);
   for (const a of B3S.list) S.accounts.push(a);
+  if (window.__stkMtHost) try {   // MetaTrader accounts hosted by TradeZoro (login + password + server): admins + beta testers only
+    const h = await call('/connect/mt/accounts'); const have = new Set(S.accounts.map((a) => a.id));
+    (Array.isArray(h.accounts) ? h.accounts : []).map((x) => { const a = L.acctInfo(MH.hostAccountRecord(x)); a.name = a.number; return withShow(a); }).filter((a) => a.id && !have.has(a.id)).forEach((a) => S.accounts.push(a));
+  } catch (e) { /* not set up yet or no accounts: the broker list above stands */ }
   if (S.acct) { const still = S.accounts.find((a) => a.id === S.acct.id); if (still) S.acct = still; else leave(true); }
   S.loaded = true; render(); menuEvent('accounts');
 }
@@ -191,7 +177,7 @@ function balance(id, force) {
   const c = S.bal[id];
   if (c && (c.busy || (!force && now() - c.at < BAL_MS))) return view(id);
   S.bal[id] = { at: now(), busy: true, snap: c && c.snap, none: c && c.none };
-  data('balances', { accountId: id }).then((r) => {   // the server reads every page now (21 Nov); the newest snapshot wins in L.balanceOf
+  (a.host ? call('/connect/mt/op', { accountId: a.hostId, op: 'account' }).then((r) => ({ data: MH.balanceRows(r, new Date().toISOString()) })) : data('balances', { accountId: id })).then((r) => {   // the server reads every page now (21 Nov); the newest snapshot wins in L.balanceOf
     const b = L.balanceOf(r.data, a.currency);
     S.bal[id] = { at: now(), busy: false, snap: b || null, none: !b, rows: Array.isArray(r.data) ? r.data.length : 0, truncated: !!r.truncated };
   }).catch(() => { S.bal[id] = { at: now(), busy: false, snap: c && c.snap, none: !(c && c.snap) }; })
@@ -214,7 +200,7 @@ function view(id) {
 // calls a minute per visitor and the 10 s positions poll already uses 6.
 const fillCache = new Map();   // accountId|orderId -> fills[]
 function dayFills(force) {
-  if (!S.acct) return;
+  if (!S.acct || S.acct.host) return;   // hosted MetaTrader: the account's equity is live already, no fills to add
   const id = S.acct.id, c = S.bal[id], snapAt = c && c.snap && c.snap.at, from = Math.min(dayStart(), snapAt > 0 ? snapAt : Infinity);
   const filled = S.data.orders.filter((o) => /FILL/i.test(o.status || '') && !(ordTime(o) < from))
     .map((o) => String(o.orderId || o.id || '')).filter((x) => /^[A-Za-z0-9._:-]{1,80}$/.test(x));
@@ -323,9 +309,13 @@ async function disconnect(id) {
   if (a.ct) {   // cTrader: forget the trading sign-in on this device (the view-only data sign-in is not touched)
     if (S.acct && S.acct.id === id) await leave(true);
     try { if (CT.link) CT.link.shut(); await CT.mod.forgetTradeCreds(); } catch (e) { return { ok: false, error: 'Could not forget the cTrader sign-in.' }; }
-    CT.acct = CT.link = CT.ops = CT.creds = null; delete S.bal[id]; import('./byo-core.js?v=1270').then((c) => { if (c.statusRec('ctacct')) c.forget('ctacct'); }).catch(() => {}); await loadAccounts();
+    CT.acct = CT.link = CT.ops = CT.creds = null; delete S.bal[id]; await loadAccounts();
     toast('cTrader trading disconnected on this device. To remove TradeZoro’s access fully, revoke it in your cTrader ID settings.', 'success');
     return { ok: true, wasActive: false };
+  }
+  if (a.host) {
+    try { await call('/connect/mt/unlink', { accountId: a.hostId }); } catch (e) { return { ok: false, error: e.message || 'Could not remove the account.' }; }
+    const was = !!(S.acct && S.acct.id === id); if (was) await leave(true); delete S.bal[id]; await loadAccounts(); toast(a.label + ' removed. Your password and its data were deleted.', 'success'); return { ok: true, wasActive: was };
   }
   let gid = '';
   try { const g = await data('grants'); gid = L.grantFor(a, g.data); } catch (e) { return { ok: false, error: e.message || 'Could not read the connection.' }; }
@@ -416,6 +406,7 @@ async function leave(quiet) {
 async function schemaCheck() {
   const id = S.acct && S.acct.id;
   // place schema: the broker's required fields for a new order; if it can't be read (trading not enabled) new orders stay blocked
+  if (S.acct && S.acct.host) { try { const r = await call('/connect/mt/op', { accountId: S.acct.hostId, op: 'symbols', args: { names: true, limit: 5000 } }); if (S.acct && S.acct.id === id) { S.placeSchema = MH.symbolSchema(r); S.placeErr = ''; S.modifyOk = true; } } catch (e) { if (S.acct && S.acct.id === id) { S.placeSchema = null; S.placeErr = e.message || 'Symbols could not be read'; } } render(); return; }
   try { const r = await order({ op: 'schema', action: 'place' }); if (S.acct && S.acct.id === id) { S.placeSchema = (r && r.data) || {}; S.placeErr = ''; } }
   catch (e) { if (S.acct && S.acct.id === id) { S.placeSchema = null; S.placeErr = e.message || 'Order fields could not be read'; } }
   render();
@@ -438,7 +429,8 @@ async function read() {
   if (!S.acct || S.reading) return;
   S.reading = true; const start = now(), id = S.acct.id;
   try {
-    const r = await data('live', { accountId: id });
+    const hostAcct = S.acct.host;
+    const r = hostAcct ? await call('/connect/mt/op', { accountId: S.acct.hostId, op: 'live' }).then((x) => ({ data: { positions: MH.positionRows(x), orders: MH.orderRows(x) } })) : await data('live', { accountId: id });
     if (!S.acct || S.acct.id !== id) return;
     S.data = { positions: (r.data && r.data.positions) || [], orders: (r.data && r.data.orders) || [] };
     S.lastOkStart = start; S.readErr = '';
@@ -464,6 +456,7 @@ document.addEventListener('visibilitychange', () => { if (!document.hidden && S.
 function gate() { return L.readsOk({ lastOkStart: S.lastOkStart, lastWriteAt: S.lastWriteAt, unknown: S.unknown, now: now(), maxAge: STALE_MS }); }
 function blockReason() {
   if (!S.acct) return 'No live account picked.';
+  if (S.acct.readOnly) return 'This account is read-only (investor password). Connect it with the trading password to place orders.';
   if (S.env && S.env.enabled === false) return 'Live orders are off on the server.';   // only when the server SAID so
   if (!S.env) return S.envErr || 'Checking the broker link…';
   if (S.env.blocked === true) return 'Live trading is switched off for your account. Contact support.';
@@ -506,71 +499,7 @@ function infoMt(sym) {
 export function badgeFor(sym) {
   if (!S.acct) return '';
   const i = info(sym);
-  return envWord() + ' ' + S.acct.label + (i ? (i.code ? ' · ' + i.code : '') : ' · this chart can’t trade live');
-}
-// the badge's button (MetaTrader / cTrader only): opens the symbol picker
-export function badgeAct(sym) { const i = S.acct && S.acct.mt ? infoMt(sym) : null; return i ? (i.code ? 'Change' : 'Choose symbol ▾') : ''; }
-
-// ---- symbol picker (Owner 24 Nov: "how do I know which symbol it provides?"). The broker's own list and descriptions.
-const announced = new Set();
-function announceAuto(k, sym) {
-  const id = S.acct.id + '|' + k.key + '|' + sym; if (announced.has(id)) return; announced.add(id);
-  setTimeout(() => toastAct('Using ' + sym + ' for ' + k.label + ' on ' + S.acct.mt + '.', 'Change', () => openSymPicker(P.activeSymbol && P.activeSymbol()), 'info'), 0);
-}
-function toastAct(msg, label, fn, type) {
-  try { if (window.showToast) { window.showToast(type || 'info', msg, { action: { label, onClick: fn } }); return; } } catch (e) {}
-  toast(msg, type);
-}
-// [{ code, desc }] the account offers: cTrader = the symbol list the link loaded; MetaTrader = the schema enum + symbols seen in positions / orders
-function brokerSymbols(ct) {
-  if (ct || (S.acct && S.acct.ct)) {
-    const l = CT.link; if (!l || !l.byName) return [];
-    return [...l.byName.values()].map((id) => l.names.get(id)).filter(Boolean).map((code) => ({ code, desc: (l.descs && l.descs.get(code.toUpperCase())) || '' })).sort((a, b) => a.code.localeCompare(b.code));
-  }
-  return L.mtSymbolList(S.placeSchema, S.data.positions, S.data.orders).sort().map((code) => ({ code, desc: '' }));
-}
-let sp = null;
-export function closeSymPicker() { if (sp) { document.removeEventListener('keydown', sp.key, true); document.removeEventListener('pointerdown', sp.out, true); sp.el.remove(); sp = null; } }
-export function openSymPicker(chartSym, anchor) {
-  closeSymPicker();
-  const m = S.acct && S.acct.mt ? mtFor(chartSym || (P.activeSymbol && P.activeSymbol())) : null; if (!m) return false;
-  const all = brokerSymbols(), best = L.mtMatches(m.key, all.map((x) => x.code)), bestSet = new Set(best), byCode = new Map(all.map((x) => [x.code, x]));
-  const row = (code, desc) => '<button type="button" class="stklv-sp-row" data-code="' + esc(code) + '"' + (code === m.sym ? ' aria-current="true"' : '') + '><b>' + esc(code) + '</b><span>' + esc(desc || '') + '</span></button>';
-  const el = document.createElement('div'); el.id = 'stklv-sp';
-  el.innerHTML = '<div class="stklv-sp-box" role="dialog" aria-modal="true" aria-labelledby="stklv-sp-h">' +
-    '<div class="stklv-grab" aria-hidden="true"></div>' +
-    '<div class="stklv-sp-head"><h2 id="stklv-sp-h">Which ' + esc(S.acct.mt) + ' symbol is ' + esc(m.label) + '?</h2><button type="button" class="stklv-x" data-k="no" aria-label="Close">×</button></div>' +
-    (all.length ? '<input type="search" class="stklv-sp-q" placeholder="Search your account’s symbols" aria-label="Search symbols" autocomplete="off" spellcheck="false">' : '') +
-    '<div class="stklv-sp-list"></div>' +
-    '<form class="stklv-sp-type" ' + (all.length ? 'hidden' : '') + '><label>Type it exactly as your Market Watch shows it<input type="text" data-k="typed" autocomplete="off" spellcheck="false" placeholder="e.g. ' + esc(m.cands[0] || 'US100') + '"></label><button type="submit" class="stklv-btn sm">Use</button></form></div>';
-  document.body.appendChild(el);
-  const list = el.querySelector('.stklv-sp-list'), q = el.querySelector('.stklv-sp-q');
-  const paint = () => {
-    const t = (q ? q.value : '').trim().toUpperCase(), hit = (x) => !t || x.code.toUpperCase().includes(t) || x.desc.toUpperCase().includes(t);
-    let h = '';
-    if (!all.length) h = '<h3 class="stklv-h3">Usual names</h3>' + m.cands.map((c) => row(c, '')).join('');
-    else {
-      const b = best.map((c) => byCode.get(c)).filter(hit); const rest = all.filter((x) => !bestSet.has(x.code) && hit(x));
-      if (b.length) h += '<h3 class="stklv-h3">Best matches</h3>' + b.map((x) => row(x.code, x.desc)).join('');
-      h += '<h3 class="stklv-h3">All symbols in your account (' + (rest.length + b.length) + ')</h3>' + rest.slice(0, 150).map((x) => row(x.code, x.desc)).join('') + (rest.length > 150 ? '<p class="stklv-empty">Showing 150. Type to narrow the list.</p>' : '') + (!rest.length && !b.length ? '<p class="stklv-empty">No symbol matches “' + esc(q.value.trim()) + '”.</p>' : '');
-    }
-    list.innerHTML = h;
-  };
-  const choose = (code) => { if (mtSetSymbol(m.key, code)) { closeSymPicker(); toast(m.label + ' trades as ' + code + ' on this ' + S.acct.mt + ' account.', 'success'); } else toast('That is not a valid symbol name.', 'error'); };
-  paint(); if (q) q.addEventListener('input', paint);
-  list.addEventListener('click', (e) => { const b = e.target.closest('.stklv-sp-row'); if (b) choose(b.dataset.code); });
-  el.querySelector('.stklv-sp-type').addEventListener('submit', (e) => { e.preventDefault(); choose(el.querySelector('[data-k=typed]').value.trim()); });
-  el.querySelector('[data-k=no]').addEventListener('click', closeSymPicker);
-  for (const ev of ['keydown', 'pointerdown']) el.addEventListener(ev, (e) => e.stopPropagation());
-  const key = (e) => { if (e.key === 'Escape') { e.stopPropagation(); closeSymPicker(); } };
-  const out = (e) => { if (!el.querySelector('.stklv-sp-box').contains(e.target) && !(anchor && anchor.contains(e.target))) closeSymPicker(); };
-  document.addEventListener('keydown', key, true); setTimeout(() => document.addEventListener('pointerdown', out, true), 0);
-  sp = { el, key, out };
-  // desktop: a popover under the badge; phone: the CSS makes it a bottom sheet
-  const box = el.querySelector('.stklv-sp-box');
-  if (anchor && window.innerWidth > 700) { const r = anchor.getBoundingClientRect(); box.style.top = Math.min(r.bottom + 8, window.innerHeight - 420) + 'px'; box.style.left = Math.max(8, Math.min(r.right - 400, window.innerWidth - 408)) + 'px'; el.classList.add('pop'); }
-  setTimeout(() => (q || el.querySelector('[data-k=typed]') || box).focus(), 30);
-  return true;
+  return envWord() + ' ' + S.acct.label + (i ? ' · ' + (i.code || 'pick symbol') : ' · this chart can’t trade live');
 }
 const envWord = () => (S.env && S.env.env === 'sandbox' ? 'SANDBOX' : 'LIVE');
 export function lines(sym) {
@@ -740,10 +669,11 @@ async function place(sym, o, src) {
 async function placeMt(sym, o, src) {
   if (!S.envBusy && (!S.env || now() - S.envAt > ENV_MAX_AGE)) await envCheck();
   if (isOwn(S.acct) && S.env && S.env.consent === false && S.env.blocked !== true) { enableLive(); return null; }   // one-time step; nothing sent
-  const why = blockReason(); if (why) { if (/^Pick the .* symbol/.test(why)) toastAct(why, 'Choose', () => openSymPicker(sym), 'error'); else toast(why, 'error'); return null; }
+  const why = blockReason(); if (why) { toast(why, 'error'); return null; }
   const i = infoMt(sym); if (!i) { toast('This chart has no ' + S.acct.mt + ' symbol. Open an index, gold, oil or forex chart.', 'error'); return null; }
-  if (!i.code) { toastAct('Pick the ' + S.acct.mt + ' symbol for ' + i.map.label + ' first.', 'Choose', () => openSymPicker(sym), 'error'); return null; }
-  if ((o.sl != null || o.tp != null) && !(i.ct && i.map.same)) { toast(i.ct ? CT_NO_SLTP : MT_NO_SLTP, 'error'); return null; }
+  if (!i.code) { toast('Pick the ' + S.acct.mt + ' symbol for ' + i.map.label + ' first.', 'error'); return null; }
+  const br = o.sl != null || o.tp != null;
+  if (br && !S.acct.host && !(i.ct && i.map.same)) { toast(i.ct ? CT_NO_SLTP : MT_NO_SLTP, 'error'); return null; }
   if (i.ct && !i.lots.fromSchema) { toast('The size rules for ' + i.code + ' are still loading. Try again in a moment.', 'error'); return null; }
   const qty = L.roundLots(o.qty, i.lots);
   if (!qty) { toast('Size is ' + i.lots.min + ' to ' + i.lots.max + ' lots.', 'error'); return null; }
@@ -751,6 +681,11 @@ async function placeMt(sym, o, src) {
   const b = L.buildPlaceMt({ sym: i.code, side: o.side, qty, type: o.type, price: o.price, lots: i.lots, same: i.map.same, asset: L.mtAsset(S.placeSchema) }); if (b.error) { toast(b.error, 'error'); return null; }
   const body = Object.assign(b.body, { idemKey: uuid() }, i.ct && o.sl != null ? { sl: o.sl } : {}, i.ct && o.tp != null ? { tp: o.tp } : {});
   if (i.ct) { const sig = JSON.stringify(Object.assign({}, body, { idemKey: '' })), t = now(); if (S.lastSend && S.lastSend.sig === sig && t - S.lastSend.at < L.DUP_MS) return null; S.lastSend = { sig, at: t }; }   // double-click guard
+  if (br && S.acct.host) { const sl = Number(o.sl), tp = Number(o.tp), ref = i.last > 0 ? i.last : Number(o.price) || 0, buy = o.side === 'buy';
+    if (!i.map.same) { toast('Stop loss and take profit need prices from the broker’s own symbol. Open that symbol’s chart.', 'error'); return null; }
+    if ((o.sl != null && !(sl > 0)) || (o.tp != null && !(tp > 0))) { toast('Enter the stop loss and take profit prices.', 'error'); return null; }
+    if (ref > 0 && ((o.sl != null && (buy ? sl >= ref : sl <= ref)) || (o.tp != null && (buy ? tp <= ref : tp >= ref)))) { toast(buy ? 'For a buy: stop loss below the price, take profit above it.' : 'For a sell: stop loss above the price, take profit below it.', 'error'); return null; }
+    if (o.sl != null) body.slPrice = sl; if (o.tp != null) body.tpPrice = tp; }
   const desc = sideWord(o.side) + ' ' + lotTxt(qty) + ' ' + i.code + ' ' + (o.type === 'market' ? 'MARKET' : o.type.toUpperCase() + ' @ ' + px(Number(body.limitPrice || body.stopPrice)));
   return write(body, desc + (src ? ' (' + src + ')' : ''), i.map.same ? L.pendingLine(body, i.last) : null);
 }
@@ -786,6 +721,16 @@ export async function cancel(oid) {
 export async function flatten(sym) {
   if (!S.acct || S.busy) return null;
   if (isOwn(S.acct) && S.acct.mt) return flattenCt(sym);
+  if (S.acct.mt && S.acct.host) {   // hosted: close each open position of this symbol at market, cancel its working orders
+    const i = infoMt(sym); if (!i || !i.code) { toast('Open the chart of the position to close it.', 'error'); return null; }
+    const why = blockReason(); if (why) { toast(why, 'error'); return null; }
+    const ps = S.data.positions.filter((p) => L.matches(p, i.code) && p.status === 'OPEN'), wk = i.working;
+    if (!ps.length && !wk.length) { toast('Nothing to close on ' + i.code + '.', 'info'); return null; }
+    let last = null;
+    for (const w of wk) last = await write({ op: 'cancel', orderId: w.id, idemKey: uuid() }, 'Cancel');
+    for (const p of ps) last = await write({ op: 'close', orderId: p.positionId, idemKey: uuid() }, 'Close ' + i.code);
+    return last;
+  }
   if (S.acct.mt) { toast('Close ' + S.acct.mt + ' positions in MetaTrader for now. Working orders can be cancelled here.', 'info'); return null; }
   if (S.env && S.env.enabled === false) { toast('Live orders are off on the server.', 'error'); return null; }
   if (!S.lastOkStart) { toast('Positions are still loading.', 'error'); return null; }
@@ -804,7 +749,7 @@ async function flattenCt(symOrCode) {
   if (S.env && S.env.enabled === false) { toast('Live orders are off on the server.', 'error'); return null; }
   if (!S.lastOkStart) { toast('Positions are still loading.', 'error'); return null; }
   const i = symOrCode && P && P.activeSymbol && symOrCode === P.activeSymbol() ? infoMt(symOrCode) : null;
-  const code = i ? i.code : String(symOrCode || ''); if (!code) { toastAct('Pick the ' + S.acct.mt + ' symbol for this chart first.', 'Choose', () => openSymPicker(P.activeSymbol && P.activeSymbol()), 'error'); return null; }
+  const code = i ? i.code : String(symOrCode || ''); if (!code) { toast('Pick the ' + S.acct.mt + ' symbol for this chart first.', 'error'); return null; }
   const pos = L.netPosition(S.data.positions, code), working = L.workingOrders(S.data.orders, code);
   if (!pos.qty && !working.length) { toast('Nothing to flatten on ' + code + '.', 'info'); return null; }
   const ok = await confirmSheet({ title: 'Flatten ' + code, code, side: pos.qty > 0 ? 'sell' : 'buy', go: 'Flatten ' + code,
@@ -919,9 +864,9 @@ const NO_STOPS = 'Stops and targets aren’t supported by this broker link yet. 
 export function caps() {
   if (S.acct && S.acct.mt) {
     const i = P && P.activeSymbol ? infoMt(P.activeSymbol()) : null, same = !!(i && i.map.same);
-    const st = !!S.placeSchema && same && L.stopsSupported(S.placeSchema);
+    const st = !!S.placeSchema && same && (S.acct.host || L.stopsSupported(S.placeSchema));
     if (isOwn(S.acct)) return { stop: same, bracket: same, limit: same, mt: true, why: same ? '' : CT_NO_SLTP, marketOnly: '' };
-    return { stop: st, bracket: false, limit: same, mt: true, why: !same ? 'This chart’s prices are not your broker’s prices for this symbol, so only market orders go from here.' : MT_NO_SLTP, marketOnly: MT_NO_SLTP };
+    return { stop: st, bracket: !!S.acct.host && same, limit: same, mt: true, why: !same ? 'This chart’s prices are not your broker’s prices for this symbol, so only market orders go from here.' : MT_NO_SLTP, marketOnly: MT_NO_SLTP };
   }
   if (!S.placeSchema) return { stop: false, bracket: false, why: S.placeErr ? 'The broker’s order types could not be read.' : 'Loading the broker’s order types…' };
   const ok = L.stopsSupported(S.placeSchema);
@@ -1019,27 +964,6 @@ const CSS = `
 .stklv-pick select:focus-visible{ outline:2px solid #03c988; outline-offset:2px; }
 .stklv-pick svg{ position:absolute; right:10px; pointer-events:none; color:var(--ink-2); }
 .stklv-badge{ display:inline-flex; align-items:center; min-width:0; max-width:100%; overflow:hidden; height:28px; padding:0 12px; border-radius:999px; background:#d92d20; color:#fff; font:700 12px/16px var(--font-body, sans-serif); letter-spacing:.04em; white-space:nowrap; box-shadow:0 0 0 2px rgba(217,45,32,.28); }
-#stklv-sp{ position:fixed; inset:0; z-index:9100; background:rgba(0,0,0,.6); display:flex; align-items:center; justify-content:center; padding:16px; }
-#stklv-sp.pop{ background:transparent; display:block; padding:0; }
-.stklv-sp-box{ width:min(400px,100%); max-height:min(520px,80dvh); display:flex; flex-direction:column; gap:12px; padding:16px; box-sizing:border-box; border:1px solid var(--line); border-radius:16px; background:var(--bg-1); color:var(--ink-1); box-shadow:0 12px 40px rgba(0,0,0,.45); }
-#stklv-sp.pop .stklv-sp-box{ position:fixed; }
-.stklv-sp-box .stklv-grab{ display:none; }
-.stklv-sp-head{ display:flex; align-items:center; justify-content:space-between; gap:12px; }
-.stklv-sp-head h2{ margin:0; font:700 16px/22px var(--font-body, sans-serif); color:var(--ink-0); }
-.stklv-sp-q,.stklv-sp-type input{ width:100%; box-sizing:border-box; height:40px; padding:0 12px; border:1px solid var(--line); border-radius:8px; background:var(--bg-2); color:var(--ink-0); font:500 14px/20px var(--font-body, sans-serif); }
-.stklv-sp-q:focus-visible,.stklv-sp-type input:focus-visible,.stklv-sp-row:focus-visible{ outline:2px solid #03c988; outline-offset:2px; }
-.stklv-sp-list .stklv-h3{ padding:0 12px; }
-.stklv-sp-list{ flex:1; min-height:0; overflow-y:auto; scrollbar-width:thin; scrollbar-color:var(--ink-3) transparent; }
-.stklv-sp-row{ display:grid; grid-template-columns:minmax(0,auto) minmax(0,1fr); align-items:center; gap:12px; width:100%; min-height:44px; padding:0 12px; border:0; border-radius:8px; background:transparent; color:var(--ink-1); font:500 13px/18px var(--font-body, sans-serif); text-align:left; cursor:pointer; }
-.stklv-sp-row b{ color:var(--ink-0); font-weight:600; white-space:nowrap; }
-.stklv-sp-row span{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--ink-2); }
-.stklv-sp-row:hover,.stklv-sp-row[aria-current]{ background:var(--bg-2); }
-.stklv-sp-row[aria-current] b::after{ content:' ✓'; color:#03c988; }
-.stklv-sp-type{ display:flex; align-items:flex-end; gap:8px; } .stklv-sp-type[hidden]{ display:none; }
-.stklv-sp-type label{ flex:1; display:flex; flex-direction:column; gap:4px; font:500 12px/16px var(--font-body, sans-serif); color:var(--ink-2); }
-.stklv-sp-type .stklv-btn{ height:40px; }
-.stklv-cbtn{ pointer-events:auto; margin:0 -8px 0 8px; height:20px; padding:0 8px; border:0; border-radius:999px; background:rgba(255,255,255,.22); color:#fff; font:700 12px/16px inherit; font-family:inherit; cursor:pointer; }
-.stklv-cbtn:hover{ background:rgba(255,255,255,.34); } .stklv-cbtn:focus-visible{ outline:2px solid #fff; outline-offset:1px; }
 .stklv-cbadge{ position:absolute; right:80px; top:8px; z-index:6; height:28px; padding:0 16px; display:flex; align-items:center; border-radius:999px; background:#d92d20; color:#fff; font:700 12px/16px -apple-system,BlinkMacSystemFont,Roboto,sans-serif; letter-spacing:.04em; white-space:nowrap; pointer-events:none; box-shadow:0 2px 8px rgba(0,0,0,.35); max-width:calc(100% - 96px); overflow:hidden; text-overflow:ellipsis; }
 .stkpt-chip[data-live]{ border-width:2px; }
 .stkpt-chip[data-live] .stkpt-chip-a{ font-weight:700; }
@@ -1107,12 +1031,7 @@ const CSS = `
   .stklv-seg button{ height:40px; } .stklv-btn{ height:44px; } .stklv-btn.sm{ height:36px; }
   .stklv-f input{ height:48px; font-size:16px; }
   .stklv-row{ grid-template-columns:56px 64px minmax(0,1fr) auto; } .stklv-row .m:nth-of-type(4){ display:none; }
-  #stklv-cf,#stklv-sp,#stklv-sp.pop{ align-items:flex-end; padding:0; }
-  #stklv-sp.pop{ display:flex; background:rgba(0,0,0,.6); }
-  .stklv-sp-box,#stklv-sp.pop .stklv-sp-box{ position:static; width:100%; max-height:85dvh; border-radius:20px 20px 0 0; border-width:2px 0 0; padding:8px 16px calc(16px + env(safe-area-inset-bottom)); top:auto !important; left:auto !important; }
-  .stklv-sp-box .stklv-grab{ display:block; }
-  .stklv-sp-q,.stklv-sp-type input{ height:48px; font-size:16px; }
-  .stklv-sp-row{ min-height:48px; }
+  #stklv-cf{ align-items:flex-end; padding:0; }
   .stklv-cf-box{ width:100%; border-radius:20px 20px 0 0; border-width:2px 0 0; max-height:92dvh; padding:8px 16px calc(16px + env(safe-area-inset-bottom)); }
   .stklv-en .stklv-cf-box{ padding:8px 16px calc(16px + env(safe-area-inset-bottom)); }
   .stklv-grab{ display:block; width:36px; height:4px; margin:0 auto 4px; border-radius:2px; background:var(--line); }
@@ -1137,7 +1056,7 @@ async function ctAllowed() {
 async function loadCt() {
   try {
     CT.mod = CT.mod || await import('./ctrader-trade.js?v=1270');
-    window.__stkCt = { open: () => CT.mod.startTradeSignIn(uid).catch((e) => toast(e.message || 'Could not open cTrader.', 'error')), get connected() { return !!CT.acct; }, get link() { return TEST ? CT.link : null; } };
+    window.__stkCt = { open: () => CT.mod.startTradeSignIn(uid).catch((e) => toast(e.message || 'Could not open cTrader.', 'error')), get connected() { return !!CT.acct; } };
     const c = TEST && TEST.ctCreds ? TEST.ctCreds : await CT.mod.loadTradeCreds();   // test: localhost fixture creds + a mocked socket
     if (!c || !c.access || !c.accountId) { CT.acct = null; return; }
     CT.creds = c; CT.link = new CT.mod.TradeLink(c, TEST && TEST.ctDeps ? TEST.ctDeps : undefined);
@@ -1147,16 +1066,8 @@ async function loadCt() {
     const a = L.acctInfo({ accountId: 'ct-' + c.accountId, accountNumber: String(c.login || c.accountId) });
     a.broker = 'cTrader'; a.text = 'cTrader ' + a.number + (c.isLive === false ? ' demo' : ''); a.name = a.number; a.mt = 'cTrader'; a.ct = true; a.demo = c.isLive === false;
     CT.acct = withShow(a);
-    ctFeed();
   } catch (e) { CT.acct = null; }
 }
-// the cTrader account as a chart feed for broker symbols TradeZoro has no chart for (symbol search -> byo:CT:<name>; assets/byo-ctrader.js
-// useTradeAccount: trendbars + spots over the view-only data relay). Re-registered after a sign-in change clears the own-data feeds.
-function ctFeed() {
-  if (!CT.creds || !CT.mod) return Promise.resolve(false);
-  return Promise.all([import('./byo-ctrader.js?v=1270'), import('./byo-core.js?v=1270')]).then(([b, c]) => { if (CT.creds) b.useTradeAccount(CT.creds, CT.mod.freshTrade, TEST && TEST.ctDeps ? TEST.ctDeps : undefined, c); return true; }, () => false);
-}
-window.addEventListener('tz:byo', (e) => { if (e.detail && e.detail.id === '*' && CT.acct) ctFeed(); });
 // ---- BROKERS 3 (admins and beta testers): tastytrade / TradeStation / OANDA trading sign-ins become live accounts
 function b3Lots(code) { const r = S.placeSchema && S.placeSchema.rules && S.placeSchema.rules[String(code || '').toUpperCase()]; return r ? { min: r.min, step: r.step, max: r.max, fromSchema: true } : { min: 0.01, step: 0.01, max: 10, fromSchema: false }; }
 function b3Tick(code, key) { const r = S.placeSchema && S.placeSchema.rules && S.placeSchema.rules[String(code || '').toUpperCase()]; return r && Number.isInteger(r.priceDp) ? Math.pow(10, -r.priceDp) : L.mtTick(key); }
@@ -1236,12 +1147,13 @@ function betaReady() {
 export function mountLive(paperApi, opts) {
   P = paperApi; uid = opts.uid; toastFn = opts.toast || null; isAdmin = !!opts.admin;
   if (!document.getElementById('stklv-css')) { const st = document.createElement('style'); st.id = 'stklv-css'; st.textContent = CSS; document.head.appendChild(st); }
-  P.setLiveHook({ mtFor, mtSetSymbol, active, noLiveWhy, lines, chipText, badgeFor, badgeAct, openSymPicker, tickOf, chipX, drag, flattenActive, openTicket, renderHead, renderSummary, renderView, foot, dock, dockTrades, ladder, domState, cancel, flatten, caps, opInfo, placeTicket, kill, killOn, retryEnv, enableLive });
+  P.setLiveHook({ mtFor, mtSetSymbol, active, noLiveWhy, lines, chipText, badgeFor, tickOf, chipX, drag, flattenActive, openTicket, renderHead, renderSummary, renderView, foot, dock, dockTrades, ladder, domState, cancel, flatten, caps, opInfo, placeTicket, kill, killOn, retryEnv, enableLive });
   loadMeta(); loadAccounts();
-  ctAllowed().then((ok) => { if (ok) Promise.all([loadCt(), loadB3()]).then(loadAccounts); });   // cTrader + BROKERS 3 trading: admins and beta testers (the servers re-check)
+  // cTrader + BROKERS 3 trading and hosted MetaTrader 5: admins and beta testers (the servers and /connect/mt/* re-check every call)
+  ctAllowed().then((ok) => { if (ok) { window.__stkMtHost = true; Promise.all([loadCt(), loadB3()]).then(loadAccounts); } });
   // Copy trading: admins + beta testers (Owner 23 Nov). The server (functions/connect/finatic/copy.js) re-checks every call.
   if (isAdmin) mountCopyTrading(); else betaReady().then((b) => { if (b) mountCopyTrading(); });
   window.addEventListener('storage', (e) => { if (e.key === lsUserKey()) loadAccounts(); });
-  Object.assign(window.__stkLive, { openSymPicker, closeSymPicker, mtFor, mtSetSymbol, mtRemember, srcSymbols, srcSpec, ctFeed, connect, reconnect, pick, leave, read, loadAccounts, info, confirmSheet, balance, summary, metaOf, saveMeta, disconnect, L, envCheck, retryEnv, syncGroup, enableLive, get admin() { return isAdmin; } });
+  Object.assign(window.__stkLive, { mtFor, mtSetSymbol, connect, reconnect, pick, leave, read, loadAccounts, info, confirmSheet, balance, summary, metaOf, saveMeta, disconnect, L, envCheck, retryEnv, syncGroup, enableLive, placeTicket, flatten, get admin() { return isAdmin; } });
   Object.defineProperty(window.__stkLive, 'blockReason', { configurable: true, get: () => blockReason() });   // a getter (Object.assign would copy one frozen value)
 }

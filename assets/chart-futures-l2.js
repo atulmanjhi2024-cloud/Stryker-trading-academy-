@@ -63,6 +63,41 @@ export const l2Delayed = () => !l2LiveBook() && (testOn() ? !!window.__stkL2Test
 export const DELAYED_NOTE = 'Order book 10 min delayed · live book is a paid data feed';
 export const DELAYED_SHORT = 'Order book · 10 min delayed';   // admin / non-Free member: never locked, even if a hub said 'trades' (then the tools wait on the book instead)   // sign-in answer not in yet = unknown, not Free: no lock
 const DIAG = { tier: '-', close: '-', closeAt: 0 };
+const DEAD_MS = 12000, RETRY_MAX_MS = 10000, AUTH_WAIT_MS = 1500;   // TICKGAP: socket watchdog (hub pings every 5 s) / longest reconnect wait
+// TICKGAP (24 Nov 2026) diagnostic: per root, while the tab is visible and the feed says live, how often the chart's data paused.
+//   stall = the socket was silent > 6 s (it gets a frame at least every 5 s), or the hub said its own upstream had no trade for > 3 s
+//   quiet = no trade for this root for > 5 s while frames kept coming (a thin market, e.g. NQ overnight: the market, not a fault)
+// Read by the data dot tooltip for admins and beta testers (chart-data-dot.js), and window.__stkGaps for support. Counts the last 30 min.
+const GAPS = new Map();
+const GAP_WIN_MS = 30 * 60000;
+function gapRec(root) { let g = GAPS.get(root); if (!g) { g = { lastFrame: 0, lastTrade: 0, upStall: 0, ev: [] }; GAPS.set(root, g); } return g; }
+function gapNote(g, kind, ms, now) { g.ev.push([now, kind, ms]); const cut = now - GAP_WIN_MS; while (g.ev.length && g.ev[0][0] < cut) g.ev.shift(); }
+function gapFrame(root, m) {
+  if (typeof document === 'undefined') return;
+  const now = Date.now(), g = gapRec(root), vis = !document.hidden;
+  if (vis && g.lastFrame && now - g.lastFrame > 6000) { gapNote(g, 'stall', now - g.lastFrame, now); g.lastTrade = 0; }   // the silence is a stall, not also a market pause
+  g.lastFrame = vis ? now : 0;
+  if (m && m.event === 'ping') {
+    const up = Number(m.up);
+    if (vis && m.state !== 'idle' && up > 3000) { if (!g.upStall) g.upStall = now - up; }
+    else if (g.upStall) { if (vis) { gapNote(g, 'stall', now - g.upStall, now); g.lastTrade = 0; } g.upStall = 0; }
+  }
+}
+function gapTrades(root, t) {
+  if (typeof document === 'undefined' || !t || !t.length) return;
+  const now = Date.now(), g = gapRec(root);
+  if (!document.hidden && g.lastTrade && now - g.lastTrade > 5000 && now - g.lastTrade < 600000) gapNote(g, 'quiet', now - g.lastTrade, now);
+  g.lastTrade = document.hidden ? 0 : now;
+}
+if (typeof document !== 'undefined') document.addEventListener('visibilitychange', () => { if (document.hidden) for (const g of GAPS.values()) { g.lastFrame = 0; g.lastTrade = 0; g.upStall = 0; } });
+// { stalls, stallMax, quiet, quietMax, lastAt } over the last 30 min, null = nothing measured for root yet
+export function gapStats(root) {
+  const g = GAPS.get(root); if (!g) return null;
+  const cut = Date.now() - GAP_WIN_MS, o = { stalls: 0, stallMax: 0, quiet: 0, quietMax: 0, lastAt: 0 };
+  for (const [at, k, ms] of g.ev) { if (at < cut) continue; if (k === 'stall') { o.stalls++; o.stallMax = Math.max(o.stallMax, ms); } else { o.quiet++; o.quietMax = Math.max(o.quietMax, ms); } o.lastAt = at; }
+  return o;
+}
+try { if (typeof window !== 'undefined') window.__stkGaps = () => Object.fromEntries([...GAPS.keys()].map((k) => [k, gapStats(k)])); } catch (e) {}
 function setTier(t) { const v = t === 'book' || (t === undefined && testOn() && !window.__stkL2Test.trades && !window.__stkL2Test.delayed) || l2AnyProven(); /* a late 'trades' never re-locks a member whose book frames are arriving */ if (v === bookTier) return; bookTier = v; try { window.dispatchEvent(new Event('stryker:l2tier')); } catch (e) {} }
 // Show the tools (picker, buttons) at all? Everyone, once released; a Free member gets the lock instead of the data.
 export const l2Listed = () => L2_MEMBERS || l2Visible();
@@ -210,18 +245,20 @@ class Conn {
     this.ws = ws;
     this.sentTok = token;
     ws.onopen = () => { r.err = ''; this.openedAt = Date.now(); liveGap(this.root); fillGap(this.root); this.send({ op: 'sub', symbol: this.root, levels: this.levels }); this.arm(); };
-    ws.onmessage = (e) => { let m; try { m = JSON.parse(e.data); } catch (x) { return; } this.arm(); this.frame(m); };
+    ws.onmessage = (e) => { let m; try { m = JSON.parse(e.data); } catch (x) { return; } this.arm(); gapFrame(this.root, m); if (!m.event) this.gotData = true; this.frame(m); };
     ws.onclose = (e) => {
       DIAG.close = (e && e.code) + ' ' + String((e && e.reason) || '').slice(0, 40); DIAG.closeAt = Date.now();
       if (this.ws !== ws) return; this.ws = null; clearTimeout(this.dog);
       r.status = 'reconnecting'; tell(r);
-      if (Date.now() - this.openedAt > 30000) this.retryN = 0;
+      if (Date.now() - this.openedAt > 30000 || (this.gotData && Date.now() - this.openedAt > 5000)) this.retryN = 0; this.gotData = false;   // a socket that worked: the next try is immediate
       // 4401 (token age) / 4003 (access ended): get a FRESH token and re-ask the access answer first, then reconnect at once. The hub only
       // sends 4003 on a definite "no" for a valid token (LIVEFIX 24 Nov 2026); a stale token or our own outage must not leave a paying member
       // on the delayed book, so the page re-decides with the server's new answer instead of guessing.
       const auth = e && (e.code === 4401 || e.code === 4003);
-      if (auth && !testOn()) { Promise.resolve().then(() => rtEnsureFresh(3300)).catch(() => {}).then(() => (e.code === 4003 ? rtRecheck(true) : null)).catch(() => {}).then(() => { if (!this.stopped && !document.hidden && !this.ws) this.later(200); }); return; }
-      if (!this.stopped && !document.hidden) this.later(auth ? 200 : 0);
+      // TICKGAP: that wait is capped at AUTH_WAIT_MS. The access answer (/api/chart/rt) had no time limit; while Firestore was slow or
+      // over quota it could hold the socket shut (and the candle still) for many seconds. The hub decides on the token it gets either way.
+      if (auth && !testOn()) { const go = () => { if (!this.stopped && !document.hidden && !this.ws) this.later(0); }; const tm = setTimeout(go, AUTH_WAIT_MS); Promise.resolve().then(() => rtEnsureFresh(3300)).catch(() => {}).then(() => (e.code === 4003 ? rtRecheck(true) : null)).catch(() => {}).then(() => { clearTimeout(tm); go(); }); return; }
+      if (!this.stopped && !document.hidden) this.later(auth ? 200 : undefined);
     };
     ws.onerror = () => { try { ws.close(); } catch (e) {} };
   }
@@ -231,8 +268,12 @@ class Conn {
     if (testOn() || !this.ws || this.ws.readyState !== 1) return;
     Promise.resolve(force ? rtEnsureFresh(3300) : rtToken()).catch(() => rtToken()).then(() => { const t = rtToken(); if (t && t !== this.sentTok) { this.sentTok = t; this.send({ op: 'auth', token: t }); } });
   }
-  arm() { clearTimeout(this.dog); this.dog = setTimeout(() => { if (this.ws) { try { this.ws.close(); } catch (e) {} } }, 20000); }
-  later(ms) { clearTimeout(this.tm); const w = ms || Math.min(30000, 1500 * Math.pow(2, Math.min(this.retryN++, 5))) * (0.8 + Math.random() * 0.4); this.tm = setTimeout(() => this.connect(), w); }
+  // TICKGAP (24 Nov 2026): the hub pings every 5 s, so 12 s of nothing = a dead socket (was 20 s: a frozen candle for up to 20 s + the retry)
+  arm() { clearTimeout(this.dog); this.dog = setTimeout(() => { if (this.ws) { try { this.ws.close(); } catch (e) {} } }, DEAD_MS); }
+  // ms = 0 means "at once" (it used to be read as "no value": every drop waited the backoff, 1.5 s doubling to 30 s, so a few drops in a row
+  // left the candle stuck for up to half a minute). The first retry after a socket that delivered data is immediate; quick repeat failures
+  // back off 1 s doubling to 10 s, never longer, so a live feed is back within about a second.
+  later(ms) { clearTimeout(this.tm); const w = ms != null ? ms : this.retryN === 0 ? (this.retryN++, 0) : Math.min(RETRY_MAX_MS, 1000 * Math.pow(2, Math.min(this.retryN++ - 1, 4))) * (0.8 + Math.random() * 0.4); this.tm = setTimeout(() => this.connect(), w); }
   frame(m) {
     const r = rootState(this.root);
     if (m.event === 'status') { r.closed = m.state === 'idle'; r.status = m.state === 'live' ? 'live' : 'reconnecting'; tell(r); return; }
@@ -262,13 +303,29 @@ class Conn {
       if (!last || now - last[0] >= 1000) { r.imb.push([now, m.imb, m.imb10]); if (r.imb.length > 21600) r.imb.splice(0, r.imb.length - 21600); }
     } else if (m.type === 'coarse') r.coarse = m;
     else if (m.type === 'ticks') { if (TE.has(r.root)) return; applyTicks(r, m.t); }   // the tick engine feeds this root's trades (teTicks): none twice
+    keepMin(r, m);
     r.listeners.forEach((f) => { try { f(m); } catch (e) {} });
   }
   close() { this.stopped = true; try { if (this.offTok) this.offTok(); } catch (e) {} clearTimeout(this.tm); clearTimeout(this.dog); clearTimeout(this.closeTm); document.removeEventListener('visibilitychange', this.onVis); if (this.ws) { try { this.ws.close(1000); } catch (e) {} this.ws = null; } }
 }
+// TICKGAP (24 Nov 2026): the root's own copy of the hub's 1m candles (its {type:'bars'} on subscribe + every trade / quote since), last 30 min.
+// A chart that subscribes again on a socket that is already open (tab back from the background, focus after an absence, the Reconnect
+// button, a timeframe switch) gets no new 'bars' frame from the hub (it sends them once per socket), so its forming candle restarted at the
+// next trade: open jumped, the wicks were lost. l2Candles now starts from this copy.
+function keepMin(r, m) {
+  const M = r.m1 || (r.m1 = new Map());
+  if (m.type === 'bars' && m.symbol === r.root) { for (const b of m.b || []) M.set(b[0], [b[1], b[2], b[3], b[4], b[5]]); }
+  else if (m.type === 'ticks' && m.symbol === r.root) {
+    for (const x of m.t || []) { const t = Math.floor(x[3] / 60000) * 60000, e = M.get(t); if (!e) M.set(t, [x[0], x[0], x[0], x[0], x[1]]); else { if (x[0] > e[1]) e[1] = x[0]; if (x[0] < e[2]) e[2] = x[0]; e[3] = x[0]; e[4] += x[1]; } }
+  } else if (m.type === 'quote' && m.symbol === r.root && m.p > 0) {
+    const t = Math.floor((m.ts || Date.now()) / 60000) * 60000, e = M.get(t);
+    if (!e) { if (M.size) M.set(t, [m.p, m.p, m.p, m.p, 0]); } else { if (m.p > e[1]) e[1] = m.p; if (m.p < e[2]) e[2] = m.p; e[3] = m.p; }
+  } else return;
+  if (M.size > 40) { const cut = Math.max(...M.keys()) - 30 * 60000; for (const k of M.keys()) if (k < cut) M.delete(k); }
+}
 // one batch of trades [[px, size, side +1/-1, ts_ms]..] into every tick consumer of root: the book tools' TickFeed and the live footprint
 function applyTicks(r, t) {
-  r.nTick = (r.nTick || 0) + (t ? t.length : 0); r.lastTickAt = Date.now(); r.status = 'live'; if (!r.trades) r.trades = new TickFeed(r.root); r.trades.add(t || [], false);
+  r.nTick = (r.nTick || 0) + (t ? t.length : 0); r.lastTickAt = Date.now(); gapTrades(r.root, t); r.status = 'live'; if (!r.trades) r.trades = new TickFeed(r.root); r.trades.add(t || [], false);
   // live order flow (assets/chart-live-of.js) from the same trades: [t s, price, size, 1 buy / 0 sell]. Times are made strictly increasing (the hub stamps ms,
   // several prints can share one) so LiveFlow's duplicate check keeps them all.
   if (hubLive() && liveOfOn() && liveOfRoot(r.root) && t && t.length) {
@@ -556,6 +613,8 @@ export function l2Candles(root, timeframe, onBar, _unused, seed) {
     if (touched.length) { setFed(true); emit(touched); }
   };
   const h = acquire(root, fn, 20);
+  // TICKGAP: the socket may already be open (a re-subscribe): start from the root's copy of the hub's minutes, as if they had just arrived
+  if (h.r.m1 && h.r.m1.size) { try { fn({ type: 'bars', symbol: root, b: [...h.r.m1.keys()].sort((x, y) => x - y).map((t) => [t].concat(h.r.m1.get(t))) }); } catch (e) {} }
   return () => { stopped = true; h.release(); setFed(false); };
 }
 

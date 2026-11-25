@@ -7,7 +7,7 @@
 import { ADAPTERS, ROUTERS, SOURCES, Hub, QUOTES, candleBuilder, normTf, saveSource, srcById } from './byo-core.js?v=1293';
 // the latest bid / ask of a cTrader symbol (account feed 'CT:EURUSD' first, then the data feed 'EURUSD'), for the SL / TP side checks
 // in assets/chart-live.js. Build 1289 dropped this export while merging, so those checks lost the live bid / ask: restored.
-export const quoteOf = (name) => { const q = QUOTES.get('CT:' + name) || QUOTES.get(name); return q && Date.now() - q.at < 120000 ? q : null; };
+// (quoteOf is defined below, next to CTQ: one export, reads CTQ then the shared QUOTES)
 
 const MIN = 60000;
 export const CT = {
@@ -184,6 +184,10 @@ export function symbolOf(t) {
 const PERIOD = { '1': 1, '5': 5, '15': 7, '30': 8, '60': 9, '240': 10, D: 12, W: 13, M: 14 };
 const SPAN = { '1': MIN, '5': 5 * MIN, '15': 15 * MIN, '30': 30 * MIN, '60': 60 * MIN, '240': 240 * MIN, D: 864e5, W: 7 * 864e5, M: 31 * 864e5 };
 const PX = 1e5;   // cTrader prices are integers in 1/100000
+// SLIPPAGE (25 Nov) + AUTO-TPSL: the broker's latest bid / ask per symbol key ('CT:NAS100' trading account feed, 'NAS100' data feed).
+// chart-live reads it at the click (slippage: a market buy expects the ask, a sell the bid) and for the SL / TP side check. Read-only.
+export const CTQ = new Map();   // the spread work's shared QUOTES (byo-core) is keyed without the CT: prefix, so this map stays separate
+export const quoteOf = (key) => { const s = String(key || '').toUpperCase(), k = s.replace(/^CT:/, '').replace(/[^A-Z0-9]/g, ''); const q = CTQ.get(s) || CTQ.get('CT:' + k) || CTQ.get(k) || QUOTES.get(k); return q ? { bid: q.bid, ask: q.ask, at: q.at } : null; };   // callers check staleness
 const symCache = new WeakMap();   // creds -> Map(key -> { id, desc }); memory only, per account
 async function symbolId(c, key, d) { return (await symRec(c, key, d)).id; }
 async function symRec(c, key, d) {
@@ -268,6 +272,7 @@ export const ctrader = {
               const k = back.get(e.symbolId); if (!k) return;
               const l = last.get(k) || {}; if (e.bid != null) l.bid = e.bid; if (e.ask != null) l.ask = e.ask; last.set(k, l);
               if (l.bid == null) return;
+              CTQ.set(String(k).toUpperCase(), { bid: round(l.bid / PX), ask: l.ask != null ? round(l.ask / PX) : null, at: Date.now() });
               if (l.ask != null) QUOTES.put(k, round(l.bid / PX), round(l.ask / PX), e.timestamp);   // the same spot: Bid / Ask lines + spread
               const bid = round(l.bid / PX);
               onTick(k, bid, e.timestamp > 0 ? e.timestamp : Date.now(), 0);   // chart plots the bid, like a broker chart (cTrader trendbars are bid bars too)

@@ -13,7 +13,7 @@ export const SYMS = [{ symbolId: 1, symbolName: 'EURUSD', digits: 5 }, { symbolI
   { symbolId: 4, symbolName: 'US100.cash', digits: 2 }, { symbolId: 5, symbolName: 'USTEC', digits: 2 }, { symbolId: 6, symbolName: 'NAS100.cash', digits: 2 }];
 const DESC = { EURUSD: 'Euro vs US Dollar', US100: 'US Tech 100 Index', XAUUSD: 'Gold vs US Dollar', 'US100.CASH': 'US Tech 100 Cash', USTEC: 'US Tech 100 Index (alt)', 'NAS100.CASH': 'Nasdaq 100 Cash' };
 // Sample data: swap / commission / a Mon-Fri schedule (UTC) for the symbol search details pane
-const DETAIL = (s) => ({ symbolId: s.symbolId, digits: s.digits, pipPosition: s.pipPosition, lotSize: 10000000, minVolume: 100000, stepVolume: 100000, maxVolume: 10000000000,
+const DETAIL = (s) => ({ symbolId: s.symbolId, digits: s.digits, lotSize: s.lotSize || 10000000, minVolume: s.minVolume || 100000, stepVolume: s.stepVolume || 100000, pipPosition: s.pipPosition, maxVolume: 10000000000,
   swapLong: -0.79, swapShort: 0.13, commissionType: 1, preciseTradingCommissionRate: 3000000000, scheduleTimeZone: 'UTC',
   schedule: [1, 2, 3, 4, 5].map((d) => ({ startSecond: d * 86400, endSecond: d * 86400 + 86340 })) });
 
@@ -40,7 +40,7 @@ export function makeWS(M, { now = () => Date.now() } = {}) {
       if (this.hooks) this.hooks.bind(this.relay);
       this.timer = setInterval(() => this.relay.tick(), 200);
       later(() => { this.readyState = 1; this.relay.start(); });
-      M.socket = this; M.sockets = (M.sockets || 0) + 1; if (data) M.dataSocket = this;
+      M.socket = this; M.sockets = (M.sockets || 0) + 1; if (this.hooks) M.trade = this; if (data) M.dataSocket = this;   // M.trade: the trading socket (a price-feed socket may open after it)
     }
     send(x) { if (this.readyState !== 1) throw new Error('closed'); this.relay.onClient(x); }
     close() { this.relay.onClientClose(); }

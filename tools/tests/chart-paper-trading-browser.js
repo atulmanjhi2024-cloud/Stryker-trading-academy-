@@ -570,8 +570,7 @@ async function boot(p, BASE) {
     const pxTxt = await p.evaluate(() => Object.fromEntries([...document.querySelectorAll('.stkpt-chip')].map((c) => [c.dataset.id, c.querySelector('.stkpt-chip-a').textContent])));
     const num = (t) => Number(t.replace(/^.*?(?:@ |TP |SL )/, '').replace(/,/g, ''));
     check(num(pxTxt.pos) === pos1.avg && num(pxTxt.ptp) === pos1.tp && num(pxTxt.psl) === pos1.sl, 'chips show the prices: ' + JSON.stringify(pxTxt));
-    const oneClick = await p.evaluate(() => { const o = document.querySelector('.stkpt-1c'); if (!o) return null; const r = o.getBoundingClientRect(); return { x: r.left, y: r.top, w: r.width, q: o.querySelector('input').value, t: o.textContent }; });
-    check(oneClick && oneClick.w > 100 && oneClick.x < 120 && /SELL/.test(oneClick.t) && /BUY/.test(oneClick.t), 'one-click SELL | qty | BUY top-left of the chart ' + JSON.stringify(oneClick));
+    check(await p.evaluate(() => !document.querySelector('.stkpt-1c')), 'the old one-click SELL | qty | BUY box is gone (Scalp card replaces it, tools/tests/tradepanel-browser.js)');
     await linesOnPricePane(p, 'NQ1! 1m');
 
     // ---- live P&L moves with the price ----
@@ -884,8 +883,8 @@ async function boot(p, BASE) {
     await ph.p.evaluate(() => { const l = window.__stkPaper.account.last['futures:NQ1!']; window.__stkPaper.placeOrder({ symbol: 'futures:NQ1!', side: 'buy', type: 'market', qty: 1, tp: l + 15, sl: l - 8 }); window.__stkPaper.placeOrder({ symbol: 'futures:NQ1!', side: 'buy', type: 'limit', qty: 1, price: l - 4 }); });
     await sleep(1200);
     await linesOnPricePane(ph.p, 'phone NQ1! 1m');
-    const tvs1c = await ph.p.evaluate(() => { const o = document.querySelector('.stkpt-1c').getBoundingClientRect(); return [...document.querySelectorAll('.stkpt-toast')].filter((t) => { const r = t.getBoundingClientRect(); return r.top < o.bottom && o.top < r.bottom && r.left < o.right && o.left < r.right; }).length; });
-    check(tvs1c === 0, 'phone: toasts do not cover the one-click buttons (' + tvs1c + ')');
+    const tvs1c = await ph.p.evaluate(() => { const e = document.querySelector('#stkop-sc'); if (!e || e.hidden) return 0; const o = e.getBoundingClientRect(); return [...document.querySelectorAll('.stkpt-toast')].filter((t) => { const r = t.getBoundingClientRect(); return r.top < o.bottom && o.top < r.bottom && r.left < o.right && o.left < r.right; }).length; });
+    check(tvs1c === 0, 'phone: toasts do not cover the Scalp card (' + tvs1c + ')');
     const overl = await ph.p.evaluate(() => {
       const cs = [...document.querySelectorAll('.stkpt-chip')].filter((c) => c.style.visibility !== 'hidden').map((c) => ({ id: c.dataset.id, r: c.getBoundingClientRect() }));
       const hits = [];

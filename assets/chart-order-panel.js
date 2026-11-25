@@ -54,7 +54,7 @@ import { openSource, SOURCES } from './book-panel-sources.js?v=1293';
 import { pairOf } from './book-panel-core.js?v=1293';
 import { futRoot } from './chart-sym.js?v=1293';   // one futures test for every symbol form (CME_MINI:MNQ1!, MNQZ6 ...)
 
-const PHONE_MAX = 700, W_MIN = 352, W_MAX = 640, DW_MIN = 280, DW_MAX = 480, DW_DEF = 340, DH_MIN = 220, DH_MAX = 560, DH_DEF = 300, H_MIN = 300, W_DEF = 360, H_DEF = 640, PRESETS = [10, 25, 50, 100], QUOTE_MAX_AGE = 15000;
+const PHONE_MAX = 700, W_MIN = 352, W_MAX = 640, DW_MIN = 280, DW_MAX = 480, DW_DEF = 340, DH_MIN = 220, DH_MAX = 560, DH_DEF = 300, H_MIN = 300, W_DEF = 360, H_DEF = 640, QUOTE_MAX_AGE = 15000, SW_MIN = 320, SW_MAX = 520, SW_DEF = 380;
 const DISCLAIMER = 'Education only. Not financial advice.';
 const EXCH = { YM: 'CBOT', MYM: 'CBOT', ZB: 'CBOT', ZN: 'CBOT', ZF: 'CBOT', ZT: 'CBOT', ZC: 'CBOT', ZS: 'CBOT', ZW: 'CBOT', CL: 'NYMEX', MCL: 'NYMEX', NG: 'NYMEX', GC: 'COMEX', MGC: 'COMEX', SI: 'COMEX', HG: 'COMEX' };
 const isLocal = /^(127\.0\.0\.1|localhost)$/.test(location.hostname);
@@ -71,30 +71,36 @@ const ICON = {
   open: svg('<rect x="4" y="5" width="16" height="14" rx="2"/><path d="M4 9h16"/>'),
   close: svg('<path d="M6 6l12 12M18 6L6 18"/>'),
   dock: svg('<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M15 4v16"/>'),
-  float: svg('<rect x="3" y="4" width="18" height="16" rx="2" stroke-dasharray="3 2.4"/><rect x="9" y="9" width="9" height="7" rx="1.5"/>')
+  float: svg('<rect x="3" y="4" width="18" height="16" rx="2" stroke-dasharray="3 2.4"/><rect x="9" y="9" width="9" height="7" rx="1.5"/>'),
+  chev: '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>',
+  info: '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7.5v.01"/></svg>'
 };
 export const TRADE_ICON = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 17 17 7M9 7h8v8"/></svg>';
 const money = (n, sign) => { if (n == null || !Number.isFinite(n)) return '—'; const s = Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); return (n < 0 ? '−' : sign && n > 0 ? '+' : '') + '$' + s; };
 const decOf = (tick) => { const s = String(tick); const i = s.indexOf('.'); return i < 0 ? 0 : Math.min(8, s.length - i - 1); };
 const roundTick = (p, t) => Math.round(p / t) * t;
 
+let scEl = null, scLatch = false, scSig = '';
 let P = null, el = null, bodyEl = null, footEl = null, infoEl = null, chipEl = null, meta = { sym: '', desc: '', prev: null }, dockRO = null, prefs = null, prefKey = '', viewSig = '', footSig = '', open = false, lastQty = '';
 const F = { side: 'buy', type: 'market', qty: '1', price: '', priceKey: '', trail: false,
-  sl: { on: false, price: '', ticks: '20', src: 'ticks' }, tp: { on: false, price: '', ticks: '40', src: 'ticks' },
+  sl: { on: false, price: '', ticks: '20', pct: '', src: 'ticks' }, tp: { on: false, price: '', ticks: '40', pct: '', src: 'ticks' },
   tp1: { on: false, price: '', ticks: '20', src: 'ticks', size: '1', unit: 'qty' }, be: { on: false, ticks: '0' },
   risk: { on: false, mode: 'usd', v: '' } };
 const MODES = ['float', 'left', 'dock', 'bottom'], MODE_NAME = { float: 'Float', left: 'Left', dock: 'Right', bottom: 'Bottom' };
 const AI = [['bal', 'Balance'], ['eq', 'Equity'], ['day', 'Today’s P&L'], ['up', 'Open P&L']];
+const STOPLIMIT_NO = 'Stop limit orders aren’t available from the chart yet.';
 const LIVE_TWO = 'TP1 and break-even are paper only for now. Live orders carry one stop loss and one take profit.';
 
 // ------------------------------------------------------------------------------------------------ prefs (per user)
 function loadPrefs() {
   const uid = (P && P.uid) || 'guest'; prefKey = 'stryker_op_' + uid;
   let p = {}; try { p = JSON.parse(localStorage.getItem(prefKey)) || {}; } catch (e) {}
-  prefs = { x: Number.isFinite(p.x) ? p.x : null, y: Number.isFinite(p.y) ? p.y : null, w: clamp(+p.w || W_DEF, W_MIN, W_MAX), h: Math.max(H_MIN, +p.h || H_DEF),
-    tab: ['scalp', 'dom', 'order'].includes(p.tab) ? p.tab : 'scalp', min: !!p.min, max: !!p.max, hk: p.hk === true, open: !!p.open,
+  prefs = { x: Number.isFinite(p.x) ? p.x : null, y: Number.isFinite(p.y) ? p.y : null, w: clamp(+p.w || W_DEF, W_MIN, W_MAX), h: +p.h > 0 ? Math.max(H_MIN, +p.h) : null,   // null = the chart's height (a full-height ticket on the right, Owner 25 Nov)
+
+    tab: p.v === 2 && ['scalp', 'dom', 'order'].includes(p.tab) ? p.tab : 'order', v: 2,
+    sx: Number.isFinite(p.sx) ? p.sx : null, sy: Number.isFinite(p.sy) ? p.sy : null, sw: clamp(+p.sw || SW_DEF, SW_MIN, SW_MAX), lu: ['price', 'dist', 'pct'].includes(p.lu) ? p.lu : 'dist', min: !!p.min, max: !!p.max, hk: p.hk === true, open: !!p.open,
     mode: MODES.includes(p.mode) ? p.mode : 'float', dw: clamp(+p.dw || DW_DEF, DW_MIN, DW_MAX), dh: clamp(+p.dh || DH_DEF, DH_MIN, DH_MAX),
-    adv: p.adv === true, ai: Array.isArray(p.ai) ? AI.map((a) => a[0]).filter((k) => p.ai.includes(k)) : [] };
+    adv: p.adv === true, sc: p.sc === true, scMin: p.scMin === true, ai: Array.isArray(p.ai) ? AI.map((a) => a[0]).filter((k) => p.ai.includes(k)) : [] };
 }
 function savePrefs() { try { localStorage.setItem(prefKey, JSON.stringify(prefs)); } catch (e) {} }
 
@@ -132,7 +138,7 @@ const fmtIn = (c, p) => (Number.isFinite(p) ? p.toFixed(c.dec) : '');
 // ------------------------------------------------------------------------------------------------ best bid / ask
 let qs = null;   // { key, kind:'f'|'c', root, h|stop, book }
 function quoteKey(c) {
-  if (!open || isTestQuote()) return '';
+  if ((!open && !scVis()) || isTestQuote()) return '';
   if (c.fut) { const r = l2Root(futRoot(c.sym) || c.tk); return r ? 'f|' + r : ''; }
   if (c.sp.ok && c.sp.kind === 'crypto') return 'c|' + c.prov + '|' + c.tk;
   return '';
@@ -202,16 +208,18 @@ function entryRef(c, qt) {
 function legSync(c, ref, k) {
   const g = F[k], dir = (F.side === 'buy' ? 1 : -1) * (k === 'tp' || k === 'tp1' ? 1 : -1);
   if (!(ref > 0)) return null;
-  if (g.src === 'price') { const p = num(g.price); if (!(p > 0)) return null; const t = Math.round(Math.abs(p - ref) / c.tick); g.ticks = String(t); return roundTick(p, c.tick); }
+  if (g.src === 'price') { const p = num(g.price); if (!(p > 0)) return null; const t = Math.round(Math.abs(p - ref) / c.tick); g.ticks = String(t); g.pct = pctOf(ref, p); return roundTick(p, c.tick); }
+  if (g.src === 'pct') { const v = Math.abs(num(g.pct)); if (!(v > 0)) return null; const p = roundTick(ref * (1 + dir * v / 100), c.tick); g.price = fmtIn(c, p); g.ticks = String(Math.round(Math.abs(p - ref) / c.tick)); return p; }
   const t = Math.abs(Math.round(num(g.ticks))); if (!(t > 0)) return null;
-  const p = roundTick(ref + dir * t * c.tick, c.tick); g.price = fmtIn(c, p); return p;
+  const p = roundTick(ref + dir * t * c.tick, c.tick); g.price = fmtIn(c, p); g.pct = pctOf(ref, p); return p;
 }
+const pctOf = (ref, p) => String(Math.round(Math.abs(p - ref) / ref * 10000) / 100);
 function caps(c) {
-  if (!c.live) return { stop: true, bracket: true, trail: F.type === 'market', two: !!prefs.adv, why: '' };
+  if (!c.live) return { stop: true, stoplimit: false, slWhy: STOPLIMIT_NO, bracket: true, trail: F.type === 'market', two: !!prefs.adv, why: '' };
   const k = c.lv.caps();
   // live stop loss / take profit: market entries only (the server places them after the fill); never TP1 / break-even (one group)
   const mo = !!k.bracket && F.type !== 'market';
-  return { stop: !!k.stop, limit: k.limit !== false, mt: !!k.mt, bracket: !!k.bracket && !mo, trail: false, two: false, why: mo ? k.marketOnly : k.why, adv: !!prefs.adv };
+  return { stop: !!k.stop, stoplimit: false, slWhy: STOPLIMIT_NO, limit: k.limit !== false, mt: !!k.mt, bracket: !!k.bracket && !mo, trail: false, two: false, why: mo ? k.marketOnly : k.why, adv: !!prefs.adv };
 }
 // risk-based size -> { qty, risk, over, capped, amt } | { error } | null (off / not applicable)
 function riskSize(c, k, ref, sl) {
@@ -259,13 +267,14 @@ function scalp(side) {
 }
 function join(side) {
   const c = ctx(), why = blockOf(c); if (why) { P.toast(why, 'error'); return; }
-  const qt = quote(c); if (!qt) { P.toast(noQuoteWhy(c), 'info'); return; }
+  const qt = quote(c) || brokerQuote(c); if (!qt) { P.toast(noQuoteWhy(c), 'info'); return; }   // book touch, else the broker's own bid / ask
   send(c, { side, type: 'limit', price: side === 'buy' ? qt.bid : qt.ask }, side === 'buy' ? 'Join Bid' : 'Join Ask');
 }
 function confirmOrder() {
   const c = ctx(), why = blockOf(c); if (why) { P.toast(why, 'error'); return; }
   const k = caps(c), qt = quote(c);
   if ((F.type === 'stop' && !k.stop) || (F.type === 'limit' && k.limit === false)) { P.toast(k.why, 'error'); return; }
+  if (F.type === 'stoplimit') { P.toast(STOPLIMIT_NO, 'error'); return; }
   let price;
   if (F.type !== 'market') { price = roundTick(num(F.price), c.tick); if (!(price > 0)) { P.toast('Enter the ' + F.type + ' price.', 'error'); return; } F.price = fmtIn(c, price); }
   const ref = entryRef(c, qt);
@@ -303,18 +312,22 @@ function build() {
   el.innerHTML =
     '<div class="stkop-grab" aria-hidden="true"></div>' +
     '<div class="stkop-hd">' +
-      '<div class="stkop-tabs" role="tablist" aria-label="Order panel view"><button type="button" role="tab" data-tab="scalp">Scalp</button><button type="button" role="tab" data-tab="dom">DOM</button><button type="button" role="tab" data-tab="order">Order</button></div>' +
+      '<button type="button" class="stkop-acct" data-a="change" data-k="acct" aria-label="Trading account. Switch it in the Trade menu"></button>' +
+      '<div class="stkop-hbtns">' +
+        '<button type="button" class="stkop-sctg" data-a="sc" aria-pressed="false" title="Scalp card on the chart">Scalp</button>' +
+        '<button type="button" class="stkop-ib" data-a="min"></button><button type="button" class="stkop-ib" data-a="close" aria-label="Close the order panel" title="Close">' + ICON.close + '</button></div>' +
+    '</div>' +
+    '<div class="stkop-hd2">' +
+      '<div class="stkop-tabs" role="tablist" aria-label="Order panel view"><button type="button" role="tab" data-tab="order">Order</button><button type="button" role="tab" data-tab="dom">DOM</button></div>' +
       '<div class="stkop-hbtns">' +
         '<button type="button" class="stkop-ib stkop-mode" data-a="dock" aria-label="Dock the panel to the right of the chart" title="Dock right">' + ICON.dock + '</button>' +
         '<button type="button" class="stkop-ib stkop-mode" data-a="float" aria-label="Float the panel over the chart" title="Float">' + ICON.float + '</button>' +
-        '<button type="button" class="stkop-ib" data-a="max"></button><button type="button" class="stkop-ib" data-a="min"></button><button type="button" class="stkop-ib" data-a="close" aria-label="Close the order panel" title="Close">' + ICON.close + '</button></div>' +
+        '<button type="button" class="stkop-ib" data-a="max"></button></div>' +
     '</div>' +
     '<div class="stkop-info">' +
-      '<div class="stkop-il"><p class="stkop-sym" id="stkop-sym"><b data-k="root"></b><span class="stkop-nm" data-k="name"></span></p><span class="stkop-code" data-k="code"></span>' +
+      '<div class="stkop-il"><p class="stkop-sym" id="stkop-sym"><b data-k="root"></b><span class="stkop-code" data-k="code"></span></p>' +
         '<span class="stkop-inst" role="radiogroup" aria-label="Trade instrument (mini or micro)" data-k="inst" hidden></span><label class="stkop-mtsym" data-k="mtsym" hidden></label></div>' +
-      '<div class="stkop-il"><span class="stkop-last" data-k="last">—</span><span class="stkop-chg" data-k="chg"></span><span class="stkop-sp"></span>' +
-        '<span class="stkop-ba"><span>Bid <b class="bid" data-k="bid">—</b></span><span>Ask <b class="ask" data-k="ask">—</b></span></span></div>' +
-      '<div class="stkop-il stkop-sprl" data-k="sprw" hidden><span class="stkop-ba"><span>Spread <b data-k="spr">—</b></span></span><span class="stkop-wide" data-k="wide" role="status" hidden>Spread is wider than usual</span></div>' +
+      '<p class="stkop-nm" data-k="name"></p>' +
     '</div>' +
     '<div class="stkop-alert" data-k="alert" role="status" hidden><p class="stkop-alt" data-k="alt"></p><button type="button" class="stkop-b" data-a="retry" hidden>Retry</button><button type="button" class="stkop-b" data-a="enable" hidden>Enable live trading</button></div>' +
     '<div class="stkop-body"></div><div class="stkop-ft"></div>' +
@@ -328,7 +341,7 @@ function build() {
   el.addEventListener('focusout', onBlur);
   el.addEventListener('submit', (e) => { e.preventDefault(); confirmOrder(); });
   bindDrag(); bindResize(); bindDockResize();
-  window.addEventListener('resize', () => { if (open) { layout(); update(); } }, { passive: true });
+  window.addEventListener('resize', () => { if (open) { layout(); update(); } if (scVis()) { scSig = ''; update(); } }, { passive: true });
   window.addEventListener('keydown', onHotkey, true);
   window.addEventListener('stkbp:unembedded', () => { if (open && prefs.tab === 'dom') { viewSig = ''; update(); } });
 }
@@ -336,6 +349,8 @@ function onClick(e) {
   const t = e.target.closest('button, [data-pre]'); if (!t || t.disabled) return;
   const c = () => ctx();
   if (t.dataset.tab) { setTab(t.dataset.tab); return; }
+  if (t.dataset.chip) { F.qty = t.dataset.chip; F.risk.on = false; update(); return; }
+  if (t.dataset.lu) { prefs.lu = t.dataset.lu; savePrefs(); update(); return; }
   if (t.dataset.inst) { const x = c(); if (P.setTradeSym && x.fam) { P.setTradeSym(x.chartSym, 'futures:' + t.dataset.inst + '1!'); F.priceKey = ''; viewSig = ''; update(); } return; }
   if (t.dataset.unit) { F.tp1.unit = t.dataset.unit; update(); return; }
   if (t.dataset.rmode) { F.risk.mode = t.dataset.rmode; update(); return; }
@@ -343,6 +358,9 @@ function onClick(e) {
   if (t.dataset.ai) { const k = t.dataset.ai, on = !prefs.ai.includes(k); prefs.ai = AI.map((a) => a[0]).filter((x) => (x === k ? on : prefs.ai.includes(x))); savePrefs(); footSig = ''; update(); return; }
   const a = t.dataset.a;
   if (a === 'close') { close(); return; }
+  if (a === 'sc') { setScalp(!prefs.sc); return; }
+  if (a === 'scx') { openPanel({ tab: 'order' }); return; }
+  if (a === 'scmin') { prefs.scMin = !prefs.scMin; savePrefs(); scSig = ''; update(); return; }
   if (a === 'min') { prefs.min = !prefs.min; savePrefs(); viewSig = ''; layout(); update(); return; }
   if (a === 'max') { prefs.max = !prefs.max; prefs.min = false; savePrefs(); viewSig = ''; layout(); update(); return; }
   if (a === 'dock' || a === 'float') { setMode(a); return; }
@@ -385,6 +403,7 @@ function onInput(e) {
   else if (f === 'risk.v') F.risk.v = v;
   else { const [leg, k] = f.split('.'); if (!(leg === 'sl' || leg === 'tp' || leg === 'tp1') || !k) return;   // the embedded DOM ladder's own fields
     if (k === 'on') F[leg].on = v; else { F[leg][k] = v; F[leg].src = k; } }
+  if (f === 'qty') F.risk.on = F.risk.on && !!prefs.adv;
   update();
 }
 function onBlur(e) {
@@ -396,7 +415,7 @@ function onBlur(e) {
   update();
 }
 function onHotkey(e) {
-  if (!open || !prefs.hk || prefs.min || e.ctrlKey || e.metaKey || e.altKey || e.repeat) return;
+  if (!(open || scVis()) || !prefs.hk || (open && prefs.min && !scVis()) || e.ctrlKey || e.metaKey || e.altKey || e.repeat) return;
   const k = String(e.key || '').toLowerCase(); if (k !== 'b' && k !== 's') return;
   const t = e.target; if (t && (t.isContentEditable || /^(input|textarea|select)$/i.test(t.tagName) || (t.closest && t.closest('[role=dialog]:not(#stkop), .vela-dialog, #stklv-cf')))) return;
   if (document.getElementById('stklv-cf')) return;
@@ -406,7 +425,7 @@ function onHotkey(e) {
 
 // ------------------------------------------------------------------------------------------------ drag / resize / layout
 function chartRect() { const n = document.querySelector('.stkchart-panel'); const r = n ? n.getBoundingClientRect() : null; return r && r.width > 0 ? r : { left: 0, top: 56, right: innerWidth, bottom: innerHeight, width: innerWidth, height: innerHeight - 56 }; }
-function bindDrag() { bindDragOn(el.querySelector('.stkop-hd')); bindDragOn(el.querySelector('.stkop-info')); }
+function bindDrag() { bindDragOn(el.querySelector('.stkop-hd')); bindDragOn(el.querySelector('.stkop-hd2')); bindDragOn(el.querySelector('.stkop-info')); }
 function bindDragOn(hd) {
   hd.addEventListener('pointerdown', (e) => {
     if (isPhone() || prefs.max || docked() || e.button !== 0 || e.target.closest('button, select, input, a')) return;
@@ -423,7 +442,7 @@ function bindResize() {
     if (isPhone() || prefs.max || docked()) return;
     e.preventDefault(); e.stopPropagation(); const r = el.getBoundingClientRect(), x0 = e.clientX, y0 = e.clientY;
     g.setPointerCapture(e.pointerId); el.classList.add('sizing');
-    const mv = (ev) => { prefs.w = clamp(Math.round(r.width + ev.clientX - x0), W_MIN, W_MAX); if (prefs.tab !== 'scalp') prefs.h = Math.max(H_MIN, Math.round(r.height + ev.clientY - y0)); layout(); };
+    const mv = (ev) => { prefs.w = clamp(Math.round(r.width + ev.clientX - x0), W_MIN, W_MAX); prefs.h = Math.max(H_MIN, Math.round(r.height + ev.clientY - y0)); layout(); };
     const up = () => { g.removeEventListener('pointermove', mv); g.removeEventListener('pointerup', up); el.classList.remove('sizing'); savePrefs(); update(); };
     g.addEventListener('pointermove', mv); g.addEventListener('pointerup', up);
   });
@@ -487,9 +506,9 @@ function layout() {
   if (ph) { for (const k of ['left', 'top', 'width', 'height']) el.style[k] = ''; return; }
   if (dk) { place(); return; }
   const R = chartRect(), vw = innerWidth, vh = innerHeight;
-  let w = prefs.w, h = tab === 'scalp' || prefs.min ? null : prefs.h, x = prefs.x, y = prefs.y;
+  let w = prefs.w, h = prefs.min ? null : prefs.h || Math.max(H_MIN, Math.min(H_DEF + 160, Math.round(Math.min(R.bottom, vh) - Math.max(R.top, 0) - 40))), x = prefs.x, y = prefs.y;
   if (prefs.max) { w = Math.min(W_MAX, Math.max(W_MIN, Math.round(R.width * 0.4))); h = Math.max(H_MIN, Math.round(Math.min(R.bottom, vh) - Math.max(R.top, 0) - 16)); x = Math.round(R.right - w - 8); y = Math.round(Math.max(R.top, 0) + 8); }
-  if (x == null || y == null) { x = Math.round(R.right - w - 72); y = Math.round(R.top + 48); }
+  if (x == null || y == null) { x = Math.round(R.right - w - 72); y = Math.round(Math.max(R.top, 0) + 12); }
   w = Math.min(w, vw - 16);
   if (h != null) h = Math.min(h, vh - 16);
   el.style.width = w + 'px'; el.style.height = h == null ? '' : h + 'px';
@@ -498,8 +517,9 @@ function layout() {
   el.style.left = x + 'px'; el.style.top = y + 'px';
   if (!prefs.max && prefs.x != null) { prefs.x = x; prefs.y = y; }
 }
-const shownTab = () => (isPhone() && prefs.tab === 'dom' ? 'scalp' : prefs.tab);
+const shownTab = () => (prefs.tab === 'scalp' || (isPhone() && prefs.tab === 'dom') ? 'order' : prefs.tab);
 function setTab(t) {
+  if (t === 'scalp') { setScalp(true); return; }   // Scalp = the card on the chart (Owner 25 Nov)
   if (t === prefs.tab && !prefs.min) return;
   prefs.tab = t; prefs.min = false; savePrefs(); viewSig = ''; layout(); update(); layout();
 }
@@ -507,18 +527,19 @@ function setTab(t) {
 // ------------------------------------------------------------------------------------------------ views
 const pillBtn = (cls, a, text) => '<button type="button" class="stkop-pill ' + cls + '" data-a="' + a + '"><span>' + text + '</span><small data-k="' + a + 'px" hidden></small></button>';
 const stepper = (unit) => '<div class="stkop-qty" role="group" aria-label="Quantity"><button type="button" data-q="-1" aria-label="One less">−</button><label><input data-f="qty" type="text" inputmode="decimal" autocomplete="off" aria-label="Quantity"><span class="stkop-unit">' + esc(unit) + '</span></label><button type="button" data-q="1" aria-label="One more">+</button></div>';
+// SCALP card body (Owner 25 Nov: a compact card on the chart): Buy · stepper · Sell, then Join Bid / Join Ask (limits at the touch)
 function viewScalp(c) {
   return '<div class="stkop-scalp">' +
     '<div class="stkop-trio">' + pillBtn('buy', 'buy', 'Buy') + stepper(c.fut || c.live ? 'lots' : 'qty') + pillBtn('sell', 'sell', 'Sell') + '</div>' +
     '<div class="stkop-joins"><button type="button" class="stkop-join bid" data-a="jbid"><span>Join Bid</span><b data-k="bid">—</b></button><button type="button" class="stkop-join ask" data-a="jask"><span>Join Ask</span><b data-k="ask">—</b></button></div>' +
-    '<div class="stkop-srow"><p class="stkop-status" role="status" data-k="status"></p><label class="stkop-hk" title="B = Buy, S = Sell at market with this quantity, while this panel is open"><input type="checkbox" data-f="hk"> B / S keys</label></div>' +
+    '<div class="stkop-srow"><p class="stkop-status" role="status" data-k="status"></p><label class="stkop-hk" title="B = Buy, S = Sell at market with this quantity, while the panel or this card is open"><input type="checkbox" data-f="hk"> B / S keys</label></div>' +
   '</div>';
 }
+// stop loss / take profit level: one field in the unit picked (Price · Ticks/Pips · %), the money at that level on the right
 function leg(k, title, trail) {
-  return '<fieldset class="stkop-br" data-leg="' + k + '"><legend class="stkop-vh">' + title + '</legend>' +
-    '<div class="stkop-brh"><label class="stkop-chk"><input type="checkbox" data-f="' + k + '.on"> ' + title + '</label>' + (trail ? '<label class="stkop-chk stkop-trail"><input type="checkbox" data-f="trail"> Trail</label>' : '') + '</div>' +
-    '<div class="stkop-pair"><label><input data-f="' + k + '.price" type="text" inputmode="decimal" autocomplete="off" placeholder="0.00" aria-label="' + title + ' price"><span>Price</span></label><label><input data-f="' + k + '.ticks" type="text" inputmode="numeric" autocomplete="off" aria-label="' + title + ' in ticks"><span>Ticks</span></label></div>' +
-    '<div class="stkop-pre" role="group" aria-label="' + title + ' presets">' + PRESETS.map((n) => '<button type="button" data-pre="' + n + '" data-leg="' + k + '" aria-label="' + title + ' ' + n + ' ticks">' + n + '</button>').join('') + '</div>' +
+  return '<fieldset class="stkop-br" data-leg="' + k + '" hidden><legend class="stkop-vh">' + title + '</legend>' +
+    '<label class="stkop-field"><span class="stkop-fl" data-k="' + k + 'lbl">' + title + '</span><input class="stkop-fi" data-f="' + k + '.ticks" data-leg-in="' + k + '" type="text" inputmode="decimal" autocomplete="off" aria-label="' + title + '"><span class="stkop-fu" data-k="' + k + 'unit"></span></label>' +
+    '<div class="stkop-lrow"><span class="stkop-proj" data-k="' + k + 'proj"></span>' + (trail ? '<label class="stkop-chk stkop-trail"><input type="checkbox" data-f="trail"> Trail</label>' : '') + '</div>' +
   '</fieldset>';
 }
 // TP1: close part at the first target (contracts or %), then optionally move the stop to break-even (+ offset ticks)
@@ -550,18 +571,28 @@ function viewLayout() {
   '</fieldset>';
 }
 function viewOrder(c) {
+  const row = (k, t, hid) => '<div data-r="' + k + '"' + (hid ? ' hidden' : '') + '><dt>' + t + '</dt><dd data-k="' + k + '">—</dd></div>';
   return '<form class="stkop-order" novalidate><div class="stkop-oscroll">' +
-    '<div class="stkop-sides" role="radiogroup" aria-label="Side"><button type="button" role="radio" class="stkop-side buy" data-side="buy"><b>Buy</b><span><i data-k="buyl">BID</i> <em data-k="buyp">—</em></span></button><button type="button" role="radio" class="stkop-side sell" data-side="sell"><b>Sell</b><span><i data-k="selll">ASK</i> <em data-k="sellp">—</em></span></button></div>' +
-    '<div class="stkop-otype"><span class="stkop-lbl">Order type</span><div class="stkop-seg" role="radiogroup" aria-label="Order type"><button type="button" role="radio" data-type="market">Market</button><button type="button" role="radio" data-type="limit">Limit</button><button type="button" role="radio" data-type="stop">Stop</button></div></div>' +
-    '<div class="stkop-sec">' +
-      '<div class="stkop-f"><span class="stkop-lbl" data-k="plabel">Market price</span><b class="stkop-mkt" data-k="mkt">—</b><input class="stkop-in" data-f="price" type="text" inputmode="decimal" autocomplete="off" aria-label="Order price"></div>' +
-      '<div class="stkop-f"><span class="stkop-lbl">Quantity</span>' + stepper(c.fut || c.live ? 'lots' : 'qty') + '</div>' +
+    '<div class="stkop-tiles" role="radiogroup" aria-label="Side">' +
+      '<button type="button" role="radio" class="stkop-tile sell" data-side="sell"><span class="stkop-tl">Sell</span><b class="stkop-tpx" data-k="sellp">—</b></button>' +
+      '<span class="stkop-sprc" data-k="spr" title="Spread" hidden>—</span>' +
+      '<button type="button" role="radio" class="stkop-tile buy" data-side="buy"><span class="stkop-tl">Buy</span><b class="stkop-tpx" data-k="buyp">—</b></button>' +
     '</div>' +
-    '<div class="stkop-sec dash"><div class="stkop-brh stkop-adv"><label class="stkop-chk"><input type="checkbox" data-f="adv"> Advanced</label><span class="stkop-hint">TP1 + TP2, risk size, layout</span></div>' +
-      leg('sl', 'Stop loss', true) + legTp1() + leg('tp', 'Take profit', false) + '<p class="stkop-why" data-k="why" hidden></p>' + viewRisk() + viewLayout() + '</div>' +
+    '<p class="stkop-wide" data-k="wide" role="status" hidden>Spread is wider than usual</p>' +
+    '<div class="stkop-otabs" role="radiogroup" aria-label="Order type"><button type="button" role="radio" data-type="market">Market</button><button type="button" role="radio" data-type="limit">Limit</button><button type="button" role="radio" data-type="stop">Stop</button><button type="button" role="radio" data-type="stoplimit">Stop limit</button></div>' +
+    '<label class="stkop-field" data-k="pfield"><span class="stkop-fl" data-k="plabel">Limit price</span><input class="stkop-fi" data-f="price" type="text" inputmode="decimal" autocomplete="off" aria-label="Order price"></label>' +
+    '<div class="stkop-sz"><label class="stkop-field"><span class="stkop-fl" data-k="qlabel">Size</span><input class="stkop-fi" data-f="qty" type="text" inputmode="decimal" autocomplete="off" aria-label="Size"></label>' +
+      '<div class="stkop-chips" role="group" aria-label="Quick sizes" data-k="chips"></div>' +
+      '<p class="stkop-help" data-k="lothelp" hidden></p></div>' +
+    '<div class="stkop-legs"><label class="stkop-chk"><input type="checkbox" data-f="sl.on"> <span>Stop loss</span></label><label class="stkop-chk"><input type="checkbox" data-f="tp.on"> <span>Take profit</span></label></div>' +
+    '<div class="stkop-luw"><div class="stkop-seg stkop-lu" role="radiogroup" aria-label="Stop loss and take profit unit"><button type="button" role="radio" data-lu="price">Price</button><button type="button" role="radio" data-lu="dist" data-k="lud">Ticks</button><button type="button" role="radio" data-lu="pct">%</button></div></div>' +
+    leg('sl', 'Stop loss', true) + leg('tp', 'Take profit', false) + '<p class="stkop-why" data-k="why" hidden></p>' +
+    '<dl class="stkop-rows">' + row('oval', 'Order value') + row('omar', 'Margin required', true) + row('ospc', 'Spread cost', true) + '</dl>' +
     '<p class="stkop-sum" data-k="sum"></p>' +
+    '<div class="stkop-sec dash"><div class="stkop-brh stkop-adv"><label class="stkop-chk"><input type="checkbox" data-f="adv"> Advanced</label><span class="stkop-hint">TP1 + TP2, risk size, layout</span></div>' +
+      legTp1() + viewRisk() + viewLayout() + '</div>' +
   '</div>' +
-  '<div class="stkop-go"><p class="stkop-status" role="status" data-k="status"></p><button type="submit" class="stkop-pill stkop-confirm buy" data-k="confirm">Confirm</button><button type="button" class="stkop-pill ghost" data-a="cancel">Cancel</button></div>' +
+  '<div class="stkop-go"><p class="stkop-status" role="status" data-k="status"></p><button type="submit" class="stkop-pill stkop-confirm buy" data-k="confirm">Buy</button></div>' +
   '</form>';
 }
 function viewDom() { return '<div class="stkop-dom"><p class="stkop-empty" data-k="domnote" hidden></p></div>'; }
@@ -569,8 +600,10 @@ function viewOff(c) {
   return '<div class="stkop-off"><p>' + (c.live ? '' : 'Paper trading is off. Turn it on to place simulated orders with demo money.') + '</p><button type="button" class="stkop-pill ghost" data-a="paperon">Turn on paper trading</button></div>';
 }
 
-function setText(sel, t) { const n = el.querySelector('[data-k=' + sel + ']'); if (n && n.textContent !== t) n.textContent = t; return n; }
-function setVal(f, v) { for (const n of el.querySelectorAll('[data-f="' + f + '"]')) if (document.activeElement !== n && n.value !== v) n.value = v; }
+// panel + scalp card: one form state, two views
+function all(sel) { const a = [...el.querySelectorAll(sel)]; return scEl ? a.concat([...scEl.querySelectorAll(sel)]) : a; }
+function setText(sel, t) { let first = null; for (const n of all('[data-k=' + sel + ']')) { if (n.textContent !== t) n.textContent = t; first = first || n; } return first; }
+function setVal(f, v) { for (const n of all('[data-f="' + f + '"]')) if (document.activeElement !== n && n.value !== v) n.value = v; }
 
 // row 2 of the header: root + full name, contract, last + change vs the previous daily close, best bid / ask (filled in update())
 function wantMeta(c) {
@@ -582,10 +615,11 @@ function wantMeta(c) {
 const cleanDesc = (d) => String(d || '').replace(/\s+futures?$/i, '').replace(/\s*\(\$\d+\)$/, '').trim();
 function renderInfo(c) {
   wantMeta(c);
-  const root = c.fut ? c.rootName : c.tk || '—';
+  const root = c.mt && c.li && c.li.code ? c.li.code : c.fut ? c.rootName : String(c.tk || '—').replace(/^CT:/, '');   // "NAS100", never the feed key "CT:NAS100"
   const name = cleanDesc(meta.desc) || (c.fut ? '' : c.code);
   setText('root', root);
   const nm = setText('name', name); if (nm) nm.hidden = !name;
+  for (const n of all('[data-k=scsym]')) { const t = c.mt && c.li && c.li.code ? c.li.code : root; if (n.textContent !== t) n.textContent = t; }
   const code = c.mt ? '' : c.fut ? c.code || '' : '';   // MetaTrader: the symbol picker shows it
   const ce = setText('code', code); if (ce) ce.hidden = !code;
   const ie = el.querySelector('[data-k=inst]'), mp = el.querySelector('[data-k=mtsym]');
@@ -606,46 +640,44 @@ function renderInfo(c) {
       ie.innerHTML = f ? [f.mini, f.micro].map((r) => '<button type="button" role="radio" data-inst="' + r + '" aria-checked="' + (r === c.rootName) + '" class="' + (r === c.rootName ? 'on' : '') + '" title="' + (r === c.chartRootName ? 'Trade ' + r + ' (the chart symbol)' : 'Trade ' + r + ' on this ' + c.chartRootName + ' chart (same prices)') + '">' + r + '</button>').join('') : '';
     }
   }
-  setText('last', fmt(c, c.last));
-  const ch = el.querySelector('[data-k=chg]');
-  if (ch) {
-    const d = c.last != null && meta.prev ? c.last - meta.prev : null;
-    const t = d == null ? '' : (d > 0 ? '+' : d < 0 ? '−' : '') + fmt(c, Math.abs(d)) + ' (' + (d > 0 ? '+' : d < 0 ? '−' : '') + Math.abs(d / meta.prev * 100).toFixed(2) + '%)';
-    if (ch.textContent !== t) ch.textContent = t;
-    ch.className = 'stkop-chg' + (d > 0 ? ' up' : d < 0 ? ' down' : '');
-    ch.title = d == null ? '' : 'Change since the previous daily close';
-  }
 }
 // the account comes from the Trade menu (top bar); the panel only shows it. Members: "Paper · DEMO", never a broker name.
 function acctLabel(c) {
-  if (!c.live) return { t: 'Paper · DEMO', live: false };
+  if (!c.live) return { name: 'Paper', env: 'Demo', num: '', live: false, t: 'Paper · DEMO', full: 'Paper trading · demo money' };
   const L2 = window.__stkLive && window.__stkLive.state, a = L2 && L2.acct;
-  const env = c.li && c.li.env ? c.li.env : 'LIVE';
-  // the Owner's label, else the broker's account NAME (19 Nov); the full "Tradovate NAME" rides in the title (the badge ellipsizes)
-  return { t: env + (a ? ' · ' + (a.short || a.broker || 'Broker') : ''), full: a ? env + ' · ' + (a.label || a.broker) : '', live: true };
+  const env = c.li && c.li.env ? c.li.env : 'LIVE', demo = !!(a && a.demo) || env === 'SANDBOX';
+  const n = a ? String(a.number || a.last4 || '').replace(/\s+/g, '') : '';
+  // the Owner's label, else the broker's account NAME (19 Nov); the full "Tradovate NAME" rides in the title
+  return { name: a ? (a.short && a.short !== n ? a.short : a.broker || 'Broker') : 'Broker', env: demo ? 'Demo' : 'Live', num: n ? '…' + n.slice(-3) : '', live: true,
+    t: env + (a ? ' · ' + (a.short || a.broker || 'Broker') : ''), full: a ? env + ' · ' + (a.label || a.broker) : '' };
+}
+function renderAcct(c) {
+  const b = el.querySelector('[data-k=acct]'), al = acctLabel(c), sig = JSON.stringify(al) + !!P.openTradeMenu;
+  if (b.dataset.sig === sig) return; b.dataset.sig = sig;
+  b.className = 'stkop-acct' + (al.live ? ' live' : '');
+  b.title = (al.full ? al.full + '. ' : '') + (P.openTradeMenu ? 'Switch the account in the Trade menu' : '');
+  b.disabled = !P.openTradeMenu;
+  b.innerHTML = '<span class="stkop-vh">Trading account: </span><span class="stkop-an">' + esc(al.name) + '</span><span class="stkop-env' + (al.env === 'Live' ? ' live' : '') + '">' + al.env + '</span>' +
+    (al.num ? '<span class="stkop-anum">' + esc(al.num) + '</span>' : '') + (P.openTradeMenu ? ICON.chev : '') + '<span class="stkop-vh"> ' + esc(al.t) + '</span>';
 }
 function renderFoot(c) {
-  const al = acctLabel(c);
   const ai = prefs.adv ? prefs.ai : [];
-  const sig = JSON.stringify([al.t, al.full, c.live, c.li && c.li.killed, c.li && c.li.admin, !!P.openTradeMenu, ai]);
+  const sig = JSON.stringify([c.live, c.li && c.li.killed, c.li && c.li.admin, ai]);
   if (footSig === sig) return; footSig = sig;
   footEl.innerHTML =
+    '<dl class="stkop-acr"><div><dt>Balance</dt><dd data-k="abal">—</dd></div><div><dt>Equity</dt><dd data-k="aeq">—</dd></div><div data-r="afm" hidden><dt>Free margin</dt><dd data-k="afm">—</dd></div></dl>' +
     '<div class="stkop-fr">' +
-      '<span class="stkop-acct' + (al.live ? ' live' : '') + '" data-k="acct" title="' + esc((al.full ? al.full + '. ' : '') + 'Trading account (pick it in the Trade menu)') + '"><span class="stkop-vh">Trading account: </span>' + esc(al.t) + '</span>' +
-      (P.openTradeMenu ? '<button type="button" class="stkop-link" data-a="change" aria-label="Change the trading account in the Trade menu">Change</button>' : '') +
-      '<span class="stkop-sp"></span><button type="button" class="stkop-b warn" data-a="flat">Flatten</button>' +
-    '</div>' +
-    '<div class="stkop-fr">' +
-      '<span class="stkop-pos" data-k="pos">Flat</span><span class="stkop-pnl" data-k="pnl"></span><span class="stkop-wk" data-k="wk"></span><span class="stkop-sp"></span>' +
-      (c.live && c.li && c.li.admin ? (c.li.killed ? '<button type="button" class="stkop-b" data-a="killon">Switch live trading on</button>' : '<button type="button" class="stkop-b warn" data-a="kill">Turn off live trading</button>') : '') +
+      '<span class="stkop-pos" data-k="pos">Flat</span><span class="stkop-pnl" data-k="pnl"></span><span class="stkop-wk" data-k="wk"></span><span class="stkop-sp"></span><button type="button" class="stkop-b warn" data-a="flat">Flatten</button>' +
+      (c.live && c.li && c.li.admin ? (c.li.killed ? '<button type="button" class="stkop-b" data-a="killon" title="Switch live trading on">Live on</button>' : '<button type="button" class="stkop-b warn" data-a="kill" title="Turn off live trading (kill switch)">Live off</button>') : '') +
     '</div>' +
     (ai.length ? '<dl class="stkop-ai" data-n="' + ai.length + '">' + AI.filter((a) => ai.includes(a[0])).map((a) => '<div><dt>' + esc(a[1]) + '</dt><dd data-ai-v="' + a[0] + '">—</dd></div>').join('') + '</dl>' : '') +
     '<p class="stkop-fine" data-k="fine"></p>';
 }
 // footer account numbers (Advanced → Show): paper = the demo account, admins live = the broker summary (numbers only, no names)
 function renderAi() {
-  const n = footEl.querySelectorAll('[data-ai-v]'); if (!n.length) return;
   const d = P.acctSummary ? P.acctSummary() : null;
+  setText('abal', money(d ? d.bal : null)); setText('aeq', money(d ? d.eq : null));   // free margin: only with a broker margin figure (none yet), never guessed
+  const n = footEl.querySelectorAll('[data-ai-v]'); if (!n.length) return;
   for (const e of n) {
     const v = d ? d[e.dataset.aiV] : null, t = money(v, e.dataset.aiV === 'day' || e.dataset.aiV === 'up');
     if (e.textContent !== t) e.textContent = t;
@@ -653,23 +685,58 @@ function renderAi() {
   }
 }
 
+// price text with the last digit small (Owner 25 Nov, like the reference): "25,337.4" + "7"
+const bigPx = (t) => (t === '—' || t.length < 2 ? esc(t) : esc(t.slice(0, -1)) + '<sup>' + esc(t.slice(-1)) + '</sup>');
+function putHtml(k, t) { for (const n of all('[data-k=' + k + ']')) if (n.dataset.t !== t) { n.dataset.t = t; n.innerHTML = bigPx(t); } }
+// lot helper: "0.01 lots = 0.1 NAS100" from the broker's lot size (cTrader symbol details), else nothing
+function lotHelp(c, qty) {
+  if (!c.mt || !c.li || !c.li.code) return '';
+  const L2 = window.__stkLive, u = L2 && L2.lotUnits ? L2.lotUnits(c.li.code, qty) : null;
+  return u > 0 ? fmtQ(qty) + ' lots = ' + (+u.toPrecision(6)).toLocaleString('en-US') + ' ' + c.li.code : '';
+}
+const fmtQ = (q) => (Number.isInteger(q) ? String(q) : String(+q.toFixed(6)));
+function chipSet(c) {   // quick sizes: lots for MetaTrader-style accounts, else contracts / units from the step
+  const r = qtyRules(c);
+  if (r.lots) return [0.01, 0.1, 0.5, 1].map((v) => L.roundLots(v, r.lots) || r.min).filter((v, i, a) => v >= r.min && v <= r.max && a.indexOf(v) === i);
+  if (r.int) return [1, 2, 5, 10].filter((v) => v >= r.min && v <= r.max);
+  const st = r.step || r.min || 1; return [1, 10, 50, 100].map((k) => Number((k * st).toFixed(6))).filter((v) => v >= r.min && v <= r.max);
+}
+// money of one leg at its level (paper point value / live contract value / cTrader units), null when not known
+function legMoney(c, ref, p, qty) {
+  if (!(ref > 0) || !(p > 0)) return null;
+  const dir = F.side === 'buy' ? 1 : -1;
+  if (c.live) {
+    if (c.li && c.li.pv > 0) return (p - ref) * dir * qty * c.li.pv;
+    const L2 = window.__stkLive, u = c.mt && c.li && L2 && L2.lotUnits ? L2.lotUnits(c.li.code, qty, true) : null;   // USD-quoted broker symbols only
+    return u > 0 ? (p - ref) * dir * u : null;
+  }
+  return c.sp.ok && c.sp.pointValue > 0 ? (p - ref) * dir * qty * c.sp.pointValue : null;
+}
+function notional(c, ref, qty) {
+  if (!(ref > 0)) return null;
+  if (c.live) { if (c.li && c.li.pv > 0) return ref * qty * c.li.pv; const L2 = window.__stkLive, u = c.mt && c.li && L2 && L2.lotUnits ? L2.lotUnits(c.li.code, qty, true) : null; return u > 0 ? ref * u : null; }
+  return c.sp.ok && c.sp.pointValue > 0 ? ref * qty * c.sp.pointValue : null;
+}
+
 // one pass: (re)build what changed, then fill every number / state
 export function update() {
   if (!el) return;
   const c = ctx();
   renderChip(c);
-  if (!open) { stopQuote(); return; }
-  if (shownTab() !== 'order' && P.setPreview) P.setPreview('panel', '', []);
+  const sv = scVis();
+  renderScalp(c, sv);
+  if (!open && !sv) { stopQuote(); return; }
+  if (P.setPreview && (!open || shownTab() !== 'order')) P.setPreview('panel', '', []);
   wantQuote(c);
   const ph = isPhone(), tab = shownTab(), paperOff = !c.live && !P.enabled;
   const dk = docked(), sig = [tab, c.live, ph, paperOff, c.fut, prefs.min && !dk, dk, tab === 'dom' ? c.sym : ''].join('|');
   el.classList.toggle('is-live', c.live);
-  if (viewSig !== sig) {
+  if (open && viewSig !== sig) {
     viewSig = sig;
     const b = window.__stkBookPanel;
     if (tab !== 'dom' && b && b.embedded) b.unembed();
     const mn0 = prefs.min && !ph && !dk;
-    bodyEl.innerHTML = mn0 ? '' : paperOff ? viewOff(c) : tab === 'order' ? viewOrder(c) : tab === 'dom' ? viewDom() : viewScalp(c);
+    bodyEl.innerHTML = mn0 ? '' : paperOff ? viewOff(c) : tab === 'order' ? viewOrder(c) : viewDom();
     if (tab === 'dom' && !paperOff && !mn0) {
       const box = bodyEl.querySelector('.stkop-dom');
       if (b && b.embed) b.embed(box); else { const n = box.querySelector('[data-k=domnote]'); n.hidden = false; n.textContent = 'The DOM ladder is not available on this page.'; }
@@ -681,88 +748,102 @@ export function update() {
     for (const b of el.querySelectorAll('.stkop-mode')) { const on = b.dataset.a === (dk ? prefs.mode : 'float'); b.classList.toggle('on', on); b.setAttribute('aria-pressed', String(on)); }
     requestAnimationFrame(layout);
   }
-  renderFoot(c);
-  // symbol details bar (row 2)
+  { const t = el.querySelector('[data-a=sc]'); t.classList.toggle('on', !!prefs.sc); t.setAttribute('aria-pressed', String(!!prefs.sc)); }
+  if (open) { renderAcct(c); renderFoot(c); }
   const qt = quote(c), why = blockOf(c);
   renderInfo(c);
   el.setAttribute('aria-label', 'Order panel ' + c.label + (c.live ? ', LIVE account' : ', paper trading'));
   // quantity (cap + integer rules follow the mode)
   if (c.mt && F.mtAcct !== c.li.map.key + c.mt) { F.mtAcct = c.li.map.key + c.mt; F.qty = String(c.li.lots.min); }   // MetaTrader: start at the smallest lot, never a futures size
-  const qn = cleanQty(c, F.qty); if (document.activeElement && document.activeElement.dataset && document.activeElement.dataset.f === 'qty') {} else if (String(qn) !== F.qty) F.qty = String(qn);
+  const qn = cleanQty(c, F.qty); const af = document.activeElement; if (af && af.dataset && af.dataset.f === 'qty') {} else if (String(qn) !== F.qty) F.qty = String(qn);
   setVal('qty', F.qty);
   const r = qtyRules(c);
-  for (const b of el.querySelectorAll('[data-q]')) b.disabled = +b.dataset.q < 0 ? qn <= r.min : qn >= r.max;
-  // bid / ask
-  // broker charts: the bid / ask of the chart's own feed (display only; the Join buttons keep the order-book quote)
+  for (const b of all('[data-q]')) b.disabled = +b.dataset.q < 0 ? qn <= r.min : qn >= r.max;
+  // bid / ask: the order book's touch (futures L2 / crypto book), else the broker chart's own bid / ask (display + tiles)
   const bq = qt ? null : brokerQuote(c), dq = qt || bq;
-  const put = (k, t, hide) => { for (const n of el.querySelectorAll('[data-k=' + k + ']')) { if (t != null && n.textContent !== t) n.textContent = t; if (hide != null && n.hidden !== hide) n.hidden = hide; } };
-  for (const n of el.querySelectorAll('[data-k=bid]')) { const q = n.closest('.stkop-join') ? qt : dq, t = q ? fmt(c, q.bid) : '—'; if (n.textContent !== t) n.textContent = t; }
-  for (const n of el.querySelectorAll('[data-k=ask]')) { const q = n.closest('.stkop-join') ? qt : dq, t = q ? fmt(c, q.ask) : '—'; if (n.textContent !== t) n.textContent = t; }
-  // MetaTrader style with a broker quote: Buy = ask, Sell = bid (the order-book view keeps its Buy BID / Sell ASK cards)
-  put('buyl', bq ? 'ASK' : 'BID'); put('buyp', bq ? fmt(c, bq.ask) : qt ? fmt(c, qt.bid) : '—');
-  put('selll', bq ? 'BID' : 'ASK'); put('sellp', bq ? fmt(c, bq.bid) : qt ? fmt(c, qt.ask) : '—');
+  const put = (k, t, hide) => { for (const n of all('[data-k=' + k + ']')) { if (t != null && n.textContent !== t) n.textContent = t; if (hide != null && n.hidden !== hide) n.hidden = hide; } };
+  for (const n of all('[data-k=bid]')) { const q = dq, t = q ? fmt(c, q.bid) : '—'; if (n.textContent !== t) n.textContent = t; }
+  for (const n of all('[data-k=ask]')) { const q = dq, t = q ? fmt(c, q.ask) : '—'; if (n.textContent !== t) n.textContent = t; }
+  // tiles: Sell = bid, Buy = ask (no quote: the last price on both)
+  putHtml('sellp', dq ? fmt(c, dq.bid) : fmt(c, c.last)); putHtml('buyp', dq ? fmt(c, dq.ask) : fmt(c, c.last));
   put('buypx', bq ? fmt(c, bq.ask) : '', !bq); put('sellpx', bq ? fmt(c, bq.bid) : '', !bq);
-  put('spr', bq ? spreadText(bq) : '—'); put('sprw', null, !bq); put('wide', 'Spread is wider than usual', !(bq && bq.wide));
-  const sw = el.querySelector('[data-k=sprw]'); if (sw) sw.classList.toggle('wide', !!(bq && bq.wide));
-  // scalp
-  for (const b of el.querySelectorAll('.stkop-scalp [data-a=buy], .stkop-scalp [data-a=sell]')) b.disabled = !!why;
+  const sprT = bq ? spreadText(bq) : qt ? fmt(c, qt.ask - qt.bid) : '';
+  put('spr', sprT || '—', !sprT); put('wide', 'Spread is wider than usual', !(bq && bq.wide));
+  for (const n of all('[data-k=spr]')) n.classList.toggle('wide', !!(bq && bq.wide));
+  // scalp card
+  for (const b of all('.stkop-scalp [data-a=buy], .stkop-scalp [data-a=sell]')) b.disabled = !!why;
   const lim = caps(c).limit !== false;
-  for (const b of el.querySelectorAll('.stkop-join')) { b.disabled = !!why || !qt || !lim; if (!lim) { b.title = caps(c).why; continue; } b.title = why || (!qt ? noQuoteWhy(c) : (b.dataset.a === 'jbid' ? 'Buy limit at the best bid' : 'Sell limit at the best ask')); }
-  const hk = el.querySelector('[data-f=hk]'); if (hk) hk.checked = !!prefs.hk;
+  for (const b of all('.stkop-join')) { b.disabled = !!why || !dq || !lim; if (!lim) { b.title = caps(c).why; continue; } b.title = why || (!dq ? noQuoteWhy(c) : (b.dataset.a === 'jbid' ? 'Buy limit at the best bid' : 'Sell limit at the best ask')); }
+  for (const hk of all('[data-f=hk]')) hk.checked = !!prefs.hk;
   // order form
-  const form = el.querySelector('.stkop-order');
+  const form = open ? el.querySelector('.stkop-order') : null;
   if (form) {
     const k = caps(c);
-    if ((F.type === 'stop' && !k.stop) || (F.type === 'limit' && k.limit === false)) F.type = 'market';
+    if ((F.type === 'stop' && !k.stop) || (F.type === 'stoplimit' && !k.stoplimit) || (F.type === 'limit' && k.limit === false)) F.type = 'market';
     for (const b of form.querySelectorAll('[data-side]')) { const on = b.dataset.side === F.side; b.setAttribute('aria-checked', String(on)); b.classList.toggle('on', on); }
-    for (const b of form.querySelectorAll('[data-type]')) { const on = b.dataset.type === F.type; b.setAttribute('aria-checked', String(on)); b.classList.toggle('on', on); b.disabled = (b.dataset.type === 'stop' && !k.stop) || (b.dataset.type === 'limit' && k.limit === false); b.title = b.disabled ? k.why : ''; }
+    for (const b of form.querySelectorAll('[data-type]')) { const on = b.dataset.type === F.type, t = b.dataset.type; b.setAttribute('aria-checked', String(on)); b.classList.toggle('on', on); b.disabled = (t === 'stop' && !k.stop) || (t === 'stoplimit' && !k.stoplimit) || (t === 'limit' && k.limit === false); b.title = b.disabled ? (t === 'stoplimit' ? k.slWhy || k.why : k.why) : ''; }
     // price
     const pk = c.sym + '|' + F.type + '|' + F.side;
     if (F.type !== 'market' && F.priceKey !== pk) {
       F.priceKey = pk;
-      const base = F.type === 'limit' && qt ? (F.side === 'buy' ? qt.bid : qt.ask) : c.last != null ? roundTick(c.last + (F.type === 'stop' ? 1 : -1) * (F.side === 'buy' ? 1 : -1) * 10 * c.tick, c.tick) : null;
+      const base = F.type === 'limit' && qt ? (F.side === 'buy' ? qt.bid : qt.ask) : c.last != null ? roundTick(c.last + (F.type === 'limit' ? -1 : 1) * (F.side === 'buy' ? 1 : -1) * 10 * c.tick, c.tick) : null;
       F.price = base != null ? fmtIn(c, base) : '';
     }
-    setText('plabel', F.type === 'market' ? 'Market price' : F.type === 'limit' ? 'Limit price' : 'Stop price');
-    const mkt = form.querySelector('[data-k=mkt]'), pin = form.querySelector('[data-f=price]');
-    mkt.hidden = F.type !== 'market'; pin.hidden = F.type === 'market';
-    const mp = qt ? (F.side === 'buy' ? qt.ask : qt.bid) : c.last;
-    if (mkt.textContent !== fmt(c, mp)) mkt.textContent = fmt(c, mp);
+    setText('plabel', F.type === 'limit' ? 'Limit price' : 'Stop price');
+    const pf = form.querySelector('[data-k=pfield]'); pf.hidden = F.type === 'market';
     setVal('price', F.price);
-    // brackets
+    // size + quick chips + lot helper
+    const mtl = !!(c.mt && r.lots);
+    setText('qlabel', mtl || c.fut || c.live ? 'Size (lots)' : 'Size' + (c.sp.ok && c.sp.unit && c.sp.unit !== 'unit' ? ' (' + window.PaperEngine.unitWord(c.sp, 2) + ')' : ''));
+    const cs = chipSet(c), ch = form.querySelector('[data-k=chips]'), chs = cs.join('|');
+    if (ch.dataset.sig !== chs) { ch.dataset.sig = chs; ch.innerHTML = cs.map((v) => '<button type="button" data-chip="' + v + '">' + (mtl ? v.toFixed(2) : fmtQ(v)) + '</button>').join(''); ch.hidden = !cs.length; }
+    for (const b of ch.children) { const on = Math.abs(+b.dataset.chip - qn) < 1e-9; b.classList.toggle('on', on); b.setAttribute('aria-pressed', String(on)); }
+    { const t = lotHelp(c, qn), h = form.querySelector('[data-k=lothelp]'); h.hidden = !t; if (h.dataset.t !== t) { h.dataset.t = t; h.innerHTML = esc(t) + ' <span class="stkop-ii" title="One lot is the broker’s contract size for this symbol">' + ICON.info + '</span>'; } }
+    // stop loss / take profit
     const ref = entryRef(c, qt);
     const sl = k.bracket && F.sl.on ? legSync(c, ref, 'sl') : (legSync(c, ref, 'sl'), null), tp = k.bracket && F.tp.on ? legSync(c, ref, 'tp') : (legSync(c, ref, 'tp'), null);
     const two = k.bracket && k.two, tp1 = two && F.tp1.on ? legSync(c, ref, 'tp1') : (legSync(c, ref, 'tp1'), null);
-    for (const lg of ['sl', 'tp', 'tp1']) {
-      const fs = form.querySelector('[data-leg=' + lg + ']'), on = F[lg].on && k.bracket && (lg !== 'tp1' || two);
-      if (lg === 'tp1') { fs.hidden = !k.two; if (!k.two) continue; }
-      fs.classList.toggle('on', on); fs.classList.toggle('na', !k.bracket);
-      const cb = fs.querySelector('[data-f="' + lg + '.on"]'); cb.checked = on; cb.disabled = !k.bracket;
-      for (const i of fs.querySelectorAll('.stkop-pair input')) i.disabled = !on;
-      for (const b of fs.querySelectorAll('[data-pre]')) { b.disabled = !k.bracket; b.classList.toggle('on', on && F[lg].src === 'ticks' && F[lg].ticks === b.dataset.pre); }
-      setVal(lg + '.price', F[lg].price); setVal(lg + '.ticks', F[lg].ticks);
+    const lu = prefs.lu, luKey = lu === 'price' ? 'price' : lu === 'pct' ? 'pct' : 'ticks';
+    const distWord = mtl && c.li && /(^|[^A-Z])[A-Z]{6}$/.test(c.li.code || '') ? 'Pips' : 'Ticks';
+    setText('lud', distWord);
+    for (const b of form.querySelectorAll('[data-lu]')) { const o2 = b.dataset.lu === lu; b.classList.toggle('on', o2); b.setAttribute('aria-checked', String(o2)); }
+    form.querySelector('.stkop-luw').hidden = !(k.bracket && (F.sl.on || F.tp.on));
+    const qty0 = cleanQty(c, F.qty);
+    for (const lg of ['sl', 'tp']) {
+      const fs = form.querySelector('[data-leg=' + lg + ']'), on = F[lg].on && k.bracket;
+      fs.hidden = !on;
+      const cb = form.querySelector('[data-f="' + lg + '.on"]'); cb.checked = on; cb.disabled = !k.bracket; cb.closest('label').classList.toggle('na', !k.bracket);
+      const inp = fs.querySelector('[data-leg-in]'); if (inp.dataset.f !== lg + '.' + luKey) { inp.dataset.f = lg + '.' + luKey; inp.value = ''; }
+      setVal(lg + '.' + luKey, F[lg][luKey]);
+      setText(lg + 'unit', lu === 'price' ? '' : lu === 'pct' ? '%' : distWord.toLowerCase());
+      const lvl = lg === 'sl' ? sl : tp, m = on ? legMoney(c, ref, lvl, qty0) : null;
+      const pt = !on || !(lvl > 0) ? '' : (lu === 'price' ? '' : '@ ' + fmt(c, lvl) + '  ') + (m == null ? '' : money(m, true));
+      const pe = setText(lg + 'proj', pt); if (pe) pe.className = 'stkop-proj' + (m > 0 ? ' up' : m < 0 ? ' down' : '');
+      const bad = on && !(lvl > 0); inp.classList.toggle('bad', bad && document.activeElement !== inp && F[lg][luKey] !== '');
     }
-    // TP1 size / unit / break-even, and the TP leg's name (TP2 = the rest while TP1 is on)
-    { const pl = [], sd = F.side;   // Trade display > Order preview: dashed lines of what the panel is about to send (never sent)
+    // preview lines (Trade display > Order preview: dashed lines of what the panel is about to send, never sent)
+    { const pl = [], sd = F.side;
       if (open && ref > 0 && P.setPreview) {
-        if (F.type !== 'market') pl.push({ id: 'pv-e', price: ref, side: sd, type: F.type, qty: cleanQty(c, F.qty) });
-        if (sl > 0) pl.push({ id: 'pv-sl', price: sl, side: sd, role: 'sl', ref, qty: cleanQty(c, F.qty) });
-        if (tp > 0) pl.push({ id: 'pv-tp', price: tp, side: sd, role: 'tp', ref, qty: cleanQty(c, F.qty) });
+        if (F.type !== 'market') pl.push({ id: 'pv-e', price: ref, side: sd, type: F.type === 'stoplimit' ? 'stop' : F.type, qty: qty0 });
+        if (sl > 0) pl.push({ id: 'pv-sl', price: sl, side: sd, role: 'sl', ref, qty: qty0 });
+        if (tp > 0) pl.push({ id: 'pv-tp', price: tp, side: sd, role: 'tp', ref, qty: qty0 });
         if (tp1 > 0) pl.push({ id: 'pv-tp1', price: tp1, side: sd, role: 'tp', ref, qty: '' });
       }
       if (P.setPreview) P.setPreview('panel', c.sym, pl); }
     const t1on = two && F.tp1.on;
-    { const tl = form.querySelector('[data-leg=tp] .stkop-chk'); const want = t1on ? ' Take profit 2 · rest' : ' Take profit'; if (tl && tl.lastChild.textContent !== want) tl.lastChild.textContent = want; }
     if (k.two) {
       const f1 = form.querySelector('[data-leg=tp1]');
       for (const i of f1.querySelectorAll('.stkop-t1q input')) i.disabled = !t1on;
+      for (const i of f1.querySelectorAll('.stkop-pair input')) i.disabled = !t1on;
+      { const cb = f1.querySelector('[data-f="tp1.on"]'); cb.checked = t1on; }
       for (const b of f1.querySelectorAll('[data-unit]')) { const o2 = b.dataset.unit === F.tp1.unit; b.classList.toggle('on', o2); b.setAttribute('aria-checked', String(o2)); b.disabled = !t1on; }
       const uq = f1.querySelector('[data-k=unitq]'); if (uq) uq.textContent = c.fut || c.live ? 'Lots' : 'Qty';
       const be = f1.querySelector('[data-f="be.on"]'); be.checked = F.be.on; be.disabled = !t1on;
       f1.querySelector('[data-f="be.ticks"]').disabled = !t1on || !F.be.on;
-      setVal('tp1.size', F.tp1.size); setVal('be.ticks', F.be.ticks);
+      setVal('tp1.price', F.tp1.price); setVal('tp1.ticks', F.tp1.ticks); setVal('tp1.size', F.tp1.size); setVal('be.ticks', F.be.ticks);
     }
-    // risk-based size (sets the quantity; the stepper is locked while it is on)
+    form.querySelector('[data-leg=tp1]').hidden = !k.two;
+    // Advanced (TP1, risk size, layout)
     const adv = !!prefs.adv;
     { const ac = form.querySelector('[data-f=adv]'); if (ac) ac.checked = adv; }
     const lay = form.querySelector('[data-leg=lay]');
@@ -783,13 +864,17 @@ export function update() {
       const re = setText('rsum', rt); if (re) re.classList.toggle('bad', !!(rs && (rs.error || rs.over)));
     }
     if (rs && !rs.error && String(rs.qty) !== F.qty) { F.qty = String(rs.qty); setVal('qty', F.qty); }
-    for (const b of form.querySelectorAll('.stkop-qty button')) if (rs && !rs.error) b.disabled = true;
-    { const qi = form.querySelector('.stkop-qty [data-f=qty]'); if (qi) qi.readOnly = !!(rs && !rs.error); }
-    const tr = form.querySelector('[data-f=trail]'); if (tr) { tr.disabled = !(k.trail && F.sl.on); if (tr.disabled) F.trail = false; tr.checked = F.trail; tr.closest('label').title = k.trail ? 'Keeps the stop the same distance behind the best price (simulated)' : c.live ? k.why : 'Trail works on market orders'; }
+    for (const b of ch.children) b.disabled = !!(rs && !rs.error);
+    { const qi = form.querySelector('[data-f=qty]'); if (qi) qi.readOnly = !!(rs && !rs.error); }
+    const tr = form.querySelector('[data-f=trail]'); if (tr) { tr.disabled = !(k.trail && F.sl.on); if (tr.disabled) F.trail = false; tr.checked = F.trail; tr.closest('label').title = k.trail ? 'Keeps the stop the same distance behind the best price (simulated)' : c.live ? k.why : 'Trail works on market orders'; tr.closest('label').hidden = !k.trail; }
     const wh = form.querySelector('[data-k=why]'); const w2 = !k.bracket ? k.why : c.live && adv ? LIVE_TWO : ''; wh.hidden = !w2; if (wh.textContent !== w2) wh.textContent = w2;
-    // risk / reward summary (paper point value; live contract spec)
-    const pv = c.live ? (c.li ? c.li.pv : 0) : c.sp.ok ? c.sp.pointValue : 0;
-    const qty = cleanQty(c, F.qty), parts = [];
+    // summary rows: order value, margin (only from the broker's own figure: never guessed), spread cost
+    const qty = qty0;
+    const nv = notional(c, ref, qty); setText('oval', nv == null ? '—' : money(nv).replace('$', '') + ' USD');
+    const mg = c.live && c.lv && c.lv.marginFor ? c.lv.marginFor(c.sym, qty, ref) : null;
+    { const rw = form.querySelector('[data-r=omar]'); rw.hidden = !(mg > 0); if (mg > 0) setText('omar', money(mg).replace('$', '') + ' USD'); }
+    const sq = dq ? legMoney(c, dq.ask, dq.bid, qty) : null, spc = sq == null ? null : Math.abs(sq);
+    { const rw = form.querySelector('[data-r=ospc]'); rw.hidden = spc == null; if (spc != null) setText('ospc', money(spc).replace('$', '') + ' USD'); }
     // TP1 size in lots (from % rounded down, like the engine)
     let q1 = null;
     if (tp1 != null) { const n = num(F.tp1.size), st = c.sp.ok ? c.sp.qtyStep : 1; q1 = F.tp1.unit === 'pct' ? Math.floor(qty * Math.min(100, Math.max(0, n)) / 100 / st + 1e-9) * st : n; q1 = Number.isFinite(q1) ? Number(q1.toFixed(6)) : null; }
@@ -798,18 +883,25 @@ export function update() {
       const t1 = !t1on ? '' : !(q1 > 0) ? 'Enter how much TP1 closes.' : !(q1 < qty) ? 'TP1 must close less than ' + qty + '; TP2 takes the rest.' : 'TP1 closes ' + q1 + ', TP2 ' + (tp != null ? 'closes ' : 'leaves ') + q2 + (F.be.on ? '. Then the stop moves to entry' + (num(F.be.ticks) > 0 ? ' + ' + Math.round(num(F.be.ticks)) + ' ticks' : '') : '') + '.';
       const te = setText('t1sum', t1); if (te) te.classList.toggle('bad', !!t1on && !(q1 > 0 && q1 < qty));
     }
-    if (sl != null && ref) parts.push('Risk ' + money(Math.abs(ref - sl) * qty * pv));
-    const rw = (tp1 != null && q1 > 0 && q1 < qty ? Math.abs(tp1 - ref) * q1 : 0) + (tp != null ? Math.abs(tp - ref) * (tp1 != null && q1 > 0 && q1 < qty ? q2 : qty) : 0);
-    if ((tp != null || tp1 != null) && ref && rw > 0) parts.push('Reward ' + money(rw * pv));
-    if (sl != null && (tp != null || tp1 != null) && ref && Math.abs(ref - sl) > 0 && rw > 0) parts.push('R:R 1:' + (rw / (Math.abs(ref - sl) * qty)).toFixed(2));
+    const pv = c.live ? (c.li ? c.li.pv : 0) : c.sp.ok ? c.sp.pointValue : 0, parts = [];
+    if (pv > 0 && sl != null && (tp != null || tp1 != null) && ref) {
+      const rw = (tp1 != null && q1 > 0 && q1 < qty ? Math.abs(tp1 - ref) * q1 : 0) + (tp != null ? Math.abs(tp - ref) * (tp1 != null && q1 > 0 && q1 < qty ? q2 : qty) : 0);
+      if (Math.abs(ref - sl) > 0 && rw > 0) parts.push('R:R 1:' + (rw / (Math.abs(ref - sl) * qty)).toFixed(2));
+    }
     setText('sum', parts.join(' · '));
+    // the one primary button: "Buy 0.01 NAS100", disabled until the ticket is valid
+    const invalid = why || (F.type !== 'market' && !(num(F.price) > 0)) || (k.bracket && ((F.sl.on && !(sl > 0)) || (F.tp.on && !(tp > 0)))) || (rs && rs.error);
     const go = form.querySelector('[data-k=confirm]');
-    go.className = 'stkop-pill stkop-confirm ' + F.side; go.disabled = !!why;
-    const gt = 'Confirm ' + (F.side === 'buy' ? 'buy' : 'sell') + ' ' + qty; if (go.textContent !== gt) go.textContent = gt;
+    go.className = 'stkop-pill stkop-confirm ' + F.side; go.disabled = !!invalid;
+    const nm = c.mt && c.li && c.li.code ? c.li.code : c.fut ? c.rootName : c.tk;
+    const gt = (F.side === 'buy' ? 'Buy ' : 'Sell ') + (mtl ? qty.toFixed(2) : fmtQ(qty)) + ' ' + nm + (F.type === 'market' ? '' : F.type === 'limit' ? ' limit' : F.type === 'stop' ? ' stop' : ' stop limit');
+    if (go.textContent !== gt) go.textContent = gt;
+    go.title = typeof invalid === 'string' ? invalid : invalid ? 'Fill in the fields above' : '';
   }
   // status
   const st = why || (qt && qt.note) || (c.live ? ((c.li && c.li.rtt ? c.li.rtt + ' ' : '') + 'Ready. Real orders at your broker, sent on the click.') : '');
-  for (const n of el.querySelectorAll('[data-k=status]')) { if (n.textContent !== st) n.textContent = st; n.classList.toggle('bad', !!why); }
+  for (const n of all('[data-k=status]')) { if (n.textContent !== st) n.textContent = st; n.classList.toggle('bad', !!why); }
+  if (!open) return;
   renderAlert(c);
   // footer numbers
   let posT = 'Flat', pnl = null, wk = 0;
@@ -844,10 +936,88 @@ function renderAlert(c) {
   const eb = box.querySelector('[data-a=enable]'); if (eb) eb.hidden = !enable;
 }
 
+// ------------------------------------------------------------------------------------------------ SCALP card on the chart
+// Owner 25 Nov: "move the scalp panel like this to chart". A compact card INSIDE the chart (default bottom-centre, 12 px above the time
+// axis), never over the price scale. Header: Scalp · symbol · expand (opens the order panel) · minimise (a small pill). Buy · size · Sell,
+// then Join Bid / Join Ask (limits at the touch, the same send() as the panel). Drag by the header, resize from the corner; position +
+// width per user (prefs.sx / sy / sw). Phones: docked full width just above the chart's bottom bar. Opt-in: the "Scalp" toggle in the
+// order panel header (prefs.sc). Shown only after Trade was opened this session (all trading UI stays hidden until then).
+const scVis = () => !!(prefs && prefs.sc && scLatch && P && (P.enabled || P.live));
+function setScalp(on) { prefs.sc = !!on; prefs.scMin = false; if (on) scLatch = true; savePrefs(); scSig = ''; update(); }
+function buildScalp() {
+  scEl = document.createElement('div'); scEl.id = 'stkop-sc'; scEl.className = 'stkop stkop-sc'; scEl.hidden = true;
+  scEl.setAttribute('role', 'group'); scEl.setAttribute('aria-label', 'Scalp');
+  document.body.appendChild(scEl);
+  for (const ev of ['keydown', 'keyup', 'wheel', 'dblclick']) scEl.addEventListener(ev, (e) => e.stopPropagation(), { passive: ev === 'wheel' });
+  scEl.addEventListener('pointerdown', (e) => e.stopPropagation());
+  scEl.addEventListener('click', onClick); scEl.addEventListener('input', onInput); scEl.addEventListener('focusout', onBlur);
+}
+// the active chart's plot area without the price scale and time axis (viewport px)
+function plotBox() {
+  try {
+    const A = window.__stkAxisTags, cell = A.cellsOf().find((x) => { try { return x.id === window.STRYKER_VELA.active.id; } catch (e) { return false; } }) || A.cellsOf()[0], R = A.rendererOf(cell);
+    const pr = R.plot.getBoundingClientRect(), W = R.coords.width, sc = R.scene, panes = sc && sc.panes ? [...sc.panes.values()] : [];
+    const bot = panes.length ? Math.max(...panes.map((q) => q.bounds.top + q.bounds.height)) : pr.height - 28;
+    if (pr.width > 0 && W > 0) return { left: pr.left, top: pr.top, right: pr.left + W, bottom: pr.top + bot, axisR: pr.right };
+  } catch (e) {}
+  const r = chartRect(); return { left: r.left, top: r.top, right: r.right - 64, bottom: r.bottom - 28, axisR: r.right };
+}
+function placeScalp() {
+  if (!scEl || scEl.hidden) return;
+  const B = plotBox();
+  if (isPhone()) {   // full width above the chart's bottom bar
+    scEl.style.width = 'auto'; scEl.style.left = '8px'; scEl.style.right = '8px';
+    const bb = document.querySelector('.vela-widget-bottombar'), r = bb && bb.getBoundingClientRect(), y = r && r.height ? r.top : B.bottom;
+    scEl.style.top = Math.round(y - scEl.offsetHeight - 8) + 'px'; return;
+  }
+  scEl.style.right = '';
+  const w = Math.min(prefs.sw, Math.max(SW_MIN, B.right - B.left - 16)), h = scEl.offsetHeight || 112;
+  scEl.style.width = w + 'px';
+  let x = prefs.sx, y = prefs.sy;
+  if (x == null || y == null) { x = Math.round((B.left + B.right - w) / 2); y = Math.round(B.bottom - h - 12); }
+  x = clamp(Math.round(x), B.left + 8, Math.max(B.left + 8, B.right - w - 8)); y = clamp(Math.round(y), B.top + 8, Math.max(B.top + 8, B.bottom - h - 8));
+  scEl.style.left = x + 'px'; scEl.style.top = y + 'px';
+}
+function bindScalp() {
+  const hd = scEl.querySelector('.stkop-schd'), g = scEl.querySelector('.stkop-rs');
+  hd.addEventListener('pointerdown', (e) => {
+    if (isPhone() || e.button !== 0 || e.target.closest('button')) return;
+    e.preventDefault(); const r = scEl.getBoundingClientRect(), dx = e.clientX - r.left, dy = e.clientY - r.top;
+    hd.setPointerCapture(e.pointerId); scEl.classList.add('dragging');
+    const mv = (ev) => { prefs.sx = ev.clientX - dx; prefs.sy = ev.clientY - dy; placeScalp(); prefs.sx = parseFloat(scEl.style.left); prefs.sy = parseFloat(scEl.style.top); };
+    const up = () => { hd.removeEventListener('pointermove', mv); hd.removeEventListener('pointerup', up); hd.removeEventListener('pointercancel', up); scEl.classList.remove('dragging'); savePrefs(); };
+    hd.addEventListener('pointermove', mv); hd.addEventListener('pointerup', up); hd.addEventListener('pointercancel', up);
+  });
+  if (g) g.addEventListener('pointerdown', (e) => {
+    if (isPhone()) return;
+    e.preventDefault(); e.stopPropagation(); const w0 = scEl.offsetWidth, x0 = e.clientX;
+    g.setPointerCapture(e.pointerId); scEl.classList.add('sizing');
+    const mv = (ev) => { prefs.sw = clamp(Math.round(w0 + ev.clientX - x0), SW_MIN, SW_MAX); if (prefs.sx == null) { const r = scEl.getBoundingClientRect(); prefs.sx = r.left; prefs.sy = r.top; } placeScalp(); };
+    const up = () => { g.removeEventListener('pointermove', mv); g.removeEventListener('pointerup', up); scEl.classList.remove('sizing'); savePrefs(); };
+    g.addEventListener('pointermove', mv); g.addEventListener('pointerup', up);
+  });
+}
+function renderScalp(c, vis) {
+  if (!vis) { if (scEl && !scEl.hidden) { scEl.hidden = true; scSig = ''; } return; }
+  if (!scEl) buildScalp();
+  const mn = !!prefs.scMin, paperOff = !c.live && !P.enabled, sig = [mn, c.live, c.fut, paperOff, isPhone()].join('|');
+  scEl.classList.toggle('is-live', c.live); scEl.classList.toggle('is-min', mn);
+  if (scSig !== sig) {
+    scSig = sig;
+    scEl.innerHTML = '<div class="stkop-schd"><span class="stkop-sct">Scalp</span><b class="stkop-scs" data-k="scsym"></b>' +
+      '<span class="stkop-hbtns"><button type="button" class="stkop-ib" data-a="scx" aria-label="Open the order panel" title="Order panel">' + ICON.max + '</button>' +
+      '<button type="button" class="stkop-ib" data-a="scmin" aria-label="' + (mn ? 'Show the scalp card' : 'Minimise the scalp card') + '" title="' + (mn ? 'Show' : 'Minimise') + '">' + (mn ? ICON.open : ICON.min) + '</button></span></div>' +
+      (mn ? '' : viewScalp(c)) + (mn || isPhone() ? '' : '<i class="stkop-rs" aria-hidden="true" title="Resize"></i>');
+    bindScalp();
+  }
+  if (scEl.hidden) { scEl.hidden = false; requestAnimationFrame(placeScalp); }
+  placeScalp();
+}
+
 // LIVE status chip on the chart (replaces the old bottom strip): click = open the panel
 function renderChip(c) {
   const host = document.querySelector('.stkchart-panel');
-  if (!c.live || !host) { if (chipEl) { chipEl.remove(); chipEl = null; } return; }
+  if (!c.live || !host || scVis()) { if (chipEl) { chipEl.remove(); chipEl = null; } return; }   // the Scalp card sits where the chip would
   if (!chipEl || chipEl.parentNode !== host) {
     if (chipEl) chipEl.remove();
     chipEl = document.createElement('button'); chipEl.type = 'button'; chipEl.className = 'stkop-lchip'; chipEl.innerHTML = '<i aria-hidden="true"></i><span></span>';
@@ -867,16 +1037,17 @@ let tmr = 0;
 function openPanel(pre) {
   pre = pre || {};
   if (!el) build();
-  const was = open; open = true; prefs.open = true;
-  if (pre.tab || pre.side || pre.price != null || pre.type) { prefs.tab = pre.tab || (pre.price != null || pre.type ? 'order' : prefs.tab); prefs.min = false; }
+  const was = open; open = true; prefs.open = true; scLatch = true;
+  if (pre.tab || pre.side || pre.price != null || pre.type) { prefs.tab = pre.tab && pre.tab !== 'scalp' ? pre.tab : pre.price != null || pre.type ? 'order' : prefs.tab; prefs.min = false; }
   if (pre.side) F.side = pre.side === 'sell' ? 'sell' : 'buy';
   if (pre.type) F.type = pre.type;
   if (pre.price != null && Number.isFinite(+pre.price)) { F.type = pre.type || 'limit'; const c = ctx(); F.price = fmtIn(c, roundTick(+pre.price, c.tick)); F.priceKey = c.sym + '|' + F.type + '|' + F.side; }
   savePrefs();
   el.hidden = false; viewSig = ''; footSig = '';
   update(); layout(); requestAnimationFrame(() => { layout(); });
-  if (!tmr) tmr = setInterval(() => { if (open && !document.hidden) update(); }, 250);
+  if (!tmr) tmr = setInterval(() => { if ((open || scVis()) && !document.hidden) update(); }, 250);
   if (!was) { const t = el.querySelector('.stkop-tabs .on'); if (t && !isPhone()) try { t.focus({ preventScroll: true }); } catch (e) {} }
+  if (pre.tab === 'scalp') setScalp(true);
   if (pre.focus && prefs.tab === 'order') setTimeout(() => { const f = el.querySelector('[data-f=price]:not([hidden]), [data-k=confirm]'); if (f) f.focus(); }, 30);
   updateTradeBtn();
 }
@@ -887,7 +1058,7 @@ function close() {
   el.hidden = true; viewSig = ''; stopQuote(); if (P && P.setPreview) P.setPreview('panel', '', []);
   document.documentElement.classList.remove('stkop-sheet');
   applyDock();
-  if (tmr) { clearInterval(tmr); tmr = 0; }
+  if (tmr && !scVis()) { clearInterval(tmr); tmr = 0; }
   update(); updateTradeBtn();
 }
 function updateTradeBtn() {
@@ -906,7 +1077,8 @@ export function mountOrderPanel(paperApi) {
   return api;
 }
 const api = {
+  get scalpEl() { return scEl; },
   open: openPanel, close, toggle: () => (open ? close() : openPanel()), update,
-  get isOpen() { return open; }, get prefs() { return prefs; }, get form() { return F; }, setTab: (t) => { if (!open) openPanel({ tab: t }); else setTab(t); }, setMode,
+  get isOpen() { return open; }, get scalpOn() { return scVis(); }, setScalp, get prefs() { return prefs; }, get form() { return F; }, setTab: (t) => { if (!open) openPanel({ tab: t }); else setTab(t); }, setMode,
   reloadPrefs: () => { loadPrefs(); if (open) { viewSig = ''; layout(); update(); } }
 };

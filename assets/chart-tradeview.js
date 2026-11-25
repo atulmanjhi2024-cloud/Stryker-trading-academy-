@@ -8,9 +8,9 @@
 const KEY = 'stryker_tradeview_ui', PHONE = 700;
 export const DEF = Object.freeze({
   master: true, ord: true, tpsl: true, pos: true, be: false, exe: false, exeSize: false, pv: false, rr: false,
-  lab: { side: true, price: true, size: true, pnl: true, btn: true, rev: false }, align: 'right', full: true, unit: 'usd',
-  col: { buy: '#2962ff', sell: '#f23645', profit: '#089981', loss: '#f23645', tp: '#089981', sl: '#f23645' },
-  ls: { ord: 'dashed', pos: 'solid' }, lw: { ord: 1, pos: 1 }, confirm: false, sound: true
+  lab: { side: true, price: true, size: true, pnl: true, btn: true, rev: true }, align: 'right', full: true, unit: 'usd',
+  col: { buy: '#2962ff', sell: '#ef5350', profit: '#089981', loss: '#ef5350', tp: '#089981', sl: '#ef5350' },   // Owner 25 Nov: no harsh red
+  ls: { ord: 'dashed', pos: 'dashed' }, lw: { ord: 1, pos: 1 }, confirm: false, sound: true
 });
 const clone = (o) => JSON.parse(JSON.stringify(o));
 const HEX = /^#[0-9a-f]{6}$/i;

@@ -855,14 +855,14 @@ function drawTrades(g, co, a, d, W, top, bot){
   if (d.rr && d.rr.t != null) {
     const r = d.rr, x0 = Math.max(0, Math.min(W, co.timeToX(r.t))), yA = co.priceToY(r.avg, a.scale, a.bounds), yT = co.priceToY(r.tp, a.scale, a.bounds), yS = co.priceToY(r.sl, a.scale, a.bounds);
     const box = (y1, y2, col) => { const t = Math.max(top, Math.min(y1, y2)), b = Math.min(bot, Math.max(y1, y2)); if (b > t) { g.globalAlpha = 0.14; g.fillStyle = col; g.fillRect(x0, t, W - x0, b - t); } };
-    box(yA, yT, c.profit || '#089981'); box(yA, yS, c.loss || '#f23645'); g.globalAlpha = 1;
+    box(yA, yT, c.profit || '#089981'); box(yA, yS, c.loss || '#ef5350'); g.globalAlpha = 1;
   }
   if (d.exec && d.exec.length) {
     g.save(); g.font = '600 10.5px -apple-system,BlinkMacSystemFont,Roboto,sans-serif'; g.textAlign = 'center';
     for (const e of d.exec) {
       const x = co.timeToX(e.t); if (!(x >= 0 && x <= W)) continue;
       const y = co.priceToY(e.price, a.scale, a.bounds); if (y < top || y > bot) continue;
-      const up = e.side === 'buy'; g.fillStyle = up ? (c.buy || '#2962ff') : (c.sell || '#f23645'); g.globalAlpha = 1;
+      const up = e.side === 'buy'; g.fillStyle = up ? (c.buy || '#2962ff') : (c.sell || '#ef5350'); g.globalAlpha = 1;
       g.beginPath();
       if (up) { g.moveTo(x, y + 2); g.lineTo(x - 5, y + 10); g.lineTo(x + 5, y + 10); } else { g.moveTo(x, y - 2); g.lineTo(x - 5, y - 10); g.lineTo(x + 5, y - 10); }
       g.closePath(); g.fill();
@@ -901,7 +901,7 @@ function layerFactory(){
         const y = Math.round(co.priceToY(l.price, a.scale, a.bounds)) + 0.5;
         ys[l.id] = y; lastYs = ys;
         if (y < top || y > bot) continue;
-        g.strokeStyle = l.color; g.lineWidth = l.w || 1; g.globalAlpha = l.kind === 'pos' ? 1 : 0.9;
+        g.strokeStyle = l.color; g.lineWidth = l.w || 1; g.globalAlpha = l.kind === 'pos' ? 0.65 : 0.6;   // Owner 25 Nov: soft lines, no sharp red
         g.setLineDash(l.dash || (l.kind === 'pos' ? [] : l.kind === 'ord' ? [6, 3] : [3, 3]));
         let x0 = 0;
         if (!fullLines && overlay) { const ch = overlay.querySelector('.stkpt-chip[data-id="' + l.id + '"]'); if (ch && ch.style.visibility !== 'hidden') { const cr = ch.getBoundingClientRect(), orr = overlay.getBoundingClientRect(); x0 = Math.max(0, Math.min(W, cr.left - orr.left)); } }
@@ -910,7 +910,7 @@ function layerFactory(){
         // price tag on the axis
         if (fullW > W + 4) {
           g.globalAlpha = 1; g.fillStyle = l.color;
-          g.fillRect(W, y - 9, fullW - W, 18);
+          g.beginPath(); g.roundRect ? g.roundRect(W + 1, y - 9, fullW - W - 2, 18, 4) : g.rect(W + 1, y - 9, fullW - W - 2, 18); g.fill();
           g.fillStyle = '#fff'; g.font = '11px -apple-system,BlinkMacSystemFont,"Trebuchet MS",Roboto,sans-serif'; g.textBaseline = 'middle';
           g.fillText(l.label, W + 4, y);
         }
@@ -1012,8 +1012,12 @@ function syncChips(cell, inst, lines){
     chip.classList.toggle('nobtn', !TV.get().lab.btn);
     const [a, b] = chipText(cell.symbol, l);
     const A = chip.querySelector('.stkpt-chip-a'), B = chip.querySelector('.stkpt-chip-b');
-    if (A.textContent !== a) A.textContent = a;
+    if (A.textContent !== a) {
+      const m = l.kind !== 'pos' && /^(TP1|TP|SL|BREAK-EVEN|BUY|SELL)( [A-Z]{3})?(?= |$)/.exec(a);   // Owner 25 Nov: "[TP] 25,190.68 | +7.82 USD" with a small coloured label pill
+      if (m) { A.textContent = ''; A.append(h('i', { class: 'stkpt-lp', text: m[0] }), document.createTextNode(a.slice(m[0].length))); } else A.textContent = a;
+    }
     if (B.textContent !== b) B.textContent = b;
+    if (l.kind === 'pos') posHandles(chip, cell, inst, l);   // [Reverse] [TP] [SL] beside the position (live + paper)
     // OWNER STYLE: a live position's TP / SL (and one being dragged out) = dark chip with a small TP / SL pill, price, P&L at that level
     const tg = l.live && (l.posId || (l.id === 'new' && l.slRole)) ? (l.slRole || l.role) : '';
     chip.classList.toggle('tagged', !!tg); if (tg) { A.dataset.tag = tg.toUpperCase(); chip.classList.toggle('neg', /^−|Wrong/.test(b)); }
@@ -1021,7 +1025,6 @@ function syncChips(cell, inst, lines){
     if (l.live) {
       chip.classList.toggle('neg', l.pnl != null && l.pnl < 0);
       // AUTO-TPSL: the live position's TP / SL handles (hover or tap the position label; drag one up / down to place it)
-      if (l.kind === 'pos') liveHandles(chip, cell, inst, l.sltp);
       if (l.kind === 'pos') chip.title = 'Entry ' + fmtP(cell.symbol, l.price) + (l.sltp ? ' · drag TP or SL to set a take profit / stop loss' : '') + ' · × closes (with a confirm)';
       else if (l.posId) { chip.title = (l.role === 'sl' ? 'Stop loss' : 'Take profit') + ' · drag to move · × removes it'; const xb2 = chip.querySelector('.stkpt-chip-x'); if (xb2) { const t2 = 'Remove ' + (l.role === 'sl' ? 'stop loss' : 'take profit'); xb2.title = t2; xb2.setAttribute('aria-label', t2); } }
       else if (l.id === 'new') chip.title = 'Release to place it';
@@ -1119,18 +1122,31 @@ function livePnl(){
       if (B.textContent !== v) B.textContent = v;
       chip.classList.toggle('neg', acct.openPnl(p) < 0);
     }
-    const oc = inst.overlay.querySelector('.stkpt-1c'); if (oc) refreshOneClick(oc, cell);
   }
   renderSummaryLive();
 }
 // AUTO-TPSL: TP and SL handles on a live position chip (MT5 / TradingView style). Shown on hover (desktop) or after a tap (touch);
 // a handle that already has its line is hidden (drag that line instead). Dragging a handle starts a 'new' line (onChipDown).
-function liveHandles(chip, cell, inst, hs){
+// Position chip group (Owner 25 Nov, like the reference): [Reverse] [TP] [SL] [Sell 0.01 | -0.12 USD | ×]. TP / SL show while the position
+// has none (drag one off the line to place it: live = AUTO-TPSL handles, paper = the same drag as the position chip). Reverse = paper only
+// (reversePos, the existing path; a live reverse is not an order path the chart has).
+function posHandles(chip, cell, inst, l){
+  let hs = null;
+  if (l.live) hs = l.sltp;
+  else { const p = acct && acct.position(l.sym || cell.symbol); hs = p ? { tp: p.tp != null, sl: p.sl != null } : null; }
+  liveHandles(chip, cell, inst, hs, !l.live && !l.sym && TV.get().lab.rev && TV.get().lab.btn);
+}
+function liveHandles(chip, cell, inst, hs, rev){
   let box = chip.querySelector('.stkpt-hs');
   const want = hs ? [['tp', !hs.tp], ['sl', !hs.sl]].filter((x) => x[1]).map((x) => x[0]) : [];
+  if (rev) want.unshift('rev');
   if (!want.length) { if (box) box.remove(); chip.classList.remove('has-h'); return; }
   if (!box) {
     box = h('span', { class: 'stkpt-hs' });
+    const rb = h('button', { type: 'button', class: 'stkpt-h', 'data-h': 'rev', 'aria-label': 'Reverse the position at market', title: 'Reverse: flip to the other side at market', text: 'Reverse' });
+    rb.addEventListener('pointerdown', (e) => e.stopPropagation());
+    rb.addEventListener('click', (e) => { e.stopPropagation(); reversePos(chipRef(cell.symbol, chip.dataset.id).sym); });
+    box.appendChild(rb);
     for (const k of ['tp', 'sl']) {
       const b = h('button', { type: 'button', class: 'stkpt-h', 'data-h': k, 'aria-label': (k === 'tp' ? 'Add take profit: drag up or down' : 'Add stop loss: drag up or down'), title: k === 'tp' ? 'Drag to set a take profit' : 'Drag to set a stop loss', text: k.toUpperCase() });
       b.addEventListener('pointerdown', (e) => { e.stopPropagation(); onChipDown(e, cell, inst, chip, k); });
@@ -1222,59 +1238,17 @@ function commitDrag(sym, d){
   pushLines(true);
 }
 
-// ------------------------------------------------------------------ one-click trading (top-left of each chart)
+// ------------------------------------------------------------------ one-click box: REMOVED (Owner 25 Nov 2026). The Scalp card on the chart
+// (assets/chart-order-panel.js, the order panel header's "Scalp" toggle) is the one quick Buy / Sell now; this only clears an old box
+// and gives the indicator legend its place under the status line back.
 function oneClickAll(){
   for (const cell of cells()) {
     const inst = layerInst(inner(cell)); if (!inst || !inst.overlay) continue;
-    let oc = inst.overlay.querySelector('.stkpt-1c');
-    const show = !!acct && paperOn() && !liveOn() && acct.settings.oneClick && specOf(cell.symbol).ok && (tradeUiOn() || qtLatch);
-    if (!show) { if (oc) oc.remove(); pushLegend(cell, null); continue; }
-    if (!oc) {
-      oc = h('div', { class: 'stkpt-1c', role: 'group', 'aria-label': 'One-click paper trading' }, [
-        h('button', { type: 'button', class: 'stkpt-1c-s', 'data-k': 'sell', title: 'Paper SELL at market (one click)' }, [h('small', { text: 'SELL' }), h('b')]),
-        h('input', { class: 'stkpt-1c-q', type: 'number', min: '0', step: 'any', inputmode: 'decimal', 'aria-label': 'Quantity' }),
-        h('button', { type: 'button', class: 'stkpt-1c-b', 'data-k': 'buy', title: 'Paper BUY at market (one click)' }, [h('small', { text: 'BUY' }), h('b')])
-      ]);
-      for (const ev of ['pointerdown', 'mousedown', 'touchstart', 'wheel', 'dblclick']) oc.addEventListener(ev, (e) => e.stopPropagation(), { passive: ev === 'wheel' || ev === 'touchstart' });
-      oc.querySelector('.stkpt-1c-s').onclick = () => oneClick(oc, 'sell');
-      oc.querySelector('.stkpt-1c-b').onclick = () => oneClick(oc, 'buy');
-      const q = oc.querySelector('input');
-      q.addEventListener('change', () => { const sym = oc.dataset.sym; if (acct && sym) { syncFromLocal(); acct.setQty(sym, q.value); save(); q.value = acct.qtyFor(sym); } });
-      q.addEventListener('keydown', (e) => e.stopPropagation());
-      inst.overlay.appendChild(oc);
-    }
-    const ts = tradeSym(cell.symbol);
-    if (oc.dataset.sym !== ts) {
-      oc.dataset.sym = ts; oc.querySelector('input').value = acct.qtyFor(ts);
-      const alt = canonSym(ts) !== canonSym(cell.symbol) ? ' ' + showSym(canonSym(ts)).replace(/[12]!$/, '') : '';
-      oc.querySelector('.stkpt-1c-s small').textContent = 'SELL' + alt; oc.querySelector('.stkpt-1c-b small').textContent = 'BUY' + alt;
-      oc.classList.toggle('alt', !!alt);
-    }
-    oc.dataset.cell = cell.id;
-    refreshOneClick(oc, cell);
-    placeOneClick(oc, cell, inst.overlay);
+    const oc = inst.overlay.querySelector('.stkpt-1c'); if (oc) oc.remove();
+    pushLegend(cell, null);
   }
 }
-function refreshOneClick(oc, cell){
-  const sym = oc.dataset.sym || cell.symbol, last = acct && (acct.last[sym] != null ? acct.last[sym] : acct.last[canonSym(sym)]);
-  const t = Number.isFinite(last) ? fmtP(sym, last) : '—';
-  for (const b of oc.querySelectorAll('b')) if (b.textContent !== t) b.textContent = t;
-}
-// Right under the symbol / OHLC status line (Owner 2026-11-17: the one-click box comes first, the
-// indicator legend always starts below it). Measured every 2 s (oneClickAll), not per tick, so the
-// 250 ms price refresh never forces a layout; only two rects are read.
-function placeOneClick(oc, cell, ov){
-  let top = 30;
-  try {
-    const sl = cell.host.querySelector('.vela-statusline'), r = sl && sl.getBoundingClientRect();
-    if (r && r.height) top = Math.max(26, Math.round(r.bottom - ov.getBoundingClientRect().top) + 4);
-  } catch (e) {}
-  const v = top + 'px';
-  if (oc.style.top !== v) oc.style.top = v;
-  pushLegend(cell, oc);
-}
-// The top pane's indicator legend starts 8 px under the one-click box, or under the status line when
-// the box is off (margin-top: Vela owns the legend's inline top and transform).
+// The top pane's indicator legend starts 8 px under the status line (margin-top: Vela owns the legend's inline top and transform).
 function pushLegend(cell, oc){
   try {
     const lg = cell.host.querySelector('[data-vela-pane-at-top]'); if (!lg) return;
@@ -1283,11 +1257,6 @@ function pushLegend(cell, oc){
     const want = Math.max(0, Math.ceil(above.getBoundingClientRect().bottom + 8 - (lg.getBoundingClientRect().top - cur)));
     if (Math.abs(want - cur) >= 1) lg.style.marginTop = want ? want + 'px' : '';
   } catch (e) {}
-}
-function oneClick(oc, side){
-  const sym = oc.dataset.sym; if (!sym) return;
-  const q = parseFloat(oc.querySelector('input').value);
-  placeOrder({ symbol: sym, side, type: 'market', qty: q });
 }
 
 // ------------------------------------------------------------------ order ticket
@@ -1756,7 +1725,6 @@ function viewAccount(){
       h('h3', { class: 'stkpt-h3', text: 'Settings' }),
       h('label', { class: 'stkpt-f' }, ['Commission per contract / unit, per side ($)', h('input', { type: 'number', min: '0', max: '100', step: '0.01', 'data-s': 'commission', value: String(st.commission) })]),
       h('label', { class: 'stkpt-f' }, ['Market-order slippage (ticks)', h('input', { type: 'number', min: '0', max: '50', step: '1', 'data-s': 'slippage', value: String(st.slippage) })]),
-      h('label', { class: 'stkpt-chk' }, [h('input', { type: 'checkbox', 'data-s': 'oneClick', checked: st.oneClick }), ' One-click Buy/Sell on the chart']),
       h('label', { class: 'stkpt-chk' }, [h('input', { type: 'checkbox', 'data-s': 'lines', checked: st.lines }), ' Position and order lines on the chart']),
       h('label', { class: 'stkpt-chk' }, [h('input', { type: 'checkbox', 'data-s': 'sounds', checked: st.sounds }), ' Sounds (fills, take profit, stop loss)']),
       h('label', { class: 'stkpt-chk' }, [h('input', { type: 'checkbox', 'data-s': 'askJournal', checked: st.askJournal }), ' Offer "Send to Journal" when a trade closes' + (uid ? '' : ' (sign in)')])
@@ -2304,56 +2272,53 @@ html.stklv-on .stkpt-badge{ display:none; }
 .stkpt-x{ border:0; background:none; color:inherit; font-size:20px; line-height:1; cursor:pointer; padding:2px 6px; }
 /* on-chart */
 .stkpt-ov{ position:absolute; inset:0; pointer-events:none; overflow:hidden; z-index:5; }
-.stkpt-chip{ position:absolute; top:0; right:64px; height:22px; display:flex; align-items:stretch; pointer-events:auto; cursor:ns-resize; user-select:none; touch-action:none;
-  font:600 11px/22px -apple-system,BlinkMacSystemFont,"Trebuchet MS",Roboto,sans-serif; border:1px solid var(--c); border-radius:4px; overflow:hidden; background:#131722; color:#d1d4dc; box-shadow:0 1px 4px rgba(0,0,0,.35); will-change:transform; }
-:root[data-theme="light"] .stkpt-chip{ background:#fff; color:#131722; }
+.stkpt-chip{ position:absolute; top:0; right:64px; height:22px; display:flex; align-items:center; gap:0; pointer-events:auto; cursor:ns-resize; user-select:none; touch-action:none;
+  font:600 11px/22px var(--font-body,-apple-system,BlinkMacSystemFont,Roboto,sans-serif); border:0; border-radius:6px; background:#1e222d; color:#d1d4dc; box-shadow:0 2px 8px rgba(0,0,0,.35), 0 0 0 1px rgba(255,255,255,.06); will-change:transform; }
+:root[data-theme="light"] .stkpt-chip{ background:#fff; color:#131722; box-shadow:0 2px 8px rgba(14,22,33,.16), 0 0 0 1px rgba(14,22,33,.08); }
+/* Owner 25 Nov ("neat and clean like this"): rounded dark chip, a small coloured label pill, no hard coloured borders */
 .stkpt-chip-a:empty,.stkpt-chip-b:empty{ display:none; }
 .stkpt-chip.nobtn .stkpt-chip-x{ display:none; }
-.stkpt-chip-a{ background:var(--c); color:#fff; padding:0 7px; white-space:nowrap; }
-.stkpt-chip-b{ padding:0 7px; white-space:nowrap; font-family:var(--font-mono); font-weight:500; }
-.stkpt-chip[data-kind="pos"] .stkpt-chip-b{ color:var(--stk-profit,#089981); }
-.stkpt-chip[data-kind="pos"].neg .stkpt-chip-b{ color:var(--stk-loss,#f23645); }
-.stkpt-chip-x{ border:0; border-left:1px solid var(--c); background:none; color:inherit; width:22px; padding:0; cursor:pointer; font-size:14px; line-height:20px; }
-.stkpt-chip-x:hover{ background:var(--c); color:#fff; }
-.stkpt-chip[data-pin=up] .stkpt-chip-a::before{ content:"↑ "; }
-.stkpt-chip[data-pin=down] .stkpt-chip-a::before{ content:"↓ "; }
-.stkpt-chip[data-pin=up],.stkpt-chip[data-pin=down]{ border-style:dashed; opacity:.92; }
-.stkpt-chip.dragging{ box-shadow:0 0 0 2px var(--c); }
-/* AUTO-TPSL + OWNER STYLE (25 Nov): TP / SL handles = two small outlined chips left of the live position chip (always shown with a
-   mouse; a tap shows them on touch). Drag one off the line to place it. TP solid green outline, SL dashed in the loss colour. */
-.stkpt-chip.has-h{ overflow:visible; }
-.stkpt-chip.has-h .stkpt-chip-a{ border-radius:3px 0 0 3px; } .stkpt-chip.has-h .stkpt-chip-x{ border-radius:0 3px 3px 0; }
-.stkpt-hs{ display:none; position:absolute; top:-1px; height:22px; width:max-content; white-space:nowrap; box-sizing:border-box; right:calc(100% + 6px); align-items:stretch; gap:4px; }
-.stkpt-chip.has-h:hover,.stkpt-chip.has-h.show-h,.stkpt-chip.has-h:focus-within{ z-index:5; }   /* on top of a neighbour chip */
-.stkpt-chip.has-h.show-h .stkpt-hs,.stkpt-chip.has-h:focus-within .stkpt-hs{ display:flex; }
-@media (hover:hover) and (pointer:fine){ .stkpt-chip.has-h .stkpt-hs{ display:flex; } }
-.stkpt-h{ display:inline-flex; align-items:center; justify-content:center; flex:none; white-space:nowrap; height:22px; min-width:28px; padding:0 6px; box-sizing:border-box; border:1px solid currentColor; border-radius:4px; background:#131722; font:600 11px/1 -apple-system,BlinkMacSystemFont,"Trebuchet MS",Roboto,sans-serif; cursor:ns-resize; touch-action:none; box-shadow:0 1px 4px rgba(0,0,0,.35); }
-:root[data-theme="light"] .stkpt-h{ background:#fff; }
+.stkpt-chip-a{ display:inline-flex; align-items:center; gap:6px; height:22px; padding:0 8px; white-space:nowrap; font-variant-numeric:tabular-nums; }
+.stkpt-lp{ display:inline-flex; align-items:center; height:16px; padding:0 5px; border-radius:4px; background:var(--c); color:#fff; font:700 10px/16px var(--font-body,-apple-system,Roboto,sans-serif); font-style:normal; letter-spacing:.02em; }
+.stkpt-chip-b{ height:22px; padding:0 8px 0 0; white-space:nowrap; font-family:var(--font-mono); font-weight:500; font-variant-numeric:tabular-nums; }
+.stkpt-chip-b::before{ content:""; display:inline-block; width:1px; height:12px; margin-right:8px; vertical-align:-2px; background:currentColor; opacity:.2; }
+.stkpt-chip[data-kind="tp"] .stkpt-chip-b,.stkpt-chip[data-kind="otp"] .stkpt-chip-b{ color:var(--stk-profit,#089981); }
+.stkpt-chip[data-kind="sl"] .stkpt-chip-b,.stkpt-chip[data-kind="osl"] .stkpt-chip-b{ color:var(--stk-loss,#ef5350); }
+/* position: the side-coloured pill carries side, size, money and × ; Reverse / TP / SL sit to its left as small outlined chips */
+.stkpt-chip[data-kind="pos"]{ background:transparent !important; box-shadow:none !important; gap:4px; }
+.stkpt-chip[data-kind="pos"] .stkpt-chip-a{ order:1; border-radius:6px 0 0 6px; background:var(--c); color:#fff; }
+.stkpt-chip[data-kind="pos"] .stkpt-chip-b{ order:2; margin-left:-4px; padding:0 8px 0 0; background:var(--c); color:#fff; }
+.stkpt-chip[data-kind="pos"] .stkpt-chip-x{ order:3; margin-left:-4px; background:var(--c); color:#fff; border-radius:0 6px 6px 0; }
+.stkpt-chip[data-kind="pos"] .stkpt-chip-x::before{ content:""; position:absolute; left:0; top:5px; width:1px; height:12px; background:#fff; opacity:.3; }
+.stkpt-chip[data-kind="pos"] .stkpt-chip-a:last-child, .stkpt-chip[data-kind="pos"].nobtn .stkpt-chip-b{ border-radius:0 6px 6px 0; }
+.stkpt-chip[data-kind="pos"].nobtn .stkpt-chip-a:has(+ .stkpt-chip-b:empty){ border-radius:6px; }
+.stkpt-chip-x{ position:relative; flex:none; display:inline-flex; align-items:center; justify-content:center; height:22px; border:0; background:none; color:inherit; width:22px; padding:0; cursor:pointer; font-size:14px; line-height:22px; border-radius:0 6px 6px 0; opacity:.75; }
+.stkpt-chip-x:hover{ opacity:1; background:rgba(255,255,255,.08); }
+:root[data-theme="light"] .stkpt-chip:not([data-kind="pos"]) .stkpt-chip-x:hover{ background:rgba(14,22,33,.06); }
+.stkpt-chip[data-kind="pos"] .stkpt-chip-x:hover{ background:var(--c); filter:brightness(1.12); }
+.stkpt-chip[data-pin=up] .stkpt-chip-a::before{ content:"↑"; }
+.stkpt-chip[data-pin=down] .stkpt-chip-a::before{ content:"↓"; }
+.stkpt-chip[data-pin=up],.stkpt-chip[data-pin=down]{ opacity:.92; }
+.stkpt-chip.dragging{ box-shadow:0 0 0 2px var(--c), 0 4px 12px rgba(0,0,0,.35); }
+/* TP / SL / Reverse chips beside the position (always shown on desktop; a tap shows them on touch) */
+.stkpt-hs{ order:0; display:inline-flex; align-items:center; gap:4px; padding:0; border:0; }
+.stkpt-chip.has-h:hover,.stkpt-chip.has-h.show-h,.stkpt-chip.has-h:focus-within{ z-index:5; }
+.stkpt-h{ display:inline-flex; align-items:center; justify-content:center; height:22px; min-width:28px; padding:0 8px; box-sizing:border-box; border:1px solid rgba(255,255,255,.14); border-radius:6px; background:#1e222d; color:#d1d4dc; font:600 11px/1 var(--font-body,-apple-system,Roboto,sans-serif); cursor:ns-resize; touch-action:none; box-shadow:0 2px 8px rgba(0,0,0,.3); }
+:root[data-theme="light"] .stkpt-h{ background:#fff; color:#131722; border-color:rgba(14,22,33,.14); box-shadow:0 2px 8px rgba(14,22,33,.12); }
 .stkpt-h[hidden]{ display:none; }
-.stkpt-h[data-h=tp]{ color:var(--stk-profit,#089981); } .stkpt-h[data-h=sl]{ color:var(--stk-loss,#f23645); border-style:dashed; }
-.stkpt-h[data-h=tp]:hover{ background:var(--stk-profit,#089981); border-color:var(--stk-profit,#089981); color:#fff; } .stkpt-h[data-h=sl]:hover{ background:var(--stk-loss,#f23645); border-color:var(--stk-loss,#f23645); border-style:solid; color:#fff; }
+.stkpt-h[data-h=rev]{ cursor:pointer; }
+.stkpt-h[data-h=tp]{ color:var(--stk-profit,#089981); } .stkpt-h[data-h=sl]{ color:#f0a14b; }
+.stkpt-h:hover{ border-color:currentColor; }
 .stkpt-h:focus-visible{ outline:2px solid var(--c); outline-offset:1px; }
-@media (pointer:coarse){ .stkpt-h{ min-width:36px; } }
+@media (pointer:coarse){ .stkpt-chip.has-h:not(.show-h) .stkpt-hs{ display:none; } .stkpt-h{ min-width:32px; } }
+@media (max-width:700px){ .stkpt-chip.has-h.show-h .stkpt-chip-b{ display:none; } }   /* phone: the handles take the P&L's place while shown (P&L stays in the strip / dock) */
 /* live position's TP / SL chip: dark, a small coloured TP / SL pill, the price, a hairline, the P&L at that level (green / red) */
 .stkpt-chip.tagged .stkpt-chip-a{ display:inline-flex; align-items:center; gap:6px; background:transparent; color:inherit; padding:0 8px 0 3px; font-variant-numeric:tabular-nums; }
 .stkpt-chip.tagged .stkpt-chip-a::before{ content:attr(data-tag); display:inline-flex; align-items:center; height:16px; padding:0 5px; border-radius:3px; background:var(--c); color:#fff; font-size:10px; font-weight:700; letter-spacing:.02em; }
 .stkpt-chip.tagged[data-pin=up] .stkpt-chip-a::before{ content:"↑ " attr(data-tag); } .stkpt-chip.tagged[data-pin=down] .stkpt-chip-a::before{ content:"↓ " attr(data-tag); }
-.stkpt-chip.tagged .stkpt-chip-b{ border-left:1px solid rgba(127,127,127,.35); color:var(--stk-profit,#089981); font-family:inherit; font-weight:600; font-variant-numeric:tabular-nums; }
-.stkpt-chip.tagged.neg .stkpt-chip-b{ color:var(--stk-loss,#f23645); }
-.stkpt-chip[data-kind="pos"][data-live]{ background:var(--c); color:#fff; }   /* the live position = one filled chip in its side colour */
-.stkpt-chip[data-kind="pos"][data-live] .stkpt-chip-b,.stkpt-chip[data-kind="pos"][data-live].neg .stkpt-chip-b{ color:#fff; border-left:1px solid rgba(255,255,255,.35); font-family:inherit; font-weight:600; font-variant-numeric:tabular-nums; }
-.stkpt-chip[data-kind="pos"][data-live] .stkpt-chip-x{ border-left-color:rgba(255,255,255,.35); } .stkpt-chip[data-kind="pos"][data-live] .stkpt-chip-x:hover{ background:rgba(0,0,0,.18); }
+.stkpt-chip.tagged .stkpt-chip-b{ color:var(--stk-profit,#089981); font-family:inherit; font-weight:600; font-variant-numeric:tabular-nums; }
+.stkpt-chip.tagged.neg .stkpt-chip-b{ color:var(--stk-loss,#ef5350); }
 .stkpt-chip[data-kind="new"],.stkpt-chip[data-id="new"]{ opacity:.85; }
-.stkpt-1c{ position:absolute; left:10px; top:30px; display:flex; align-items:stretch; height:36px; pointer-events:auto; border-radius:6px; overflow:hidden; box-shadow:0 1px 4px rgba(0,0,0,.35); font-family:-apple-system,BlinkMacSystemFont,"Trebuchet MS",Roboto,sans-serif; }
-.stkpt-1c button{ border:0; min-width:74px; padding:0 8px; display:flex; flex-direction:column; align-items:center; justify-content:center; cursor:pointer; color:#fff; line-height:1.1; }
-.stkpt-1c small{ font-size:10px; font-weight:700; letter-spacing:.05em; opacity:.92; }
-.stkpt-1c b{ font:600 12px var(--font-mono); }
-.stkpt-1c-s{ background:#f23645; } .stkpt-1c-s:hover{ background:#ff4a57; }
-.stkpt-1c-b{ background:#2962ff; } .stkpt-1c-b:hover{ background:#3d73ff; }
-.stkpt-1c-q{ width:58px; border:0; border-radius:0 !important; text-align:center; background:#1e222d !important; color:#d1d4dc !important; font:600 13px var(--font-mono) !important; padding:0 4px !important; -moz-appearance:textfield; }
-:root[data-theme="light"] .stkpt-1c-q{ background:#fff !important; color:#131722 !important; }
-.stkpt-1c-q::-webkit-outer-spin-button,.stkpt-1c-q::-webkit-inner-spin-button{ -webkit-appearance:none; margin:0; }
-@media (max-width:700px){ .stkpt-1c{ height:30px; } .stkpt-1c button{ min-width:62px; padding:0 6px; } .stkpt-1c small{ font-size:9px; } .stkpt-1c b{ font-size:11px; } .stkpt-1c-q{ width:38px; font-size:12px !important; } }
 /* ticket */
 #stkpt-tk{ position:fixed; inset:0; z-index:9000; background:rgba(0,0,0,.55); display:flex; align-items:center; justify-content:center; padding:16px; }
 #stkpt-tk[hidden]{ display:none; }
@@ -2419,9 +2384,6 @@ html.stklv-on .stkpt-badge{ display:none; }
   #stkpt-cq{ align-items:flex-end; padding:0; }
   .stkpt-tk-box{ width:100%; border-radius:18px 18px 0 0; max-height:92dvh; padding-bottom:calc(14px + env(safe-area-inset-bottom)); }
   .stkpt-go{ height:48px; }
-  .stkpt-1c{ height:34px; top:28px; }
-  .stkpt-1c button{ min-width:62px; }
-  .stkpt-1c-q{ width:46px; }
   .stkpt-chip{ right:58px; }
 }
 /* switched off (Chart settings → Paper trading): nothing of paper trading on the page */

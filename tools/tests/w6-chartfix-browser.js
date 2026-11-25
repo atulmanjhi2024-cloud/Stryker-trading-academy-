@@ -288,18 +288,17 @@ async function boot(p, BASE) {
       await sleep(3000);
       const r = await p.evaluate(() => {
         const R = window.STRYKER_VELA.chart.renderer.renderer, bars = window.STRYKER_VELA.chart.orchestrator.rawBars, lb = bars[bars.length - 1];
-        const oc = [...document.querySelectorAll('.stkpt-1c b')].map((e) => e.textContent);
+        const oc = [];   // the one-click box is gone (Owner 25 Nov); the Sell/Buy price is checked in tools/tests/tradepanel-browser.js
         const all = bars.slice(-300).every((x) => [x.open, x.high, x.low, x.close].every((v) => Math.abs(v * 4 - Math.round(v * 4)) < 1e-6));
         return { last: lb.close, allTick: all, oc, acct: window.__stkPaper.account.last['futures:NQ1!'], enabled: window.__stkPaper.enabled };
       });
       console.log(tag, JSON.stringify(r));
       check(r.allTick, tag + ': every bar price is a 0.25 multiple');
       check(r.acct === r.last, tag + ': paper last == chart last ' + r.acct + ' / ' + r.last);
-      check(r.oc.length === 2 && r.oc.every((t) => Number(t.replace(/,/g, '')) === r.last), tag + ': ticket Sell/Buy show chart price ' + r.oc);
-      await p.evaluate(() => window.STRYKER_VELA.active.setPriceStyle && window.STRYKER_VELA.active.setPriceStyle('stk_fp'));
+            await p.evaluate(() => window.STRYKER_VELA.active.setPriceStyle && window.STRYKER_VELA.active.setPriceStyle('stk_fp'));
       await sleep(2500);
       await p.screenshot({ path: OUT + '/w6-' + tag + '-footprint-down.png' }); console.log('shot', OUT + '/w6-' + tag + '-footprint-down.png');
-      const fb = await p.evaluate(() => { const o = document.querySelector('.stkpt-1c').getBoundingClientRect(); const f = document.querySelector('.stk-fb'); const fr = f && !f.hidden ? f.getBoundingClientRect() : null; return { oc: [o.left, o.top, o.right, o.bottom], fb: fr && [fr.left, fr.top, fr.right, fr.bottom] }; });
+      const fb = await p.evaluate(() => { const e = document.querySelector('#stkop-sc'); const o = e && !e.hidden ? e.getBoundingClientRect() : { left: 0, top: 0, right: 0, bottom: 0 }; const f = document.querySelector('.stk-fb'); const fr = f && !f.hidden ? f.getBoundingClientRect() : null; return { oc: [o.left, o.top, o.right, o.bottom], fb: fr && [fr.left, fr.top, fr.right, fr.bottom] }; });
       console.log(tag, JSON.stringify(fb));
       check(!fb.fb || fb.fb[1] >= fb.oc[3] || fb.fb[0] >= fb.oc[2] || fb.fb[2] <= fb.oc[0], tag + ': favbar not over ticket');
       check(!errors.length, tag + ': no page errors ' + errors.slice(0, 2).join('|'));

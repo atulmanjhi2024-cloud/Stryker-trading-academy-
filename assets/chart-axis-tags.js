@@ -22,7 +22,7 @@ const LINES = new Set(['hline', 'hray']);
 const TRADE_KEY = 'stk_axtags_trade';
 let WS = null, started = false, tradeOn = true;
 try { tradeOn = localStorage.getItem(TRADE_KEY) !== '0'; } catch (e) {}
-const ASK_COLOR = '#f23645';
+const ASK_COLOR = '#ef5350';   // soft red (Owner 25 Nov: no harsh red lines)
 const baKey = () => { let u = ''; try { u = (window.firebase && firebase.auth().currentUser || {}).uid || ''; } catch (e) {} return 'stk_bidask_' + (u || 'guest'); };
 export function bidAskOn() { try { return localStorage.getItem(baKey()) !== '0'; } catch (e) { return true; } }
 export function setBidAsk(on) { try { localStorage.setItem(baKey(), on ? '1' : '0'); } catch (e) {} }
@@ -79,7 +79,7 @@ function drawingTags(cell, R) {
     const col = solid(d.style && (d.style.lineColor || d.style.borderColor || d.style.color), '#2962ff');
     if (d.type === 'position' && typeof d.prices === 'function') {
       const p = d.prices(); if (!p) continue;
-      out.push({ price: p.entry, color: '#5d6b85', kind: 'entry' }, { price: p.stop, color: solid(d.lossColor, '#f23645'), kind: 'sl' }, { price: p.target, color: solid(d.profitColor, '#089981'), kind: 'tp' });
+      out.push({ price: p.entry, color: '#5d6b85', kind: 'entry' }, { price: p.stop, color: solid(d.lossColor, '#ef5350'), kind: 'sl' }, { price: p.target, color: solid(d.profitColor, '#089981'), kind: 'tp' });
     } else if (Array.isArray(d.levels) && typeof d.levelPrice === 'function' && d.anchors.length >= 2) {
       if (d.showPrices === false) continue;
       for (const lv of d.levels) if (lv.enabled) out.push({ price: d.levelPrice(lv.ratio, d.anchors[0].price, d.anchors[1].price), color: solid(lv.color, col) });
@@ -149,9 +149,8 @@ function paint(cell, R) {
       const y = co.priceToY(p, pane.scale, pane.bounds);
       if (y >= top && y <= bot) ba.push({ y, color: col, text: k + ' ' + fmt(p), k });
     }
+    if (ba.length) for (let i = items.length - 1; i >= 0; i--) if (items[i].kind === 'ask') items.splice(i, 1);   // the Ask line's tag replaces the trade layer's dark ask tag
   }
-  // the Ask line carries its own tag: drop the plain ask tag a live cTrader chart adds (chart-live.js quoteTags), never two
-  if (ba.length) for (let i = items.length - 1; i >= 0; i--) if (items[i].kind === 'ask') items.splice(i, 1);
   // the last-price tag (and its countdown under it) keeps its place: nothing is painted over it
   const reserved = [];
   const n = sc.bars ? sc.bars.length : 0;
@@ -175,7 +174,7 @@ function paint(cell, R) {
     const room = axW - 8, w = g.measureText(it.text).width;
     if (w > room) { fs = Math.max(8, Math.floor(11 * room / w)); g.font = FONT.replace('11px', fs + 'px'); }
     // a filled, slightly rounded tag (like a horizontal line's); a working order's tag is its side colour at lower opacity
-    g.globalAlpha = it.fade || 1; g.fillStyle = it.color; g.beginPath(); if (g.roundRect) g.roundRect(W + 1, t, axW - 2, H, 2); else g.rect(W + 1, t, axW - 2, H); g.fill(); g.globalAlpha = 1;
+    g.globalAlpha = it.fade || 1; g.fillStyle = it.color; g.beginPath(); if (g.roundRect) g.roundRect(W + 1, t, axW - 2, H, 4); else g.rect(W + 1, t, axW - 2, H); g.fill(); g.globalAlpha = 1;
     g.fillStyle = ink(it.color); g.fillText(it.text, W + axW / 2, t + H / 2 + 0.5);
     s.boxes.push({ y: it.y, top: t, color: it.color, text: it.text, x: W + 1, w: axW - 2, h: H, fade: it.fade, kind: it.kind });
   }
@@ -183,10 +182,10 @@ function paint(cell, R) {
   g.font = FONT;
   for (const it of ba) {
     const yy = Math.round(it.y) + 0.5, w = Math.ceil(g.measureText(it.text).width) + 12, x = Math.min(W + 1, pw - 1 - w), bw = pw - 1 - x;
-    g.strokeStyle = it.color; g.lineWidth = 1; g.globalAlpha = it.k === 'Ask' ? 0.9 : 0.75;
-    g.beginPath(); g.moveTo(0, yy); g.lineTo(x, yy); g.stroke(); g.globalAlpha = 1;
+    g.strokeStyle = it.color; g.lineWidth = 1; g.globalAlpha = 0.6; g.setLineDash([4, 4]);   // soft dashed (Owner 25 Nov)
+    g.beginPath(); g.moveTo(0, yy); g.lineTo(x, yy); g.stroke(); g.setLineDash([]); g.globalAlpha = 1;
     const t = Math.round(it.y - H / 2);
-    g.fillStyle = it.color; g.fillRect(x, t, bw, H);
+    g.fillStyle = it.color; g.beginPath(); g.roundRect ? g.roundRect(x, t, bw, H, 4) : g.rect(x, t, bw, H); g.fill();
     g.fillStyle = ink(it.color); g.textAlign = 'center'; g.fillText(it.text, x + bw / 2, t + H / 2 + 0.5);
     s.boxes.push({ y: it.y, top: t, color: it.color, text: it.text, x, w: bw, h: H, kind: it.k.toLowerCase() });
   }

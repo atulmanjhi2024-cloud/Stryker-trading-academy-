@@ -130,7 +130,7 @@ async function run(b, w, h, mobile, theme) {
   // OWNER ADDITION 2: price-scale tags for the entry (side colour), SL (loss colour) and the working limit (side colour, faded); the
   // ask tag; none over the last-price tag
   // Sample data: the ask (the mock sends no spot events); the bid is the chart's last price
-  await p.evaluate(async (b) => { window.__stkQuotes.put('CT:EURUSD', b, Math.round((b + 0.00012) * 1e5) / 1e5); }, bid);   // byo-core.js QUOTES (the app's own instance)
+  await p.evaluate(async (b) => { const m = await import('/assets/byo-ctrader.js?v=1293'); m.CTQ.set('CT:EURUSD', { bid: b, ask: Math.round((b + 0.00012) * 1e5) / 1e5, at: Date.now() }); }, bid);
   await opWait(p, () => { const R = window.__stkAxisTags.rendererOf(window.__stkAxisTags.cellsOf()[0]); return window.__stkAxisTags.boxes(R).some((b) => b.kind === 'ask'); }, null, 5000);
   const AX = await p.evaluate(() => { const cell = window.__stkAxisTags.cellsOf()[0], R = window.__stkAxisTags.rendererOf(cell), sc = R.scene, pane = sc.panes.get('price'), co = R.coords;
     const n = sc.bars.length, ly = co.priceToY(sc.bars[n - 1].close, pane.scale, pane.bounds); const tv = window.__stkTradeView.get().col;
@@ -149,12 +149,12 @@ async function run(b, w, h, mobile, theme) {
   await ready(p);
   const hs = await p.evaluate(() => { const c = [...document.querySelectorAll('.stkpt-chip[data-kind=pos]')].find((x) => x.offsetWidth > 0); c.classList.add('show-h'); const hb = [...c.querySelectorAll('.stkpt-h')].filter((x) => !x.hidden && x.offsetWidth > 0);
     const cr = c.getBoundingClientRect(), a = c.querySelector('.stkpt-chip-a').getBoundingClientRect(), box = c.querySelector('.stkpt-hs').getBoundingClientRect(), g = hb.length > 1 ? hb[1].getBoundingClientRect().left - hb[0].getBoundingClientRect().right : null;
-    return { n: hb.map((x) => x.dataset.h), cyChip: cr.top + cr.height / 2, cyA: a.top + a.height / 2, cys: hb.map((x) => { const r = x.getBoundingClientRect(); return r.top + r.height / 2; }), cl: cr.left, pads: hb.map((x) => { const r = x.getBoundingClientRect(), rng = document.createRange(); rng.selectNodeContents(x); const t = rng.getBoundingClientRect(); return { l: t.left - r.left, r: r.right - t.right, t: t.top - r.top, b: r.bottom - t.bottom }; }), boxR: box.right, chipR: cr.right, gapToChip: cr.left - box.right, inView: cr.right <= innerWidth && box.left >= 0, h: hb.map((x) => x.getBoundingClientRect().height), ch: cr.height }; });
+    return { n: hb.map((x) => x.dataset.h), cyChip: cr.top + cr.height / 2, cyA: a.top + a.height / 2, cys: hb.map((x) => { const r = x.getBoundingClientRect(); return r.top + r.height / 2; }), cl: cr.left, pads: hb.map((x) => { const r = x.getBoundingClientRect(), rng = document.createRange(); rng.selectNodeContents(x); const t = rng.getBoundingClientRect(); return { l: t.left - r.left, r: r.right - t.right, t: t.top - r.top, b: r.bottom - t.bottom }; }), boxR: box.right, chipR: cr.right, gapToChip: a.left - box.right, inView: cr.right <= innerWidth && box.left >= 0, h: hb.map((x) => x.getBoundingClientRect().height), ch: cr.height }; });
   check(hs.n.length === 1 && hs.n[0] === 'tp', tag + ': hover / tap shows the TP handle (SL already set: drag its line instead)', hs);
   check(hs.cys.every((y) => Math.abs(y - hs.cyChip) <= 1) && Math.abs(hs.cyA - hs.cyChip) <= 1, tag + ': handles and label share one vertical centre', hs);
   check(hs.pads.every((q) => Math.abs(q.l - q.r) <= 1 && Math.abs(q.t - q.b) <= 1.5 && q.t >= 0), tag + ': handle text centred (even padding)', hs.pads);
   check(hs.inView, tag + ': position chip with handles fits in view', hs);
-  check(Math.abs(hs.gapToChip - 4) <= 1 && hs.h.every((x) => Math.abs(x - hs.ch) <= 1), tag + ': TP chip sits 4 px left of the position chip, same height', hs);
+  check(Math.abs(hs.gapToChip - 4) <= 1 && hs.h.every((x) => Math.abs(x - hs.ch) <= 1), tag + ': TP chip sits 4 px left of the position pill, same height', hs);
   await sleep(200); await p.screenshot({ path: OUT + '/handles-' + tag + '.png' });
   const tpPx = Math.round((bid + 0.0025) * 1e5) / 1e5;
   // screen y of a price = the position chip's centre + the pane's price-to-y distance from the entry

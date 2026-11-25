@@ -91,32 +91,24 @@ async function run(b, w, h, mobile, theme) {
   B = await baBoxes(p);
   check(B.some((x) => x.text === 'Bid 100.05') && B.some((x) => x.text === 'Ask 100.17'), tag + ': next spot moves both lines', B);
   await spot(p, 100.00, 100.12); await sleep(150);
-  // trading panel
-  await p.evaluate(() => window.__stkOrderPanel.open({ tab: 'scalp' }));
+  // trading panel (Owner 25 Nov clean ticket): Sell tile = bid, Buy tile = ask, the spread chip between them
+  await p.evaluate(() => window.__stkOrderPanel.open({ tab: 'order' }));
   await opWait(p, () => { const n = document.querySelector('#stkop [data-k=spr]'); return n && n.textContent === '1.2'; }, null, 5000);
   const panel = await p.evaluate(() => { const q = (s) => document.querySelector('#stkop ' + s); const r = (e) => e && e.getBoundingClientRect();
-    const sell = q('.stkop-scalp [data-a=sell]'), buy = q('.stkop-scalp [data-a=buy]'), sw = q('[data-k=sprw]');
-    const pill = (e) => { const R = r(e), a = r(e.querySelector('span')), c = r(e.querySelector('small')); return { word: e.querySelector('span').textContent, px: e.querySelector('small').textContent, shown: !e.querySelector('small').hidden, padT: a.top - R.top, padB: R.bottom - c.bottom, cx: Math.abs((a.left + a.right) / 2 - (R.left + R.right) / 2), cx2: Math.abs((c.left + c.right) / 2 - (R.left + R.right) / 2), clip: e.scrollWidth > e.clientWidth + 1 }; };
-    const ba = [...q('.stkop-ba').children].filter((x) => !x.hidden).map((x) => { const R = r(x); return (R.top + R.bottom) / 2; });
-    const sl = q('.stkop-sprl'), slR = r(sl), inR = r(q('.stkop-info')), spn = r(sl.querySelector('.stkop-ba')), il = r(q('.stkop-info .stkop-il'));
-    return { sell: pill(sell), buy: pill(buy), spread: sw.hidden ? null : sw.querySelector('.stkop-ba').textContent, baDc: Math.max(...ba) - Math.min(...ba), wide: q('[data-k=wide]').hidden, sprIn: slR.right <= inR.right - 15 && Math.abs(spn.left - il.left) <= 1 && sl.scrollWidth <= sl.clientWidth + 1, num: getComputedStyle(q('[data-k=spr]')).fontVariantNumeric }; });
+    const tile = (k) => { const e = q('.stkop-tile.' + k), R = r(e), px = e.querySelector('.stkop-tpx'); return { word: e.querySelector('.stkop-tl').textContent, px: px.textContent, clip: px.scrollWidth > px.clientWidth + 1, cy: R.top + R.height / 2 }; };
+    const sp = q('[data-k=spr]'), sR = r(sp), sell = tile('sell'), buy = tile('buy');
+    return { sell, buy, spread: sp.hidden ? null : sp.textContent, spDc: Math.abs(sR.top + sR.height / 2 - sell.cy), tilesDc: Math.abs(sell.cy - buy.cy), wide: q('[data-k=wide]').hidden, num: getComputedStyle(q('.stkop-tpx')).fontVariantNumeric }; });
   check(panel.sell.word === 'Sell' && panel.sell.px === '100.00' && panel.buy.word === 'Buy' && panel.buy.px === '100.12', tag + ': panel Sell 100.00 / Buy 100.12', panel);
-  check(panel.spread === 'Spread 1.2', tag + ': panel "Spread 1.2"', panel);
-  check(Math.abs(panel.sell.padT - panel.sell.padB) <= 1 && panel.sell.cx <= 1 && panel.sell.cx2 <= 1 && !panel.sell.clip && !panel.buy.clip, tag + ': Sell / Buy text centred, even padding, not clipped', panel);
-  check(panel.baDc <= 1 && /tabular-nums/.test(panel.num), tag + ': details row one centre, tabular digits', panel);
-  check(panel.sprIn, tag + ': Spread line inside the panel padding, left edge = the details rows, not clipped', panel);
+  check(panel.spread === '1.2', tag + ': panel spread chip "1.2"', panel);
+  check(panel.tilesDc <= 1 && panel.spDc <= 1 && !panel.sell.clip && !panel.buy.clip, tag + ': tiles + spread chip on one centre, prices not clipped', panel);
+  check(/tabular-nums/.test(panel.num), tag + ': tile prices use tabular digits', panel);
   check(panel.wide === true, tag + ': no "wider than usual" hint at a normal spread', panel);
   await sleep(300); await p.screenshot({ path: OUT + '/chart-panel-' + tag + '.png' });
-  // order tab: MetaTrader style Buy = ASK, Sell = BID
-  await p.evaluate(() => window.__stkOrderPanel.setTab('order')); await sleep(400);
-  const od = await p.evaluate(() => ({ buy: document.querySelector('#stkop .stkop-side.buy span').textContent, sell: document.querySelector('#stkop .stkop-side.sell span').textContent }));
-  check(/ASK\s+100\.12/.test(od.buy) && /BID\s+100\.00/.test(od.sell), tag + ': Order tab Buy ASK 100.12 / Sell BID 100.00', od);
-  await p.evaluate(() => window.__stkOrderPanel.setTab('scalp')); await sleep(200);
   // wider than usual: 25 normal samples (one a second), then a wide one -> amber hint
   await p.evaluate(() => { const Q = window.__stkQuotes, real = Date.now; let t = real(); Date.now = () => t; for (let i = 0; i < 25; i++) { t += 1000; Q.put('CT:NAS100', 100.00, 100.12); } t += 1000; Q.put('CT:NAS100', 100.00, 100.60); Date.now = real; });
   const wide = await opWait(p, () => !document.querySelector('#stkop [data-k=wide]').hidden && document.querySelector('#stkop [data-k=spr]').textContent === '6', null, 3000);
-  const wc = await p.evaluate(() => { const w = document.querySelector('#stkop [data-k=wide]'), sl = w.parentElement, a = sl.querySelector('.stkop-ba').getBoundingClientRect(), b = w.getBoundingClientRect(); return { c: getComputedStyle(w).color, t: w.textContent, dc: Math.abs((a.top + a.bottom) / 2 - (b.top + b.bottom) / 2), clip: w.scrollWidth > w.clientWidth + 1 }; });
-  check(wide && wc.t === 'Spread is wider than usual' && wc.dc <= 1 && !wc.clip, tag + ': spread 6 (> 3x the 1.2 median) -> "Spread is wider than usual"', wc);
+  const wc = await p.evaluate(() => { const w = document.querySelector('#stkop [data-k=wide]'); return { c: getComputedStyle(w).color, t: w.textContent, chip: document.querySelector('#stkop [data-k=spr]').classList.contains('wide'), clip: w.scrollWidth > w.clientWidth + 1 }; });
+  check(wide && wc.t === 'Spread is wider than usual' && wc.chip && !wc.clip, tag + ': spread 6 (> 3x the 1.2 median) -> "Spread is wider than usual"', wc);
   await sleep(300); await p.screenshot({ path: OUT + '/panel-wide-' + tag + '.png' });
   await spot(p, 100.00, 100.12); await sleep(300);
   // dock: inject a position (server event, as cTrader would push it), check the Spread column

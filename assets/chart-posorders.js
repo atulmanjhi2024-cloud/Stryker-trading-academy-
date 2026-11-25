@@ -3,6 +3,8 @@
 // Order history | Trade history | Balances. Data: the account the member picked. Paper (everyone): window.__stkPaper.account state.
 // Live (admins only, a broker account picked): chart-live.js dock() = read-only copy of the poll data (+ one read of transactions).
 // Actions reuse the existing paper closePos / cancelOrder / flattenAll and live flatten / cancel (their own confirms). No new order routes.
+// Spread column (Owner 25 Nov 2026): Positions / Open orders rows of broker symbols whose chart feed streams bid + ask (byo-core.js
+// QUOTES, the chart's own stream) show the live spread in pips / points; shown only when at least one row has one.
 // Lazy-loaded by assets/chart-paper.js mountPaper(). Test: tools/tests/chart-posorders-browser.js.
 const KEY = 'stryker_posorders_ui', H0 = 220, HMIN = 120, PHONE = 700, ICON = 600;
 const TABS = [['pos', 'Positions'], ['ord', 'Open orders'], ['oh', 'Order history'], ['th', 'Trade history'], ['bal', 'Balances']];
@@ -11,6 +13,8 @@ const money = (n, sign) => (Number.isFinite(n) ? (n < 0 ? '−' : sign && n > 0 
 const cls = (n) => (n > 0 ? 'up' : n < 0 ? 'down' : '');
 const show = (s) => String(s || '').replace(/^[^:]+:/, '');
 const phone = () => window.innerWidth <= PHONE;
+// live spread of a dock row's symbol: the cTrader account chart (CT:NAS100) first, then the plain name (EURUSD / EUR_USD)
+const spreadOf = (sym) => { const Q = window.__stkQuotes; if (!Q || !sym) return null; const q = Q.get('CT:' + sym) || Q.get(sym); return q ? String(Math.round(q.spread * 10) / 10) : null; };
 
 let P = null, btn = null, dock = null, ui = { open: false, tab: 'pos', h: H0 }, sig = '', liveTx = null;
 try { Object.assign(ui, JSON.parse(localStorage.getItem(KEY) || '{}'), { open: false }); } catch (e) {}
@@ -44,14 +48,12 @@ function paperData() {
 // Spread column (Owner 25 Nov 2026): Positions / Open orders rows of broker symbols whose chart feed streams bid + ask (byo-core.js
 // QUOTES, the chart's own stream) show the live spread in pips / points; shown only when at least one row has one.
 // (Build 1287 dropped it by accident together with the bid / ask lines; restored in build 1290.)
-// live spread of a dock row's symbol: the cTrader account chart (CT:NAS100) first, then the plain name (EURUSD / EUR_USD)
-const spreadOf = (sym) => { const Q = window.__stkQuotes; if (!Q || !sym) return null; const q = Q.get('CT:' + sym) || Q.get(sym); return q ? String(Math.round(q.spread * 10) / 10) : null; };
 const liveData = () => { const L = P.live; return L && L.dock ? L.dock(ui.open ? ui.tab : '') : null; };
 const data = () => { try { return (P.live ? liveData() : null) || (P.live ? null : paperData()); } catch (e) { return null; } };
 
 // ---- view -----------------------------------------------------------------------------------------------------------------------
 const tbl = (head, rows, empty) => rows.length
-  ? '<div class="stkpo-tw"><table class="stkpo-t"><thead><tr>' + head.map((h, i) => '<th' + (/Qty|Avg|Last|Spread|P&amp;L|Price|Commission|Swap|^TP$|^SL$/.test(esc(h)) ? ' class="n"' : '') + '>' + esc(h) + '</th>').join('') + '</tr></thead><tbody>' + rows.join('') + '</tbody></table></div>'
+  ? '<div class="stkpo-tw"><table class="stkpo-t"><thead><tr>' + head.map((h, i) => '<th' + (/Qty|Avg|Last|P&amp;L|Price|Spread|Commission|Swap|Expected|Slippage|^TP$|^SL$/.test(esc(h)) ? ' class="n"' : '') + '>' + esc(h) + '</th>').join('') + '</tr></thead><tbody>' + rows.join('') + '</tbody></table></div>'
   : '<p class="stkpo-empty">' + esc(empty) + '</p>';
 const X = (i, label) => '<td class="x"><button type="button" class="stkpo-x" data-x="' + i + '" aria-label="' + esc(label) + '" title="' + esc(label) + '"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg></button></td>';
 function body(d) {
@@ -74,7 +76,7 @@ function body(d) {
     if (d.th === 'loading' || d.th == null) return '<p class="stkpo-empty">Loading…</p>';
     if (d.thNote && !d.th.length) return '<p class="stkpo-empty">' + esc(d.thNote) + '</p>';
     const ext = d.thExt || [];
-    return tbl(['Time', 'Symbol', 'Side', 'Qty', 'Price', 'P&L'].concat(ext), d.th.map((o) => '<tr><td>' + esc(when(o.t)) + '</td><td class="s">' + esc(o.sym) + '</td><td class="' + (o.buy ? 'up' : o.side === '—' ? '' : 'down') + '">' + esc(o.side) + '</td><td class="n">' + esc(o.qty) + '</td><td class="n">' + esc(o.price) + '</td><td class="n ' + cls(o.pnl) + '">' + esc(o.pnlTxt != null ? o.pnlTxt : o.pnl == null ? '—' : money(o.pnl, true)) + '</td>' + ext.map((_, i) => '<td class="n ' + cls((o.extN || [])[i]) + '">' + esc((o.ext || [])[i] || '—') + '</td>').join('') + '</tr>'), d.live && d.thDays ? 'No trades in the last ' + d.thDays + ' days' : 'No trades yet');
+    return tbl(['Time', 'Symbol', 'Side', 'Qty', 'Price', 'P&L'].concat(ext), d.th.map((o) => '<tr><td>' + esc(when(o.t)) + '</td><td class="s">' + esc(o.sym) + '</td><td class="' + (o.buy ? 'up' : o.side === '—' ? '' : 'down') + '">' + esc(o.side) + '</td><td class="n">' + esc(o.qty) + '</td><td class="n">' + esc(o.price) + '</td><td class="n ' + cls(o.pnl) + '">' + esc(o.pnlTxt != null ? o.pnlTxt : o.pnl == null ? '—' : money(o.pnl, true)) + '</td>' + ext.map((_, i) => { const v = (o.ext || [])[i], tt = (o.extT || [])[i]; return '<td class="n ' + cls((o.extN || [])[i]) + '"' + (tt ? ' title="' + esc(tt) + '"' : '') + '>' + esc(v === '' ? '' : v || '—') + '</td>'; }).join('') + '</tr>'), d.live && d.thDays ? 'No trades in the last ' + d.thDays + ' days' : 'No trades yet');
   }
   return d.bal.length ? '<div class="stkpo-bal">' + d.bal.map(([k, v, n]) => '<div><em>' + esc(k) + '</em><b class="' + cls(n) + '">' + esc(v) + '</b></div>').join('') + '</div>' : '<p class="stkpo-empty">No balance to show</p>';
 }

@@ -820,17 +820,60 @@ const ms0 = (lat, k) => (lat && lat[k] ? Math.max(0, Math.round(lat[k] - lat.t0)
 function ctMarks(body, lat) {
   if (!lat || lat.sentMarks || !CT.link || !body.idemKey) return; lat.sentMarks = true;
   const m = { c_cf: ms0(lat, 'cf'), c_open: ms0(lat, 'open'), c_send: ms0(lat, 'send'), c_ack: ms0(lat, 'ack'), c_toast: ms0(lat, 'toast'), c_fill: ms0(lat, 'fillAt') };
+  if (lat.exp) m.exp_px = lat.exp.price;
+  if (lat.slip) Object.assign(m, { fill_px: lat.slip.fill, slip_pts: lat.slip.pts }, lat.slip.money != null ? { slip_money: lat.slip.money } : {});
   S.lat = Object.assign({ at: Date.now(), op: body.op }, m, lat.watch && lat.watch.server ? lat.watch.server : {}); window.__stkLat = S.lat;
   CT.link.marks(body.idemKey, m);
 }
-const pxTxt = (v, tick) => { const d = tick > 0 ? Math.max(0, Math.min(8, Math.round(-Math.log10(tick)))) : 2; return Number(v).toFixed(d); };
+const pxTxt = (v, tick) => { const d = tick > 0 ? Math.max(0, Math.min(8, Math.round(-Math.log10(tick)))) : 2; return Number(v).toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d }); };
+// ---- SLIPPAGE (Owner 25 Nov). lat.exp = the price the member saw at the click (placeMt, market orders on the broker's own prices);
+// at the fill: L.slippage (positive = worse for the trader), kept per account on this device by cTrader order id so Trade history can
+// show Expected / Slippage for orders sent from TradeZoro (other rows stay blank), and sent with the click's marks to the order's log
+// row (ctMarks, after the order, never before). Money only when the symbol is quoted in USD (same rule as the chart P&L, ctPnl).
+const slipKey = () => 'stryker_slip_' + uid + '_' + (S.acct ? S.acct.id : '');
+function slipBook() { try { const j = JSON.parse(localStorage.getItem(slipKey()) || '{}'); return j && typeof j === 'object' ? j : {}; } catch (e) { return {}; } }
+function slipSave(oid, s) {
+  if (!oid || !s) return; const b = slipBook(); b[oid] = { e: s.exp, f: s.fill, p: s.pts, m: s.money, s: s.src, at: Date.now() };
+  const ks = Object.keys(b); if (ks.length > 300) ks.sort((x, y) => (b[x].at || 0) - (b[y].at || 0)).slice(0, ks.length - 300).forEach((k) => delete b[k]);
+  try { localStorage.setItem(slipKey(), JSON.stringify(b)); } catch (e) { /* full: only the history column is lost */ }
+}
+function ctUnits(code, lots) {   // broker units for money, USD-quoted symbols only (else null: points only)
+  if (!CT.link) return null;
+  const K = String(code || '').toUpperCase(), id = CT.link.byName.get(K), d = id && CT.link.details.get(id); if (!d || !(d.lotSize > 0)) return null;
+  const qa = CT.link.quote && CT.link.quote.get(K), as = CT.link.assets && qa ? CT.link.assets.find((a) => a && Number(a.assetId) === qa) : null;
+  const usd = as ? String(as.name || as.displayName || '').toUpperCase() === 'USD' : /USD$/.test(K);
+  return usd ? Number(lots) * d.lotSize / 100 : null;
+}
+// order panel helper (Owner 25 Nov "0.01 lots = 0.1 NAS100"): broker units for a lot count from the cTrader symbol's lot size.
+// usd = true: only when the symbol is quoted in USD (for money), like ctUnits. Not a cTrader account / no details: null (nothing shown).
+export function lotUnits(code, lots, usd) {
+  if (!S.acct || !S.acct.ct || !CT.link) return null;
+  if (usd) return ctUnits(code, lots);
+  const id = CT.link.byName.get(String(code || '').toUpperCase()), d = id && CT.link.details.get(id);
+  return d && d.lotSize > 0 ? Number(lots) * d.lotSize / 100 : null;
+}
+function ctSlip(lat, r, fill) {
+  if (!lat || !lat.exp || !lat.body) return null;
+  const b = lat.body, s = L.slippage(b.side, lat.exp.price, fill, ctUnits(b.symbol, b.qty), lat.tick); if (!s) return null;
+  s.src = lat.exp.src; lat.slip = s; slipSave(r && r.orderId ? String(r.orderId) : '', s);
+  return s;
+}
+// the price on screen at the click: the broker's own bid / ask (its chart plots the bid) when fresh, else the chart's last price
+function expectedAt(i, side, sym) {
+  if (!i || !i.map || !i.map.same) return null;   // a mapped futures chart is not the broker's price: no expected price
+  let q = null; try { q = CT.byo && CT.byo.quoteOf ? CT.byo.quoteOf('CT:' + String(i.code || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase()) : null; } catch (e) { q = null; }
+  if (TEST && TEST.ctQuote) q = TEST.ctQuote(i.code, sym);
+  if (q && q.at && Date.now() - q.at > 15000) q = null;   // stale quote: the chart's last price is what was on screen
+  return L.expectedPrice(side, q, i.last);
+}
 function ctToast(what, r, lat) {
   const st = String(r.status || ''), tick = lat.tick || 0;
   const done = (msg) => { toast(msg, 'success'); lat.toast = performance.now(); };
-  if (/FILL/.test(st)) { lat.fillAt = lat.ack; done(what + ' filled' + (r.price ? ' @ ' + pxTxt(r.price, tick) : '') + '.'); return; }
+  const at = (v) => ' @ ' + pxTxt(v, tick) + L.slipText(ctSlip(lat, r, v), (x) => pxTxt(x, tick)) + '.';
+  if (/FILL/.test(st)) { lat.fillAt = lat.ack; done(what + ' filled' + (r.price ? at(r.price) : '.')); return; }
   if (r.fill && typeof r.fill.then === 'function') {   // a market order cTrader accepted first: the fill event follows
     lat.wait = true;
-    r.fill.then((p) => { lat.wait = false; if (p) { lat.fillAt = performance.now(); done(what + ' filled @ ' + pxTxt(p, tick) + '.'); } else done(what + ': cTrader accepted it. The fill shows in your positions.'); ctMarks(lat.body, lat); });
+    r.fill.then((p) => { lat.wait = false; if (p) { lat.fillAt = performance.now(); done(what + ' filled' + at(p)); } else done(what + ': cTrader accepted it. The fill shows in your positions.'); ctMarks(lat.body, lat); });
     return;
   }
   done(what + (/ACCEPTED|PENDING/.test(st) || !st ? ': order accepted by cTrader.' : ' sent. cTrader status: ' + st.toLowerCase().replace(/_/g, ' ') + '.'));
@@ -883,7 +926,7 @@ async function placeMt(sym, o, src) {
   if (i.ct) { const sig = JSON.stringify(Object.assign({}, body, { idemKey: '' })), t = now(); if (S.lastSend && S.lastSend.sig === sig && t - S.lastSend.at < L.DUP_MS) return null; S.lastSend = { sig, at: t }; }   // double-click guard
   const desc = sideWord(o.side) + ' ' + lotTxt(qty) + ' ' + i.code + ' ' + (o.type === 'market' ? 'MARKET' : o.type.toUpperCase() + ' @ ' + pxd(Number(body.limitPrice || body.stopPrice), i.tick));
   const pl = i.map.same ? L.pendingLine(body, i.last) : null; if (pl && i.ct) Object.assign(pl, { sl: Number(body.sl) > 0 ? Number(body.sl) : null, tp: Number(body.tp) > 0 ? Number(body.tp) : null });   // cTrader: SL / TP lines from the click too
-  if (lat) { lat.tick = i.tick; lat.body = body; lat.cf = performance.now(); }   // c_cf: the chart's own checks done, the order leaves
+  if (lat) { lat.tick = i.tick; lat.body = body; lat.exp = o.type === 'market' && i.ct ? expectedAt(i, o.side, sym) : null; lat.cf = performance.now(); }   // c_cf: the chart's own checks done, the order leaves
   return write(body, desc + (src ? ' (' + src + ')' : ''), pl, lat);
 }
 
@@ -910,7 +953,7 @@ function ctPnlOne(code, p, price) {
 let QUO = null;
 function quoteFor(code) {
   if (!QUO) import('./byo-ctrader.js?v=1293').then((m) => { QUO = m.quoteOf; }).catch(() => {});
-  const q = QUO ? QUO(code) : null; if (q && q.bid > 0) return q;
+  const q = QUO ? QUO(code) : null; if (q && q.bid > 0 && Date.now() - q.at < 120000) return q;   // stale (> 2 min): fall back
   let b = P && P.lastPrice ? P.lastPrice('byo:CT:' + code) : undefined;
   if (!(b > 0) && TEST && TEST.quote) { const t = TEST.quote(code); if (t) return t; }
   if (!(b > 0) && TEST && TEST.last) b = TEST.last('byo:CT:' + code);
@@ -1104,8 +1147,13 @@ export function dock(tab) {
   let th, oh2 = oh, thErr = S.hist.th.err, ohErr = '', thNote = '', thExt = null;
   if (S.acct.ct) {
     const lot = (q) => (Number.isFinite(q) ? q.toFixed(2) : '—');
-    thExt = ['Commission', 'Swap'];
-    th = S.hist.th.rows == null ? null : S.hist.th.rows.map((d) => ({ t: d.t, sym: d.sym, side: (d.side === 'buy' ? 'Buy' : 'Sell') + (d.closing ? ' · close' : ''), buy: d.side === 'buy', qty: lot(d.lots), price: d.price != null ? pxd(d.price, codeTick(d.sym)) : '—', pnl: d.closing ? d.gross : null, pnlTxt: d.closing ? fm(d.gross, true) : '—', ext: [fm(d.commission, true), d.closing ? fm(d.swap, true) : '—'], extN: [d.commission, d.closing ? d.swap : null] }));
+    thExt = ['Commission', 'Swap', 'Expected', 'Slippage'];
+    const sb = slipBook(), dg = (sym) => { const t = ctTick(sym, ''); return t > 0 ? Math.max(0, Math.min(8, Math.round(-Math.log10(t)))) : 2; };
+    th = S.hist.th.rows == null ? null : S.hist.th.rows.map((d) => {
+      const x = !d.closing && d.orderId ? sb[d.orderId] : null, n = x ? dg(d.sym) : 0;   // Expected / Slippage: only orders sent from TradeZoro
+      return { t: d.t, sym: d.sym, side: (d.side === 'buy' ? 'Buy' : 'Sell') + (d.closing ? ' · close' : ''), buy: d.side === 'buy', qty: lot(d.lots), price: d.price != null ? (x ? Number(d.price).toFixed(n) : pxd(d.price, codeTick(d.sym))) : '—', pnl: d.closing ? d.gross : null, pnlTxt: d.closing ? fm(d.gross, true) : '—',
+        ext: [fm(d.commission, true), d.closing ? fm(d.swap, true) : '—', x ? Number(x.e).toFixed(n) : '', x ? L.slipCell(x.p, x.m, cur) : ''], extN: [d.commission, d.closing ? d.swap : null, null, x ? -x.p : null], extT: [null, null, x ? 'Price on screen at the click (' + (x.s || 'last') + ')' : null, x ? 'Positive = filled worse than expected' : null] };
+    });
     oh2 = S.hist.oh.rows == null ? null : S.hist.oh.rows.slice(0, 200).map((o) => ({ t: o.t, sym: o.sym, side: o.side === 'buy' ? 'Buy' : 'Sell', buy: o.side === 'buy', qty: lot(o.lots), price: o.price != null ? pxd(o.price, codeTick(o.sym)) : '—', note: o.status + (o.type ? ' · ' + o.type : '') }));
     ohErr = S.hist.oh.err;
   } else {
@@ -1470,7 +1518,7 @@ async function loadCt() {
 // useTradeAccount: trendbars + spots over the view-only data relay). Re-registered after a sign-in change clears the own-data feeds.
 function ctFeed() {
   if (!CT.creds || !CT.mod) return Promise.resolve(false);
-  return Promise.all([import('./byo-ctrader.js?v=1293'), import('./byo-core.js?v=1293')]).then(([b, c]) => { if (CT.creds) b.useTradeAccount(CT.creds, CT.mod.freshTrade, TEST && TEST.ctDeps ? TEST.ctDeps : undefined, c); return true; }, () => false);
+  return Promise.all([import('./byo-ctrader.js?v=1293'), import('./byo-core.js?v=1293')]).then(([b, c]) => { CT.byo = b; if (CT.creds) b.useTradeAccount(CT.creds, CT.mod.freshTrade, TEST && TEST.ctDeps ? TEST.ctDeps : undefined, c); return true; }, () => false);
 }
 window.addEventListener('tz:byo', (e) => { if (e.detail && e.detail.id === '*' && CT.acct) ctFeed(); });
 // ---- BROKERS 3 (admins and beta testers): tastytrade / TradeStation / OANDA trading sign-ins become live accounts
@@ -1558,6 +1606,6 @@ export function mountLive(paperApi, opts) {
   // Copy trading: admins + beta testers (Owner 23 Nov). The server (functions/connect/finatic/copy.js) re-checks every call.
   if (isAdmin) mountCopyTrading(); else betaReady().then((b) => { if (b) mountCopyTrading(); });
   window.addEventListener('storage', (e) => { if (e.key === lsUserKey()) loadAccounts(); });
-  Object.assign(window.__stkLive, { setSlTp, posHandles, quoteFor, dockTrades, openSymPicker, closeSymPicker, mtFor, mtSetSymbol, mtRemember, srcSymbols, srcSpec, ctFeed, connect, reconnect, pick, leave, read, loadAccounts, info, confirmSheet, balance, summary, metaOf, saveMeta, disconnect, L, envCheck, retryEnv, syncGroup, enableLive, get admin() { return isAdmin; }, get blockReason() { return blockReason(); } });
+  Object.assign(window.__stkLive, { lotUnits, setSlTp, posHandles, quoteFor, dockTrades, openSymPicker, closeSymPicker, mtFor, mtSetSymbol, mtRemember, srcSymbols, srcSpec, ctFeed, connect, reconnect, pick, leave, read, loadAccounts, info, confirmSheet, balance, summary, metaOf, saveMeta, disconnect, L, envCheck, retryEnv, syncGroup, enableLive, get admin() { return isAdmin; }, get blockReason() { return blockReason(); } });
   Object.defineProperty(window.__stkLive, 'blockReason', { configurable: true, get: () => blockReason() });   // a getter (Object.assign would copy one frozen value)
 }

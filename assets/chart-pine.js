@@ -449,7 +449,8 @@ function applyRightOffset(chart){
 function ensureRoom(chart){
   const ro = wantedRightOffset(chart);
   if (ro <= 6) return;
-  try { if (+chart.renderer.get('rightOffset') < ro - 0.01) { offsetCharts.add(chart); chart.renderer.set('rightOffset', ro); } } catch (e) {}
+  // Only at the live edge: a chart the member scrolled back (rightOffset < 0) keeps its place (member GK 25 Nov: it snapped to the latest price).
+  try { const cur = +chart.renderer.get('rightOffset'); if (cur >= 0 && cur < ro - 0.01) { offsetCharts.add(chart); chart.renderer.set('rightOffset', ro); } } catch (e) {}
 }
 function trackRightOffset(chart, handle, ro){
   if (!chart || !handle || !ro) return;

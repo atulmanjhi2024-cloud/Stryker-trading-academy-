@@ -353,22 +353,43 @@ function keepViewOnSwitch(R, cell){
   R.__stkKeepView = true;
   const orig = R.setBars.bind(R);
   let pending = null;
+  const keyOf = () => { try { const m = cell && cell.chart && cell.chart.market; return m ? [m.symbol, m.timeframe, m.session].join('|') : ''; } catch (e) { return ''; } };
   R.setBars = (bars, opts) => {
     const had = R.didInitialFit === true;
-    if (!pending && had) { try { const v = R.coords.getViewport(); pending = { bs: v.barSpacing, ro: v.rightOffset }; } catch (e) {} }
-    const out = orig(bars, opts);
-    if (bars && bars.length > 0 && pending) {
-      const p = pending; pending = null;
+    if (!pending && had) {
       try {
-        if (!(opts && opts.preserveView === true) && p.ro >= 0 && p.ro < 400) {
-          const v = R.clampViewport(p.bs, p.ro);
-          R.coords.setViewport(v); R.targetBarSpacing = v.barSpacing;
-          if (R.scheduler) R.scheduler.invalidate(4);
-        }
-        // Indicators that draw right of the last bar (HTF PO3 Lens) re-state their room.
-        if (cell) { const room = () => { try { window.STRYKER_PINE && window.STRYKER_PINE.ensureRoom(cell.chart); } catch (e) {} }; room(); setTimeout(room, 1500); setTimeout(room, 5000);
-        }
+        const v = R.coords.getViewport(), old = R.bars || [], n = old.length;
+        pending = { bs: v.barSpacing, ro: v.rightOffset, key: R.__stkSeriesKey || '' };
+        // Scrolled back from the live edge: remember WHICH bar sat at the right edge (by time), so a reload of the same series
+        // (lane change, replay end, data reload) puts the view back on that bar instead of snapping to the latest price.
+        if (v.rightOffset < -0.5 && n > 1) { const li = n - 1 + v.rightOffset, i = Math.min(n - 1, Math.max(0, Math.floor(li))); pending.at = old[i].time; pending.frac = li - i; }
       } catch (e) {}
+    }
+    const out = orig(bars, opts);
+    if (bars && bars.length > 0) {
+      const key = keyOf();
+      if (pending) {
+        const p = pending; pending = null;
+        try {
+          if (!(opts && opts.preserveView === true)) {
+            let ro = null;
+            if (p.at != null && key && key === p.key) {   // same symbol + timeframe + session: keep the historical position
+              let lo = 0, hi = bars.length - 1;
+              while (lo < hi) { const mid = (lo + hi + 1) >> 1; if (bars[mid].time <= p.at) lo = mid; else hi = mid - 1; }
+              ro = lo + p.frac - (bars.length - 1);
+            } else if (p.ro >= 0 && p.ro < 400) ro = p.ro;
+            if (ro != null) {
+              const v = R.clampViewport(p.bs, ro);
+              R.coords.setViewport(v); R.targetBarSpacing = v.barSpacing;
+              if (R.scheduler) R.scheduler.invalidate(4);
+            }
+          }
+          // Indicators that draw right of the last bar (HTF PO3 Lens) re-state their room (only ever at the live edge, see ensureRoom).
+          if (cell) { const room = () => { try { window.STRYKER_PINE && window.STRYKER_PINE.ensureRoom(cell.chart); } catch (e) {} }; room(); setTimeout(room, 1500); setTimeout(room, 5000);
+          }
+        } catch (e) {}
+      }
+      R.__stkSeriesKey = key;
     }
     return out;
   };

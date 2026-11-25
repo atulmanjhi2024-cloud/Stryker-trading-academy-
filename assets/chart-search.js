@@ -34,8 +34,8 @@ const LS_FAV = 'tz_sym_favs', LS_RECENT = 'tz_sym_recent';
 const TABS = [['all', 'All'], ['stocks', 'Stocks'], ['futures', 'Futures'], ['crypto', 'Crypto'], ['forex', 'Forex'], ['indices', 'Indices']];
 const TYPE_LABEL = { futures: 'Futures', crypto: 'Crypto', forex: 'Forex', indices: 'Index', stocks: 'Stock', other: 'Market' };
 const MONTH_ROWS = 6;   // contract months listed under a futures root (search results and the side panel)
-const POPULAR = [['futures', 'ES1!'], ['futures', 'NQ1!'], ['binance', 'BTCUSDT'], ['binance', 'ETHUSDT'], ['idx', 'SPY'], ['idx', 'QQQ'], ['futures', 'GC1!'], ['futures', 'CL1!'], ['fx', 'EURUSD'], ['binance', 'SOLUSDT']];
-const QUOTE_PROVIDERS = ['futures', 'fx', 'idx'].concat(CRYPTO_VENUES);
+const POPULAR = [['futures', 'ES1!'], ['futures', 'NQ1!'], ['binance', 'BTCUSDT'], ['binance', 'ETHUSDT'], ['idx', 'SPY'], ['idx', 'QQQ'], ['dxy', 'DXY'], ['futures', 'GC1!'], ['futures', 'CL1!'], ['fx', 'EURUSD'], ['binance', 'SOLUSDT']];
+const QUOTE_PROVIDERS = ['futures', 'fx', 'idx', 'dxy'].concat(CRYPTO_VENUES);
 
 const svg = (p, s = 20) => '<svg width="' + s + '" height="' + s + '" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + p + '</svg>';
 const IC = {

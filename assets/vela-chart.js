@@ -940,6 +940,7 @@ function lateLists(provider){
   let Safe = { phone: false, active: false };
   if (!BT) { try { Safe = (await import('./chart-safe-mode.js?v=1285')).createSafeMode(PERSIST_KEY); if (Safe.ready) await Safe.ready; } catch (e) { console.warn('TradeZoro: safe mode', e); } }   // (ready: asks other open tabs if they are alive, max 250 ms, only when one has a mark)
   let FormulaMod = null, FormulaNorm = null;
+  let DxyMod = null; try { DxyMod = await import('./chart-dxy.js?v=1285'); } catch (e) { console.warn('TradeZoro: dxy', e); }   // calculated dollar index (assets/chart-dxy.js)
   try { [FormulaMod, { normalizeSymbol: FormulaNorm }] = await Promise.all([import('./chart-formula.js?v=1285'), import('./chart-watchlist.js?v=1285')]); } catch (e) { console.warn('TradeZoro: formula', e); }
   try {
     ws = window.STRYKER_VELA = new VelaWorkspace('#vela-chart', {
@@ -977,6 +978,8 @@ function lateLists(provider){
         ...(VestProvider ? { vest: Replay.wrapFactory(Iv.wrapFactory(() => lateLists(new VestProvider()), 'vest'), 'vest') } : {}),
         // Spot forex pairs (same /api/chart/bars endpoint, Yahoo "=X" series, delayed).
         fx: Replay.wrapFactory(Iv.wrapFactory(() => new (BYO.withByo(FxProvider, 'fx'))(), 'fx'), 'fx'),
+        // Calculated US Dollar Index "DXY": candles computed from six fx pairs (assets/chart-dxy.js).
+        ...(DxyMod ? { dxy: Replay.wrapFactory(Iv.wrapFactory(() => new DxyMod.DxyProvider(), 'dxy'), 'dxy') } : {}),
         // Indices & ETFs (SPX NDX VIX RUT QQQ SPY IWM DIA): same endpoint, Yahoo, delayed; admin live candle from the hub's quote frames.
         idx: Replay.wrapFactory(Iv.wrapFactory(() => new (BYO.withByo(IdxProvider, 'idx'))(), 'idx'), 'idx'),
         // STOCKS ENGINE: every stock / ETF / fund worldwide, history + forming bar from the book recorder (assets/chart-stocks-provider.js).

@@ -1440,6 +1440,10 @@ body.charts-page .stkchart-credit{
 .vela-statusline.stkc-has-dd .vela-sl-market{ display:none !important; }
 .vela-statusline.stkc-has-dd .vela-sl-symbol, .vela-statusline.stkc-has-dd .vela-sl-meta, .vela-statusline.stkc-has-dd .vela-sl-ohlc > *, .vela-statusline.stkc-has-dd .vela-sl-change{ white-space:nowrap; }
 [data-layout="mobile"] .vela-statusline.stkc-has-dd .stkc-dd{ margin-left:6px; font-size:11px; gap:4px; }
+.stkc-calc{ display:inline-flex; align-items:center; align-self:center; flex:0 0 auto; height:20px; box-sizing:border-box; margin:0 0 0 8px; padding:0 8px; border:1px solid var(--line); border-radius:8px; background:transparent; color:var(--muted,#9a9aa5); font-size:11px; font-weight:600; line-height:1; white-space:nowrap; cursor:help; pointer-events:auto; }
+.stkc-calc:focus-visible{ outline:2px solid var(--teal); outline-offset:2px; }
+:root[data-theme="light"] .stkc-calc{ border-color:rgba(0,0,0,.18); color:#555; }
+[data-layout="mobile"] .vela-statusline.stkc-has-dd .stkc-calc{ margin-left:6px; height:18px; padding:0 6px; font-size:10px; }
 .stkc-dd-tip{
   position:fixed; z-index:200; max-width:min(260px, calc(100vw - 16px)); padding:6px 9px;
   border:1px solid var(--line); border-radius:7px; background:var(--bg-2); color:var(--ink-0);

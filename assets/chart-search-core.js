@@ -47,6 +47,7 @@ export function venueOf(d) {
   const p = low(d.provider);
   if (p === 'futures') return low(d.prefix || d.exchange || 'cme');
   if (p === 'fx') return 'fx';
+  if (p === 'dxy') return 'index';
   if (p === 'idx' || p === 'stocks') { const e = low(d.exchange).replace(/^nyse ?arca$/, 'arca'); return e || 'index'; }
   return p || low(d.prefix);
 }
@@ -80,7 +81,7 @@ function dist(a, b) {
   return D[n][m];
 }
 const range = (a, n) => Array.from({ length: n }, (_, i) => a + i);
-const BIG = ['BTC', 'ETH', 'SOL', 'NQ', 'ES', 'SPY', 'QQQ', 'GC', 'CL', 'YM', 'RTY', 'EURUSD'];
+const BIG = ['DXY', 'BTC', 'ETH', 'SOL', 'NQ', 'ES', 'SPY', 'QQQ', 'GC', 'CL', 'YM', 'RTY', 'EURUSD'];
 
 // q: upper-case, trimmed. Higher score = better.
 export function scoreRow(d, q) {
@@ -102,6 +103,7 @@ export function scoreRow(d, q) {
       else if (q.length >= 4 && dist(q, root) <= 1) s = 190;
     }
   }
+  if (!s && Array.isArray(d.aliases)) for (const a of d.aliases) { const A = String(a).toUpperCase(); if (A === q) { s = 900; break; } if (A.startsWith(q) && q.length >= 2) s = Math.max(s, 700); }   // DXY: USDX, DX, DOLLAR INDEX
   if (!s) return null;
   // tie-breaks: the big markets first, spot before perps, USDT/USD quotes first, short tickers first
   if (BIG.includes(base) || BIG.includes(root)) s += 30;

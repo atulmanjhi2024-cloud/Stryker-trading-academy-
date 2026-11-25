@@ -123,6 +123,7 @@ function decFor(sym, price){
   const tick = { NQ: 2, MNQ: 2, ES: 2, MES: 2, YM: 0, MYM: 0, RTY: 1, M2K: 1, GC: 1, MGC: 1, SI: 3, SIL: 3, HG: 4, MHG: 4, CL: 2, MCL: 2, NG: 3, ZN: 4, ZB: 4, '6E': 5 };
   if (isFut(sym) && tick[r] != null) return tick[r];
   if (provOf(sym) === 'fx') return /JPY$/.test(r) ? 3 : 5;
+  if (provOf(sym) === 'dxy') return 3;
   if (!Number.isFinite(price)) return 2;
   const a = Math.abs(price);
   return a >= 1000 ? 2 : a >= 1 ? 2 : a >= 0.01 ? 4 : 6;
@@ -175,6 +176,8 @@ export function normalizeSymbol(raw, feed){
     if (pre === 'futures') { const mo = monthOfSym('futures:' + t); if (mo) return 'futures:' + mo.code; }   // a contract-month chart keeps its month
     if (pre === 'futures') return null;
   }
+  // Calculated dollar index: "DXY", "USDX", "DX", "TVC:DXY", "dxy:DXY" (assets/chart-dxy.js).
+  if ((!pre || /^(dxy|tvc|ice|icus|cap|fx_idc|fx|oanda)$/.test(pre)) && /^(DXY|USDX|DX1?!?)$/.test(t)) return 'dxy:DXY';
   // Spot forex: "EURUSD", "EUR/USD", "FX:EURUSD", "FX_IDC:EURUSD", "OANDA:EURUSD", "fx:EURUSD".
   if (!pre || /^(fx|fx_idc|oanda|forexcom|fxcm|saxo|pepperstone|icmarkets)$/.test(pre)) {
     const p = t.replace(/[\/_\s]/g, '');

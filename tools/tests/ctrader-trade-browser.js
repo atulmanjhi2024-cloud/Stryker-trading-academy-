@@ -162,6 +162,56 @@ async function notConnected(b, w, h, mobile, theme) {
   check(!errors.filter((e) => !/Execution context|navigation/.test(e)).length, tag + ': no page errors', errors);
   await ctx.close();
 }
+// symbol picker (Owner 24 Nov): badge button, picker lists, search, choose, auto-pick toast, ticket error "Choose" button. No order is sent.
+async function picker(p, tag, mobile) {
+  const T = await p.evaluate(() => window.__stkLive.L.mtPlain('NDX', ['US100.cash', 'US100', 'USTEC']) + '|' + window.__stkLive.L.mtPlain('NDX', ['US100.cash', 'NAS100.cash']));
+  check(T === 'US100|null', tag + ': plain index name wins over suffix variants; none = null', T);
+  await opWait(p, () => (document.querySelector('.stklv-cbadge') || {}).textContent, null, 8000);
+  check(await p.evaluate(() => window.__toasts.some((t) => /Using US100 for Nasdaq 100/.test(t))), tag + ": auto-pick toast says which symbol was used", await p.evaluate(() => window.__toasts));;
+  const bt = async () => p.evaluate(() => { const b = document.querySelector('.stklv-cbadge'), k = b && b.querySelector('.stklv-cbtn'); return { t: b ? b.firstChild.textContent : '', k: k ? k.textContent : '' }; });
+  let b0 = await bt();
+  check(/US100$/.test(b0.t) && b0.k === 'Change', tag + ': auto-picked US100 (plain name beats US100.cash / USTEC), badge has Change', b0);
+  // force "no single plain name": hide US100 + USTEC from the link
+  await p.evaluate(() => { const l = window.__stkCt.link; window.__sv = ['US100', 'USTEC'].map((k) => [k, l.byName.get(k)]); window.__sv.forEach(([k]) => l.byName.delete(k)); window.__stkLive.mtSetSymbol('NDX', ''); });
+  await opWait(p, () => (document.querySelector('.stklv-cbtn') || {}).textContent === 'Choose symbol ▾', null, 5000);
+  b0 = await bt();
+  check(/·\s*Choose symbol ▾$/.test(b0.t + ' ' + b0.k) || b0.k === 'Choose symbol ▾', tag + ': no plain match -> badge says Choose symbol', b0);
+  await p.evaluate(() => document.querySelector('.stklv-cbtn').click());
+  check(await opWait(p, () => !!document.querySelector('#stklv-sp .stklv-sp-box'), null, 4000), tag + ': badge button opens the picker');
+  const ui = await p.evaluate(() => { const bx = document.querySelector('.stklv-sp-box'); return { h: bx.querySelector('h2').textContent, best: [...bx.querySelectorAll('.stklv-sp-list h3')].map((e) => e.textContent), rows: [...bx.querySelectorAll('.stklv-sp-row')].map((e) => e.textContent) }; });
+  check(/Which cTrader symbol is Nasdaq 100\?/.test(ui.h) && /Best matches/.test(ui.best[0]) && /All symbols in your account/.test(ui.best[1]), tag + ': title + sections', ui);
+  check(ui.rows.some((r) => /NAS100\.cashNasdaq 100 Cash/.test(r)) && ui.rows.some((r) => /EURUSDEuro vs US Dollar/.test(r)), tag + ': rows show the broker description', ui.rows);
+  await p.screenshot({ path: OUT + '/after-picker-' + tag + '.png' });
+  const al = await p.evaluate(() => { const bx = document.querySelector('.stklv-sp-box'), B = bx.getBoundingClientRect(), q = bx.querySelector('.stklv-sp-q').getBoundingClientRect(), rows = [...bx.querySelectorAll('.stklv-sp-row')].slice(0, 6).map((r) => { const R = r.getBoundingClientRect(), c = [...r.children].map((k) => { const K = k.getBoundingClientRect(); return (K.top + K.bottom) / 2; }); return { spread: Math.max(...c) - Math.min(...c), dc: Math.abs((R.top + R.bottom) / 2 - (c[0] + c[1]) / 2), clip: r.scrollWidth > r.clientWidth + 1 }; }); return { inView: B.left >= -1 && B.right <= innerWidth + 1 && B.bottom <= innerHeight + 1, padL: q.left - B.left, padR: B.right - q.right, rows, sw: document.documentElement.scrollWidth <= innerWidth + 1 }; });
+  check(al.inView && al.sw && Math.abs(al.padL - al.padR) <= 1 && al.rows.every((r) => r.spread <= 1 && r.dc <= 1 && !r.clip), tag + ': picker aligned (row centres, even padding, in view, no h-scroll)', al);
+  await p.fill('.stklv-sp-q', 'ustec'); await sleep(150);
+  check(await p.evaluate(() => [...document.querySelectorAll('.stklv-sp-row')].every((r) => /ustec/i.test(r.textContent)) && document.querySelectorAll('.stklv-sp-row').length === 0), tag + ': search narrows (USTEC hidden from this link = no rows)');
+  await p.fill('.stklv-sp-q', 'nas100'); await sleep(150);
+  const n0 = (await ctSent(p, 2106)).length;
+  await p.evaluate(() => document.querySelector('.stklv-sp-row').click());
+  await opWait(p, () => !document.querySelector('#stklv-sp'), null, 3000);
+  b0 = await bt();
+  check(/NAS100\.cash/.test(b0.t) && b0.k === 'Change', tag + ': choosing saves it and the badge shows the code + Change', b0);
+  check(await p.evaluate(() => /NAS100\.cash/.test(localStorage.getItem('stryker_mt_map_' + Object.keys(localStorage).filter((k) => /^stryker_mt_map_/.test(k)).map((k) => k.slice(15))[0]) || '')), tag + ': remembered per account + instrument');
+  // ticket error gets a Choose button
+  await p.evaluate(() => window.__stkLive.mtSetSymbol('NDX', ''));
+  await opWait(p, () => (document.querySelector('.stklv-cbtn') || {}).textContent === 'Choose symbol ▾' && /^Pick the/.test(window.__stkLive.blockReason), null, 5000);
+  const calls = await p.evaluate(() => { window.__tact = null; const s0 = window.showToast; Object.defineProperty(window, 'showToast', { configurable: true, get: () => (t, m, o) => { window.__tact = [m, o && o.action && o.action.label]; return Promise.resolve(); }, set: () => {} }); return 1; });
+  await p.evaluate(() => { const l = window.__stkCt.link; ['US100', 'USTEC'].forEach((k) => l.byName.delete(k)); window.__stkLive.mtSetSymbol('NDX', ''); });
+  await p.evaluate(() => window.__stkPaper.live.placeTicket('futures:NQ1!', { side: 'buy', type: 'market', qty: 1 }, 'panel'));
+  await opWait(p, () => !!window.__tact, null, 4000);
+  const ta = await p.evaluate(() => window.__tact);
+  check(ta && /Pick the cTrader symbol/.test(ta[0]) && ta[1] === 'Choose', tag + ': ticket error has a Choose button', ta);
+  check((await ctSent(p, 2106)).length === n0, tag + ': no order sent by any picker step');
+  // restore
+  await p.evaluate(() => { const keep = () => (t, m) => { window.__toasts.push(String(m)); return Promise.resolve(); }; Object.defineProperty(window, 'showToast', { configurable: true, get: () => keep(), set: () => {} }); });
+  await p.evaluate(() => { const l = window.__stkCt.link; window.__sv.forEach(([k, id]) => l.byName.set(k, id)); window.__stkLive.mtSetSymbol('NDX', ''); });
+  await opWait(p, () => window.__stkLive.blockReason === '', null, 10000);
+  await opWait(p, () => (document.querySelector('.stklv-cbtn') || {}).textContent === 'Change', null, 5000);
+  await p.evaluate(() => { const l = window.__stkCt.link, id = l.byName.get('US100'); l.details.delete(id); return l.detail(id).catch(() => {}); });   // size rules load once per symbol
+  await opWait(p, () => { const i = window.__stkLive.info('futures:NQ1!'); return i && i.lots && i.lots.fromSchema; }, null, 8000);
+  await p.screenshot({ path: OUT + '/after-badge-' + tag + '.png', clip: mobile ? undefined : { x: 700, y: 0, width: 740, height: 140 } });
+}
 async function trade(b, w, h, mobile, theme) {
   const tag = w + '-' + theme;
   const { ctx, p, errors } = await open(b, { w, h, mobile, theme, consent: false });
@@ -198,6 +248,7 @@ async function trade(b, w, h, mobile, theme) {
   const why = await p.evaluate(() => window.__stkLive.blockReason);
   check(why === '', tag + ': nothing blocks orders once accepted and read', why);
   await p.screenshot({ path: OUT + '/after-panel-' + tag + '.png' });
+  await picker(p, tag, mobile);
   // market buy (double click = one order)
   await p.evaluate(() => { const sc = document.querySelector('#stkop .stkop-scalp [data-a=buy]'); sc.click(); sc.click(); });   // a double click, same tick
   for (let i = 0; i < 50 && !(await ctSent(p, 2106)).length; i++) await sleep(100);
@@ -217,7 +268,7 @@ async function trade(b, w, h, mobile, theme) {
   await p.evaluate(() => { window.__ctM.reject = ''; });
   // flatten (confirm) closes the position
   await opWait(p, () => window.__stkLive.blockReason === '', null, 10000); await sleep(600);
-  const flat = p.evaluate(() => import('/assets/chart-live.js?v=1249').then((m) => m.flatten('futures:NQ1!')));
+  const flat = p.evaluate(() => window.__stkPaper.live.flatten('futures:NQ1!'));
   const cf = await opWait(p, () => !!document.querySelector('#stklv-cf [data-k=yes]'), null, 5000);
   check(cf, tag + ': Flatten asks one tap first');
   if (cf) await p.evaluate(() => document.querySelector('#stklv-cf [data-k=yes]').click());

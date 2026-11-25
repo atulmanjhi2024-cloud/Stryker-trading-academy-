@@ -128,7 +128,7 @@ async function run(b, { uid, w, h, theme, life }) {
     check(s2.bookTier === true && s2.l2Proven === true && !s2.delayedFn && !s2.paidPopup && !s2.getLive, tag + ': after token expiry: still live, no popup', s2);
     // Firestore quota outage (24 Nov): hub re-checks + the page re-asks /api/chart/rt -> nothing changes for the admin
     fsState = 'quota'; RT._resetForTests(true); RTW._resetForTests(true);
-    await p.evaluate(() => import('/assets/rt-access.js?v=1244').then((m) => m.rtRecheck(true))).catch(() => {});
+    await p.evaluate(() => import('/assets/rt-access.js?v=1259').then((m) => m.rtRecheck(true))).catch(() => {});
     await sleep(8000);
     const st2 = hub.stats(), s3 = await state();
     check(st2.revoked === 0 && st2.keptOutage >= 1, tag + ': Firestore 429: hub kept the admin (keptOutage ' + st2.keptOutage + ', revoked ' + st2.revoked + ')', st2);

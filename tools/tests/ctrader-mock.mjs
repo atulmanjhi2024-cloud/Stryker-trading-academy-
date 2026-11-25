@@ -6,8 +6,14 @@ import { createRelay } from '../../functions/connect/ctrader/_relay.js';
 import { tradeHooks } from '../../functions/connect/ctrader/_trade.js';
 
 export const ACC = 77;
-export const SYMS = [{ symbolId: 1, symbolName: 'EURUSD', digits: 5 }, { symbolId: 2, symbolName: 'US100', digits: 2 }, { symbolId: 3, symbolName: 'XAUUSD', digits: 2 }];
-const DETAIL = (s) => ({ symbolId: s.symbolId, digits: s.digits, lotSize: 10000000, minVolume: 100000, stepVolume: 100000, maxVolume: 10000000000 });
+export const SYMS = [{ symbolId: 1, symbolName: 'EURUSD', digits: 5 }, { symbolId: 2, symbolName: 'US100', digits: 2 }, { symbolId: 3, symbolName: 'XAUUSD', digits: 2 },
+  // suffix variants + the broker's own descriptions (sample data) for the symbol picker test
+  { symbolId: 4, symbolName: 'US100.cash', digits: 2 }, { symbolId: 5, symbolName: 'USTEC', digits: 2 }, { symbolId: 6, symbolName: 'NAS100.cash', digits: 2 }];
+const DESC = { EURUSD: 'Euro vs US Dollar', US100: 'US Tech 100 Index', XAUUSD: 'Gold vs US Dollar', 'US100.CASH': 'US Tech 100 Cash', USTEC: 'US Tech 100 Index (alt)', 'NAS100.CASH': 'Nasdaq 100 Cash' };
+// Sample data: swap / commission / a Mon-Fri schedule (UTC) for the symbol search details pane
+const DETAIL = (s) => ({ symbolId: s.symbolId, digits: s.digits, lotSize: 10000000, minVolume: 100000, stepVolume: 100000, maxVolume: 10000000000,
+  swapLong: -0.79, swapShort: 0.13, commissionType: 1, preciseTradingCommissionRate: 3000000000, scheduleTimeZone: 'UTC',
+  schedule: [1, 2, 3, 4, 5].map((d) => ({ startSecond: d * 86400, endSecond: d * 86400 + 86340 })) });
 
 export function mockState(over = {}) {
   return { positions: [], orders: [], sent: [], n: 100, reject: '', silent: false, dropOnWrite: false, scope: 1, balance: 1000000, lock: null, audits: {}, gate: {}, ...over };
@@ -43,11 +49,11 @@ export function makeWS(M, { now = () => Date.now() } = {}) {
       if (t === 2100) return this.relay.onUp(JSON.stringify({ payloadType: 2101, payload: {} }));
       if (t === 2149) return this.relay.onUp(JSON.stringify({ payloadType: 2150, clientMsgId: m.clientMsgId, payload: { permissionScope: M.scope, ctidTraderAccount: [{ ctidTraderAccountId: ACC, isLive: false, traderLogin: 5551234 }] } }));
       if (t === 2102) return R(2103, {});
-      if (t === 2114) return R(2115, { symbol: SYMS.map((s) => ({ symbolId: s.symbolId, symbolName: s.symbolName, enabled: true })) });
+      if (t === 2114) return R(2115, { symbol: SYMS.map((s) => ({ symbolId: s.symbolId, symbolName: s.symbolName, description: DESC[s.symbolName.toUpperCase()], baseAssetId: s.symbolName === 'EURUSD' ? 2 : undefined, enabled: true })) });
       if (t === 2116) return R(2117, { symbol: SYMS.filter((s) => p.symbolId.includes(s.symbolId)).map(DETAIL) });
       if (t === 2124) return R(2125, { position: M.positions, order: M.orders });
       if (t === 2121) return R(2122, { trader: { ctidTraderAccountId: ACC, balance: M.balance, moneyDigits: 2, depositAssetId: 1 } });
-      if (t === 2112) return R(2113, { asset: [{ assetId: 1, name: 'USD' }] });
+      if (t === 2112) return R(2113, { asset: [{ assetId: 1, name: 'USD' }, { assetId: 2, name: 'EUR' }] });
       if (t === 2175) return R(2176, { order: (M.history || []) });
       if (t === 51) return;
       if ([2106, 2108, 2109, 2110, 2111].includes(t)) {

@@ -676,6 +676,13 @@ export function mtMatches(key, list) {
   for (const s of list) { const v = str(s); if (!MT_SYM.test(v) || out.includes(v)) continue; if (want.has(base(v)) || want.has(v.toUpperCase().replace(/[._#+-]/g, ''))) out.push(v); }
   return out;
 }
+// the plain index / metal name at a broker beats suffix variants (US100 over US100.cash / US100.r); null = no single plain name
+const MT_PLAIN = { NDX: ['US100', 'NAS100', 'USTEC', 'NDX100'], SPX: ['US500', 'SPX500', 'SP500'], DJI: ['US30', 'DJ30', 'WS30'], XAU: ['XAUUSD'], XAG: ['XAGUSD'] };
+export function mtPlain(key, hits) {
+  const up = (hits || []).map((h) => h.toUpperCase());
+  for (const p of MT_PLAIN[key] || [key]) { const i = up.indexOf(p); if (i >= 0) return hits[i]; }
+  return null;
+}
 // the broker's symbol list, from what the broker link exposes: a symbol enum in the place schema, plus every symbol already seen in
 // the account's positions and orders. [] = unknown (the member picks).
 export function mtSymbolList(schema, positions, orders) {

@@ -885,7 +885,7 @@ function layerFactory(){
       g.setTransform(1, 0, 0, 1, 0, 0); g.clearRect(0, 0, canvas.width, canvas.height); g.setTransform(dpr, 0, 0, dpr, 0, 0);
       const d = a.data; const lines = (d && d.lines) || [];
       const tvS = TV.get(), fullLines = tvS.full;
-      if (overlay) { let b = overlay.querySelector('.stklv-cbadge'); if (d && d.live) { if (!b) { b = h('div', { class: 'stklv-cbadge', role: 'status' }); overlay.appendChild(b); } if (b.textContent !== d.live) b.textContent = d.live; } else if (b) b.remove(); }
+      if (overlay) { let b = overlay.querySelector('.stklv-cbadge'); if (d && d.live) { if (!b) { b = h('div', { class: 'stklv-cbadge', role: 'status' }); overlay.appendChild(b); } const act = d.liveAct || ''; if (b.dataset.k !== d.live + '|' + act) { b.dataset.k = d.live + '|' + act; b.textContent = d.live; if (act && LIVE && LIVE.openSymPicker) { const bt = h('button', { type: 'button', class: 'stklv-cbtn', 'aria-haspopup': 'dialog', text: act }); bt.addEventListener('pointerdown', (e) => e.stopPropagation()); bt.addEventListener('click', (e) => { e.stopPropagation(); LIVE.openSymPicker(d.liveSym, bt); }); b.appendChild(bt); } } } else if (b) b.remove(); }
       const top = a.bounds.top, bot = top + a.bounds.height;
       const fullW = canvas.width / dpr;
       const ys = {};
@@ -969,10 +969,10 @@ function pushLines(force){
     try { if (window.__stkAxisTags) window.__stkAxisTags.setTags(R, 'trade', data.map((l) => ({ price: l.price, color: l.color, text: l.label }))); } catch (e) {}   // price tags on the scale (chart-axis-tags.js)
     const badge = '';   // Owner 24 Nov: no LIVE/SANDBOX account badge on the chart (the order panel shows the account)
     const ex = TV.execOn() ? execsFor(sym) : [], rr = TV.rrOn() ? rrFor(sym) : null;
-    const sig = JSON.stringify(data) + badge + JSON.stringify([ex, rr, tv.exeSize, tv.col.buy, tv.col.sell, tv.col.profit, tv.col.loss]);
+    const sig = JSON.stringify(data) + badge + (lv && LIVE.badgeAct ? LIVE.badgeAct(sym) : '') + JSON.stringify([ex, rr, tv.exeSize, tv.col.buy, tv.col.sell, tv.col.profit, tv.col.loss]);
     if (!force && lineSig.get(R) === sig) continue;
     lineSig.set(R, sig);
-    try { R.setNativeData(LAYER, { lines: data, live: badge, exec: ex, rr, exeSize: tv.exeSize, col: { profit: tv.col.profit, loss: tv.col.loss, buy: tv.col.buy, sell: tv.col.sell } }); } catch (e) {}
+    try { R.setNativeData(LAYER, { lines: data, live: badge, liveAct: lv && LIVE.badgeAct ? LIVE.badgeAct(sym) : '', liveSym: sym, exec: ex, rr, exeSize: tv.exeSize, col: { profit: tv.col.profit, loss: tv.col.loss, buy: tv.col.buy, sell: tv.col.sell } }); } catch (e) {}
   }
   oneClickAll();
 }

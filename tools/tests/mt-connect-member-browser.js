@@ -45,7 +45,7 @@ const { launch, ROOT } = require('./lib');
     await page.goto('https://tradezoro.com/');
     await page.evaluate((t) => { window.auth = { currentUser: { getIdToken: async () => t } }; window.db = {}; window.firebase = {}; window.showToast = () => {}; }, tok);
     await page.evaluate(() => { window.open = () => ({ close() {}, location: {} }); });
-    await page.evaluate(() => import('/assets/finatic-journal-ui.js?v=1202').then((m) => m.openBrokerSync({ uid: 'memberMT', mode: 'chart', portal: true, onConnected() {} })));
+    await page.evaluate(() => import('/assets/finatic-journal-ui.js?v=1261').then((m) => m.openBrokerSync({ uid: 'memberMT', mode: 'chart', portal: true, onConnected() {} })));
     await page.waitForSelector('.fjs-tile');
     const ids = await page.$$eval('.fjs-tile', (t) => t.map((x) => x.dataset.broker));
     // tap MT5 first, shoot the result

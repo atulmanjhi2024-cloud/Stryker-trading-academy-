@@ -667,15 +667,19 @@ export const statusOf = (id) => { const r = live.get(id); return r ? { status: r
 // Which connected source serves a chart provider kind + ticker? kind: 'fx' | 'idx' | 'byo'.
 export const ROUTERS = {};
 const IDX_OK = new Set(['SPY', 'QQQ', 'IWM', 'DIA']);
+// can source `id` serve this chart provider kind + ticker? (route() below; the symbol search's source filter asks it per source)
+export function serves(id, kind, ticker) {
+  const ad = ADAPTERS[id]; if (!ad) return false;
+  if (id === 'oanda') return kind === 'fx' && !!ad.symbolOf(ticker);
+  if (ROUTERS[id]) return !!ROUTERS[id](kind, ticker, ad);   // adapters in their own files (byo-tastytrade.js)
+  if (id === 'schwab' || id === 'alpaca') return (kind === 'idx' && IDX_OK.has(String(ticker).replace(/^[a-z]+:/i, '').toUpperCase())) || (kind === 'byo' && !!ad.symbolOf(ticker));
+  if (id === 'ironbeam') return kind === 'byo' && !!ad.symbolOf(ticker);
+  return false;
+}
 export function route(kind, ticker) {
   for (const [id, r] of live) {
     if (r.status === 'error') continue;
-    const ad = ADAPTERS[id];
-    if (id === 'oanda' && kind === 'fx' && ad.symbolOf(ticker)) return { id, ad, rec: r };
-    if (ROUTERS[id] && ROUTERS[id](kind, ticker, ad)) return { id, ad, rec: r };   // adapters in their own files (byo-tastytrade.js)
-    if (id === 'schwab' && ((kind === 'idx' && IDX_OK.has(String(ticker).replace(/^[a-z]+:/i, '').toUpperCase())) || (kind === 'byo' && ad.symbolOf(ticker)))) return { id, ad, rec: r };
-    if (id === 'ironbeam' && kind === 'byo' && ad.symbolOf(ticker)) return { id, ad, rec: r };
-    if (id === 'alpaca' && ((kind === 'idx' && IDX_OK.has(String(ticker).replace(/^[a-z]+:/i, '').toUpperCase())) || (kind === 'byo' && ad.symbolOf(ticker)))) return { id, ad, rec: r };
+    if (serves(id, kind, ticker)) return { id, ad: ADAPTERS[id], rec: r };
   }
   return null;
 }

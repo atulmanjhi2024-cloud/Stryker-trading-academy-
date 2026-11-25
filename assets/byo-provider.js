@@ -7,7 +7,7 @@
 //  - ByoProvider: provider "byo" for stocks the member's own account serves (prefix "byo:", e.g. byo:AAPL).
 import { route } from './byo-core.js?v=1261';
 
-const POPULAR = [['AAPL', 'Apple'], ['MSFT', 'Microsoft'], ['NVDA', 'NVIDIA'], ['TSLA', 'Tesla'], ['AMZN', 'Amazon'], ['GOOGL', 'Alphabet'], ['META', 'Meta Platforms'], ['AMD', 'Advanced Micro Devices'],
+export const POPULAR = [['AAPL', 'Apple'], ['MSFT', 'Microsoft'], ['NVDA', 'NVIDIA'], ['TSLA', 'Tesla'], ['AMZN', 'Amazon'], ['GOOGL', 'Alphabet'], ['META', 'Meta Platforms'], ['AMD', 'Advanced Micro Devices'],
   ['NFLX', 'Netflix'], ['SPY', 'SPDR S&P 500 ETF'], ['QQQ', 'Invesco QQQ'], ['IWM', 'iShares Russell 2000 ETF'], ['DIA', 'SPDR Dow Jones ETF']];
 const SUPPORTED = ['1', '5', '15', '30', '60', '120', '240', 'D', 'W', 'M'];
 

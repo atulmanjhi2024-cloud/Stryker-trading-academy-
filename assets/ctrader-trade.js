@@ -142,7 +142,7 @@ export function answerOf(m) {
 export class TradeLink {
   constructor(creds, d) {
     this.c = creds; this.d = d || {}; this.ws = null; this.ready = null; this.pend = new Map(); this.n = 0; this.ka = null; this.dead = false;
-    this.names = new Map(); this.byName = new Map(); this.details = new Map(); this.gates = null; this.gatesP = new Promise((r) => { this.gatesR = r; }); this.writing = null; this.onEvent = null; this.capLots = 10;
+    this.names = new Map(); this.byName = new Map(); this.descs = new Map(); this.base = new Map(); this.details = new Map(); this.gates = null; this.gatesP = new Promise((r) => { this.gatesR = r; }); this.writing = null; this.onEvent = null; this.capLots = 10;
   }
   url() { const loc = this.d.location || globalThis.location; return (loc.protocol === 'https:' ? 'wss:' : 'ws:') + '//' + loc.host + TT.WS + '?account=' + encodeURIComponent(this.c.accountId) + '&env=' + (this.c.isLive ? 'live' : 'demo'); }
   open() {
@@ -173,7 +173,7 @@ export class TradeLink {
       const r = await this.send(2102, { ctidTraderAccountId: n(this.c.accountId), accessToken: at });
       if (r.payloadType !== 2103) throw fail('cTrader refused the sign-in. Tap Allow trading again.', { status: 401, reconnect: true });
       const s = await this.send(2114, { ctidTraderAccountId: n(this.c.accountId) });   // not call(): that awaits open() = this promise
-      for (const x of (s.payload && s.payload.symbol) || []) { const y = sym(x); if (y.name && x.enabled !== false) { this.names.set(y.id, y.name); if (!this.byName.has(y.name.toUpperCase())) this.byName.set(y.name.toUpperCase(), y.id); } }
+      for (const x of (s.payload && s.payload.symbol) || []) { const y = sym(x); if (y.name && x.enabled !== false) { this.names.set(y.id, y.name); if (!this.byName.has(y.name.toUpperCase())) this.byName.set(y.name.toUpperCase(), y.id); if (x.description) this.descs.set(y.name.toUpperCase(), String(x.description).trim()); if (x.baseAssetId) this.base.set(y.name.toUpperCase(), n(x.baseAssetId)); } }
     })();
     this.ready.catch(() => this.shut());
     return this.ready;
@@ -204,7 +204,7 @@ export class TradeLink {
     if (this.details.has(symbolId) && this.onSock && this.onSock.has(symbolId)) return this.details.get(symbolId);
     const m = await this.call(2116, { symbolId: [symbolId] });
     for (const s of (m.payload && m.payload.symbol) || []) this.onSock.add(n(s.symbolId));
-    for (const s of (m.payload && m.payload.symbol) || []) this.details.set(n(s.symbolId), { lotSize: n(s.lotSize), minVolume: n(s.minVolume), maxVolume: n(s.maxVolume), stepVolume: n(s.stepVolume), digits: n(s.digits) });
+    for (const s of (m.payload && m.payload.symbol) || []) this.details.set(n(s.symbolId), { ...s, lotSize: n(s.lotSize), minVolume: n(s.minVolume), maxVolume: n(s.maxVolume), stepVolume: n(s.stepVolume), digits: n(s.digits) });
     return this.details.get(symbolId);
   }
   // one write: the key is the chart's idempotency key; never retried here

@@ -76,7 +76,7 @@ export function mountSearch(ws, o = {}) {
   const sp = ws.symbolPicker;
 
   // ---------------- state ----------------
-  const S = { open: false, tab: 'all', venue: '', quote: '', products: new Set(), rows: [], hi: 0, shown: 0, filters: false, lastFocus: null };
+  const S = { open: false, src: null, srcs: null, srcData: null, tab: 'all', venue: '', quote: '', products: new Set(), rows: [], hi: 0, shown: 0, filters: false, lastFocus: null };
   const quotes = new Map();   // sym -> { at, q }  (q null = no data)
   let favs = new Map(lsGet(LS_FAV, []).map((x) => [x.s, x]));   // sym -> { s, t, p, n, y }
   let recents = lsGet(LS_RECENT, []);
@@ -155,7 +155,9 @@ export function mountSearch(ws, o = {}) {
   const top = el('div', { class: 'stkss-top' }, [field, closeBtn]);
   const tabs = el('div', { class: 'stkss-tabs', role: 'tablist', 'aria-label': 'Market type' });
   const filterBtn = el('button', { type: 'button', class: 'stkss-filter-btn', 'aria-expanded': 'false', 'aria-controls': 'stkss-rail', html: svg(IC.filter, 18) + '<span>Filters</span><b class="stkss-fcount" hidden></b>' });
-  const tabRow = el('div', { class: 'stkss-tabrow' }, [filterBtn, tabs]);
+  const srcChip = el('button', { type: 'button', class: 'stkss-srcchip', 'aria-haspopup': 'menu', 'aria-expanded': 'false', 'aria-controls': 'stkss-srcmenu' });
+  const srcMenu = el('div', { class: 'stkss-srcmenu', id: 'stkss-srcmenu', role: 'menu', 'aria-label': 'Source', hidden: '' });
+  const tabRow = el('div', { class: 'stkss-tabrow' }, [filterBtn, srcChip, tabs]);
   const rail = el('aside', { class: 'stkss-rail', id: 'stkss-rail', 'aria-label': 'Filters' });
   const listHead = el('div', { class: 'stkss-lhead' });
   const list = el('div', { class: 'stkss-list', id: 'stkss-list', role: 'listbox', 'aria-label': 'Results' });
@@ -163,7 +165,7 @@ export function mountSearch(ws, o = {}) {
   const side = el('aside', { class: 'stkss-side', 'aria-label': 'Details', 'aria-live': 'polite' });
   const body = el('div', { class: 'stkss-body' }, [rail, main, side]);
   const foot = el('div', { class: 'stkss-foot', html: '<span><kbd>↑</kbd><kbd>↓</kbd> Navigate</span><span><kbd>Enter</kbd> Open</span><span><kbd>Esc</kbd> Close</span><span class="stkss-foot-note">Prices: latest daily close vs the previous one. Education only. Not financial advice.</span>' });
-  const box = el('div', { class: 'stkss-box', role: 'dialog', 'aria-modal': 'true', 'aria-label': 'Symbol search' }, [top, tabRow, body, foot]);
+  const box = el('div', { class: 'stkss-box', role: 'dialog', 'aria-modal': 'true', 'aria-label': 'Symbol search' }, [top, tabRow, body, foot, srcMenu]);
   const scrim = el('div', { class: 'stkss-scrim' });
   const root = el('div', { class: 'stkss', hidden: '' }, [scrim, box]);
   document.body.appendChild(root);
@@ -172,7 +174,9 @@ export function mountSearch(ws, o = {}) {
   function buildTabs() {
     const have = pool().cats;
     tabs.replaceChildren();
-    for (const [id, label] of TABS) {
+    const list = S.src ? [['all', 'All']].concat([...new Set(((S.srcData && S.srcData.rows) || []).map((r) => r.cls))].map((c) => [c, c])) : TABS;   // a broker: its own asset classes
+    for (const [id, label] of list) {
+      if (S.src) { const b = el('button', { type: 'button', class: 'stkss-tab', role: 'tab', 'data-tab': id, 'aria-selected': String(S.tab === id), text: label }); b.addEventListener('click', () => { setTab(id); input.focus(); }); tabs.appendChild(b); continue; }
       if (id !== 'all' && !have.has(id)) continue;
       const b = el('button', { type: 'button', class: 'stkss-tab', role: 'tab', 'data-tab': id, 'aria-selected': String(S.tab === id), text: label });
       b.addEventListener('click', () => { setTab(id); input.focus(); });
@@ -181,6 +185,7 @@ export function mountSearch(ws, o = {}) {
   }
   function setTab(id) {
     S.tab = id;
+    if (S.src) { tabs.querySelectorAll('.stkss-tab').forEach((b) => b.setAttribute('aria-selected', String(b.dataset.tab === id))); render(); return; }   // within the broker
     if (id !== 'crypto' && id !== 'all') { S.quote = ''; S.products.clear(); }
     tabs.querySelectorAll('.stkss-tab').forEach((b) => b.setAttribute('aria-selected', String(b.dataset.tab === id)));
     const t = tabs.querySelector('[aria-selected="true"]');
@@ -201,7 +206,7 @@ export function mountSearch(ws, o = {}) {
     const have = PC.cats;
     rail.appendChild(sec('Browse', TABS.filter(([id]) => id === 'all' || have.has(id)).map(([id, l]) => item(l, S.tab === id, () => setTab(id)))));
     const venues = VENUE_ORDER.filter((v) => PC.venues.has(v));
-    rail.appendChild(sec('Exchanges', venues.map((v) => item(VENUE_LABEL[v] || v.toUpperCase(), S.venue === v, () => { S.venue = S.venue === v ? '' : v; buildRail(); render(); }, el('span', { class: 'stkss-vb stkss-vb-' + (CRYPTO_VENUES.includes(v) ? 'crypto' : v === 'fx' ? 'forex' : ['cme', 'cbot', 'comex', 'nymex'].includes(v) ? 'futures' : 'stocks'), 'aria-hidden': 'true' }, [venueChip(v)])))));
+    rail.appendChild(sec('Exchanges', venues.map((v) => item(VENUE_LABEL[v] || v.toUpperCase(), S.venue === v, () => { S.venue = S.venue === v ? '' : v; if (S.src) { setSource(null); return; } buildRail(); render(); }, el('span', { class: 'stkss-vb stkss-vb-' + (CRYPTO_VENUES.includes(v) ? 'crypto' : v === 'fx' ? 'forex' : ['cme', 'cbot', 'comex', 'nymex'].includes(v) ? 'futures' : 'stocks'), 'aria-hidden': 'true' }, [venueChip(v)])))));
     // Refine
     const selWrap = (label, sel) => el('label', { class: 'stkss-sel' }, [el('span', { class: 'stkss-sel-l', text: label }), el('span', { class: 'stkss-sel-box' }, [sel, el('span', { class: 'stkss-sel-ic', html: svg(IC.chev, 16) })])]);
     const exSel = el('select', { 'aria-label': 'Exchange' });
@@ -247,6 +252,84 @@ export function mountSearch(ws, o = {}) {
   function setFilters(on) { S.filters = on; box.classList.toggle('stkss-filters-open', on); filterBtn.setAttribute('aria-expanded', String(on)); }
   filterBtn.addEventListener('click', () => setFilters(!S.filters));
 
+  // ---------------- your brokers & feeds (assets/chart-search-sources.js, loaded on the first open) ----------------
+  let SRC = null;
+  const srcMod = () => SRC || (SRC = import('./chart-search-sources.js?v=1261'));
+  const srcKey = (x) => x.id;
+  async function refreshSources() {
+    try { const m = await srcMod(); const l = await m.listSources(); const sig = (a) => (a || []).map((x) => x.id + x.ok + x.label).join('|'); if (sig(l) !== sig(S.srcs) || !S.srcs) { S.srcs = l; if (!srcMenu.hidden) paintMenu(); } }
+    catch (e) { console.warn('TradeZoro search: sources', e); }
+  }
+  const dot = (x) => el('span', { class: 'stkss-sdot' + (x.ok ? '' : ' is-warn'), role: 'img', 'aria-label': x.ok ? 'Connected' : 'Needs sign-in', title: x.ok ? 'Connected' : 'Needs sign-in' });
+  function connectFlow() {
+    close();
+    try { if (window.STRYKER_BYO && window.STRYKER_BYO.open) { window.STRYKER_BYO.open(); return; } } catch (e) {}
+    try { const lv = window.__stkLive; if (lv && lv.connect) { lv.connect(); return; } } catch (e) {}
+    if (o.toast) o.toast('Open Data source in the toolbar to connect a broker or feed.', 'info');
+  }
+  // the source chip (left of the market tabs): "All markets" or the picked broker / feed, with its status dot
+  function paintSrcChip() {
+    const x = S.src;
+    srcChip.replaceChildren(...[x ? dot(x) : null, el('span', { class: 'stkss-srcchip-l', text: x ? x.name : 'All markets' }), el('span', { class: 'stkss-srcchip-ic', html: svg(IC.chev, 16) })].filter(Boolean));
+    srcChip.setAttribute('aria-label', 'Source: ' + (x ? x.name + (x.label ? ' ' + x.label : '') : 'All markets'));
+    srcChip.classList.toggle('is-on', !!x);
+    input.placeholder = x ? 'Search ' + x.name + ' symbols' : isPhone() ? 'Search markets or ES/NQ' : 'Search markets, or type a ratio like ES/NQ';
+  }
+  function paintMenu() {
+    srcMenu.replaceChildren();
+    const item = (kids, on, fn, cls) => { const b = el('button', { type: 'button', class: 'stkss-mi' + (cls ? ' ' + cls : ''), role: cls ? 'menuitem' : 'menuitemradio', 'aria-checked': cls ? null : String(!!on) }, kids.concat(on ? [el('span', { class: 'stkss-ri-ck', html: svg(IC.check, 16) })] : [])); b.addEventListener('click', fn); srcMenu.appendChild(b); return b; };
+    item([el('span', { class: 'stkss-mi-l', text: 'All markets' })], !S.src, () => { menu(false); setSource(null); });
+    for (const x of S.srcs || []) item([dot(x), el('span', { class: 'stkss-mi-l', text: x.name }), x.label ? el('span', { class: 'stkss-mi-s', text: x.label }) : null], !!(S.src && S.src.id === x.id), () => { menu(false); setSource(x); }).dataset.src = x.id;
+    if (!S.srcs) srcMenu.appendChild(el('p', { class: 'stkss-mi-wait', text: 'Loading your brokers and feeds…' }));
+    item([el('span', { class: 'stkss-mi-l', text: '+ Connect a broker or feed' })], false, () => { menu(false); connectFlow(); }, 'is-add');
+  }
+  function menu(on, from) {
+    if (on === !srcMenu.hidden) return;
+    srcMenu.hidden = !on; srcChip.setAttribute('aria-expanded', String(on));
+    if (!on) { (from || input).focus({ preventScroll: true }); return; }
+    paintMenu();
+    const a = (from || srcChip).getBoundingClientRect(), bx = box.getBoundingClientRect();
+    srcMenu.style.left = Math.max(8, Math.min(a.left - bx.left, bx.width - srcMenu.offsetWidth - 8)) + 'px'; srcMenu.style.top = (a.bottom - bx.top + 4) + 'px';
+    const f = srcMenu.querySelector('[aria-checked="true"]') || srcMenu.querySelector('.stkss-mi'); if (f) f.focus({ preventScroll: true });
+  }
+  srcChip.addEventListener('click', () => menu(srcMenu.hidden));
+  srcMenu.addEventListener('keydown', (e) => {
+    const it = [...srcMenu.querySelectorAll('.stkss-mi')], i = it.indexOf(document.activeElement);
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); e.stopPropagation(); it[(i + (e.key === 'ArrowDown' ? 1 : it.length - 1)) % it.length].focus(); }
+    else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); menu(false, srcChip); }
+    else if (e.key === 'Tab') { menu(false); }
+  });
+  box.addEventListener('pointerdown', (e) => { if (!srcMenu.hidden && !srcMenu.contains(e.target) && !srcChip.contains(e.target) && !e.target.closest('.stkss-acct')) menu(false); });
+  let srcGen = 0;
+  async function setSource(x) {
+    const gen = ++srcGen;
+    S.src = x; S.srcData = x ? { rows: [], note: 'Loading ' + x.name + ' symbols…', loading: true } : null;
+    S.tab = 'all'; if (x) { S.venue = ''; S.quote = ''; S.products.clear(); }
+    paintSrcChip(); buildTabs(); buildRail(); render();
+    if (!x) return;
+    const P = pool();
+    const find = (p, t) => P.byPT.get(p + ':' + String(t).toUpperCase()) || null;
+    find.tickers = (p) => P.list.filter((d) => d.provider === p).map((d) => String(d.ticker));
+    try { const m = await srcMod(); const r = await m.loadSymbols(x, find); if (gen === srcGen) S.srcData = r; }
+    catch (e) { if (gen === srcGen) S.srcData = { rows: [], note: 'Could not load the symbols of ' + x.name + '.' }; }
+    if (gen === srcGen && S.open) { buildTabs(); render(); }
+  }
+  // a broker row as a list entry: the broker's own name; quotes skipped (the broker symbol is not our ticker)
+  const srcRowD = (r) => ({ ticker: r.code, description: r.desc, provider: '', type: '', __src: r, __sym: 'src:' + S.src.id + ':' + r.code });
+  function srcCompute(q) {
+    const D = S.srcData || { rows: [] }, t = q.toUpperCase();
+    const hit = (r) => (S.tab === 'all' || r.cls === S.tab) && (!t || r.code.toUpperCase().includes(t) || r.desc.toUpperCase().includes(t));
+    const by = new Map();
+    if (t) {   // a query: one list, symbol-name matches before description matches
+      const rank = (r) => { const c = r.code.toUpperCase(); return c === t ? 0 : c.startsWith(t) ? 1 : c.includes(t) ? 2 : 3; };
+      const res = D.rows.filter(hit).map((r) => [rank(r), r]).sort((a, b) => a[0] - b[0]).map((x) => srcRowD(x[1]));
+      if (res.length) by.set('Results', res);
+    } else for (const r of D.rows.filter(hit)) { if (!by.has(r.cls)) by.set(r.cls, []); by.get(r.cls).push(srcRowD(r)); }
+    const groups = [...by.entries()];
+    if (t && D.typed && !D.rows.some((r) => r.code.toUpperCase() === t)) { const x = D.typed(t); if (x) groups.unshift(['Open from ' + S.src.name, [srcRowD(x)]]); }
+    return { groups, hits: new Map(), msg: '', note: D.note || '', loading: !!D.loading };
+  }
+
   // ---------------- filtering ----------------
   function productOf(d) {
     const m = metaOf(d);
@@ -276,6 +359,7 @@ export function mountSearch(ws, o = {}) {
   function compute() {
     const P = pool();
     const q = input.value.trim();
+    if (S.src) return srcCompute(q);
     const groups = [];
     if (!q) {
       const seen = new Set();
@@ -310,9 +394,10 @@ export function mountSearch(ws, o = {}) {
     if (!fresh) list.scrollTop = 0;   // a just-shown list is already at the top (no forced layout on open)
     clearBtn.hidden = !input.value;
     const q = input.value.trim();
-    listHead.replaceChildren(el('h2', { class: 'stkss-lhead-t', text: q ? (S.rows.length ? S.rows.length + (S.rows.length >= 300 ? '+' : '') + ' results' : 'No results') : 'Markets' }));
+    if (S.src) srcHead(cur); else listHead.replaceChildren(el('h2', { class: 'stkss-lhead-t', text: q ? (S.rows.length ? S.rows.length + (S.rows.length >= 300 ? '+' : '') + ' results' : 'No results') : 'Markets' }));
+    if (!S.src && cur.note && S.rows.length) listHead.appendChild(el('p', { class: 'stkss-lhead-n', text: cur.note }));
     if (!S.rows.length) {
-      const m = cur.msg || (q ? 'No market matches "' + q + '". Try a ticker like NQ, BTC or EURUSD, or clear the filters.' : 'No markets match these filters.');
+      const m = S.src ? (cur.loading ? cur.note : q ? 'No ' + S.src.name + ' symbol matches "' + q + '".' : cur.note || 'No symbols from ' + S.src.name + '.') : cur.msg || (q ? 'No market matches "' + q + '". Try a ticker like NQ, BTC or EURUSD, or clear the filters.' : 'No markets match these filters.');
       list.appendChild(el('div', { class: 'stkss-empty', role: cur.msg ? 'alert' : 'status', text: m }));
       renderSide(null);
     } else grow();
@@ -359,7 +444,23 @@ export function mountSearch(ws, o = {}) {
     } catch (e) {}
     return null;
   }
+  // broker header: "<Broker> Live …495 ▾" (▾ = switch account / source) and "<n> symbols"; then the column labels
+  function srcHead(c) {
+    const x = S.src, n = ((S.srcData && S.srcData.rows) || []).length;
+    const acct = el('button', { type: 'button', class: 'stkss-acct', 'aria-haspopup': 'menu', 'aria-label': 'Switch account or source' }, [el('span', { text: x.label || 'Switch' }), el('span', { class: 'stkss-acct-ic', html: svg(IC.chev, 16) })]);
+    acct.addEventListener('click', () => menu(srcMenu.hidden, acct));
+    listHead.replaceChildren(el('div', { class: 'stkss-lhead-r' }, [el('h2', { class: 'stkss-lhead-t', text: x.name }), acct, n ? el('span', { class: 'stkss-lhead-c', text: n + (n === 1 ? ' symbol' : ' symbols') }) : null]),
+      S.rows.length ? el('div', { class: 'stkss-cols', 'aria-hidden': 'true' }, [el('span', { text: 'Symbol' }), el('span', { text: 'Description' }), el('span', { text: 'Opens chart' })]) : null);
+    if (c.note && S.rows.length) listHead.appendChild(el('p', { class: 'stkss-lhead-n', text: c.note }));
+  }
+  // a broker row: symbol · description · our chart for it (no prices: the brokers here don't stream them to the search, no made-up numbers)
+  function srcRowEl(d, i) {
+    const r = d.__src, to = r.d ? r.d.ticker : r.sym ? r.sym.replace(/^byo:/, '') : '';
+    return el('div', { class: 'stkss-row stkss-row-src', role: 'option', id: 'stkss-o' + i, 'data-i': String(i), 'data-sym': symFor(d), 'data-code': r.code, 'aria-selected': 'false', 'aria-label': r.code + (r.desc ? ', ' + r.desc : '') + ', via ' + S.src.name },
+      [el('span', { class: 'stkss-tk', text: r.code }), el('span', { class: 'stkss-sd', text: r.desc }), el('span', { class: 'stkss-to' + (to ? '' : ' is-none'), text: to || 'No chart yet' })]);
+  }
   function rowEl(d, i) {
+    if (d.__src) return srcRowEl(d, i);
     const sym = symFor(d), c = d.__formula ? 'formula' : classify(d), v = venueOf(d);
     const star = el('button', { type: 'button', class: 'stkss-star', tabindex: '-1', 'aria-label': 'Favourite ' + d.ticker, 'aria-pressed': String(favs.has(sym)), html: svg(IC.star, 18) });
     if (d.__formula) star.hidden = true;
@@ -437,6 +538,7 @@ export function mountSearch(ws, o = {}) {
     if (k === sideKey) return;
     sideKey = k;
     side.replaceChildren();
+    if (d && d.__src) return sideSrc(d);
     if (!d || d.__formula) { side.classList.add('is-empty'); if (d) side.appendChild(sideNote('The ratio is drawn as candles from each leg. Pick it to open it on the active chart.')); return; }
     side.classList.remove('is-empty');
     const c = classify(d);
@@ -496,6 +598,23 @@ export function mountSearch(ws, o = {}) {
     side.appendChild(l);
     if (same.length > 24) side.appendChild(sideNote('Showing 24 of ' + same.length + '. Type a venue (for example "okx:' + p.base + '") to narrow it down.'));
   }
+  function sideSrc(d) {
+    const r = d.__src, src = S.src, want = sideKey; side.classList.remove('is-empty');
+    side.appendChild(el('div', { class: 'stkss-shead stkss-shead-src' }, [el('h3', { class: 'stkss-shead-t', text: r.code }), el('span', { class: 'stkss-shead-s', text: r.desc || 'via ' + src.name }), el('span', { class: 'stkss-tag stkss-tag-via', text: 'via ' + src.name + (src.label ? ' · ' + src.label : '') })]));
+    if (src.kind === 'ct') {   // the broker's spec (read-only SymbolById); rows we don't have are left out
+      const kv = el('dl', { class: 'stkss-kv', 'aria-busy': 'true' }); side.appendChild(kv);
+      (async () => { let rows = []; try { const lv = window.__stkLive, m = await srcMod(), sp = lv && lv.srcSpec ? await lv.srcSpec(src.id, r.code) : null; rows = m.specRows(sp); } catch (e) { rows = []; }
+        if (sideKey !== want) return; kv.removeAttribute('aria-busy'); if (!rows.length) { kv.remove(); return; }
+        for (const [k, v] of rows) kv.append(el('div', { class: 'stkss-kv-r' }, [el('dt', { text: k }), el('dd', { text: v })])); })();
+    }
+    const target = r.d || (r.sym ? { ticker: r.sym.replace(/^byo:/, ''), description: '', __sym: r.sym } : null);
+    if (!target) { side.appendChild(el('p', { class: 'stkss-note stkss-note-x', role: 'status', text: 'Charting for ' + r.code + ' isn’t available yet.' })); return; }
+    const l = el('div', { class: 'stkss-slist' });
+    l.appendChild(sideRow(target.ticker, 'Open on the active chart' + (target.description ? ' · ' + target.description : ''), [], symFor(d), d));
+    side.appendChild(el('h3', { class: 'stkss-sec-h', text: 'Chart' })); side.appendChild(l);
+    if (r.key && (S.src.kind === 'ct' || S.src.kind === 'mt')) side.appendChild(sideNote('Trading on this chart uses ' + r.code + ' on this account.'));
+    else if (S.src.kind === 'byo') side.appendChild(sideNote('Prices come from your ' + S.src.name + ' feed while it is connected.'));
+  }
   function sideInfo(d) {
     const c = classify(d), v = venueOf(d);
     sideHead(d.ticker, (TYPE_LABEL[c] || '') + (v ? ' · ' + (VENUE_LABEL[v] || v.toUpperCase()) : ''));
@@ -508,10 +627,20 @@ export function mountSearch(ws, o = {}) {
   // ---------------- open / pick / close ----------------
   function pick(d) {
     if (!d) return;
+    if (d.__src) return pickSrc(d);
     const sym = symFor(d);
     if (!d.__formula) addRecent(d);
     close();
     try { ws.active.setSymbol(sym); } catch (e) { console.warn('TradeZoro search: open', e); if (o.toast) o.toast('Could not open ' + d.ticker + '.', 'error'); }
+  }
+  // a broker / feed symbol: OUR chart for the same instrument, and the broker symbol remembered for that account (trading needs no pick)
+  async function pickSrc(d) {
+    const r = d.__src, src = S.src, target = r.d ? symOf(r.d) : r.sym;
+    if (!target) { renderSide(d); if (o.toast) o.toast('Charting for ' + r.code + ' isn’t available yet.', 'info'); return; }
+    try { const m = await srcMod(); m.remember(src, r); } catch (e) {}
+    if (r.d) addRecent(r.d);
+    close();
+    try { ws.active.setSymbol(target); } catch (e) { console.warn('TradeZoro search: open', e); if (o.toast) o.toast('Could not open ' + r.code + '.', 'error'); }
   }
   function open(seed) {
     const t0 = performance.now();
@@ -522,13 +651,13 @@ export function mountSearch(ws, o = {}) {
       try { ws.trackDialog && ws.trackDialog(true); } catch (e) {}
       root.hidden = false;
       root.classList.toggle('is-phone', isPhone());
-      input.placeholder = isPhone() ? 'Search markets or ES/NQ' : 'Search markets, or type a ratio like ES/NQ';
       setFilters(false);
-      S.venue = ''; S.quote = ''; S.products.clear();   // refine filters are per visit (a hidden filter must never hide a market next time)
+      S.venue = ''; S.quote = ''; S.products.clear(); S.src = null; S.srcData = null; S.tab = S.tab === 'all' || TABS.some(([id]) => id === S.tab) ? S.tab : 'all'; paintSrcChip(); menu(false);   // refine filters are per visit (a hidden filter must never hide a market next time)
       input.value = seed ? String(seed).toUpperCase() : '';
       buildTabs(); buildRail();
       sideKey = null;
       render(true);
+      refreshSources();   // first open loads assets/chart-search-sources.js; later opens re-read the member's connections
       favUid = undefined; loadFavs();   // re-read each open: a star added on another device shows
       requestAnimationFrame(() => root.classList.add('is-in'));
     } else if (seed) { input.value = (input.value + seed).toUpperCase(); render(); }
@@ -614,7 +743,7 @@ export function mountSearch(ws, o = {}) {
       e.preventDefault(); e.stopPropagation(); open('');
     }
   }, true);
-  window.addEventListener('resize', () => { if (S.open) root.classList.toggle('is-phone', isPhone()); }, { passive: true });
+  window.addEventListener('resize', () => { if (S.open) { root.classList.toggle('is-phone', isPhone()); paintSrcChip(); menu(false); } }, { passive: true });
 
   // ---------------- take over the header picker ----------------
   const orig = { open: sp.open, type: sp.type, close: sp.close };
@@ -637,7 +766,7 @@ export function mountSearch(ws, o = {}) {
   const warm = () => (window.requestIdleCallback || ((f) => setTimeout(f, 1500)))(() => { try { if (!S.open) { pool(); ghost(); } } catch (e) {} }, { timeout: 3000 });
   warm(); setTimeout(warm, 8000); setTimeout(warm, 25000);
 
-  const api = { open, close, isOpen: () => S.open, pick, toggleFav, favs: () => [...favs.keys()], recents: () => recents.map((x) => x.s), root };
+  const api = { open, close, isOpen: () => S.open, pick, setSource, sources: () => S.srcs, toggleFav, favs: () => [...favs.keys()], recents: () => recents.map((x) => x.s), root };
   window.__stkSearch = api;
   return api;
 }

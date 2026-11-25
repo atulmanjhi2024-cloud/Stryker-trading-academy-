@@ -89,6 +89,8 @@
     setView(view) {
       const n = view.n; const prevN = this.n; const sameTf = this.lastTf === view.tf && this.view && this.data.length && this.data[0].t === view.bars[0].t;
       const full = !sameTf || n < prevN || n - prevN > 2;
+      // Scrolled back + same timeframe: a full reload keeps the time range on screen instead of jumping to the newest bar.
+      let keep = null; if (full && this.lastTf === view.tf) { try { const ts = this.chart.timeScale(); if (ts.scrollPosition() < -0.5) keep = ts.getVisibleRange(); } catch (e) {} }
       if (full) {
         this.data = view.bars.slice(0, n - 1); this.data.push(view.last); this.times = new Array(n);
         let prev = null; for (let i = 0; i < n; i++) { prev = this._chartTime(this.data[i].t, prev); this.times[i] = prev; }
@@ -104,7 +106,7 @@
         this.data.length = n;
       }
       this.view = view; this.n = n; this.lastTf = view.tf;
-      if (full) { this._resetPriceLines(); this._applyMarkers(); this.chart.timeScale().scrollToRealTime(); }
+      if (full) { this._resetPriceLines(); this._applyMarkers(); if (keep) { try { this.chart.timeScale().setVisibleRange(keep); } catch (e) { keep = null; } } if (!keep) this.chart.timeScale().scrollToRealTime(); }
       this._scheduleIndicators(full ? 0 : 120);
       this._legend(); this.request();
     }

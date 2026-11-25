@@ -174,7 +174,7 @@ function typeLayer(id) {
           const want = Math.max(id === 'stk_pnf' ? 16 : 7, Math.min(28, Math.floor((co.width - 70) / (a.bars.length + 6))));
           const rr = window.STRYKER_VELA && window.STRYKER_VELA.chart && window.STRYKER_VELA.chart.renderer;
           const ctl = rr && (rr.applyViewport ? rr : rr.renderer);
-          if (ctl && ctl.applyViewport && Math.abs(vp.barSpacing - want) > 1) ctl.applyViewport({ barSpacing: want, rightOffset: Math.max(vp.rightOffset, 4) });
+          if (ctl && ctl.applyViewport && Math.abs(vp.barSpacing - want) > 1) ctl.applyViewport({ barSpacing: want, rightOffset: vp.rightOffset < 0 ? vp.rightOffset : Math.max(vp.rightOffset, 4) });
         } catch (e) {}
       }
       const f = a.priceStyle === id && a.bars.length ? frame(a, canvas) : null;

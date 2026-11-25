@@ -79,6 +79,14 @@ async function scenario(b, tag, sym, vp) {
   await p.evaluate(() => { const o = window.STRYKER_VELA.chart.orchestrator; o.setBarSeries([...o.rawBars]); }); await still('series reload without preserveView');
   await p.evaluate(async () => { const c = window.STRYKER_VELA.chart; await c.setMarket({ data: [] }); try { delete c.orchestrator.config.market.data; } catch (e) {} }); await p.waitForTimeout(2500);
   await still('same-market reload (lane change / replay end)');
+  // Tab resume + reconnect: visibility/pageshow/focus/online all fire the resync + gap heal paths
+  await p.evaluate(() => { for (const [t, tgt] of [['visibilitychange', document], ['pageshow', window], ['focus', window], ['online', window]]) tgt.dispatchEvent(new Event(t)); }); await p.waitForTimeout(3500); await still('tab resume / reconnect events');
+  // Session change reload: same symbol + timeframe, the series is re-read
+  await p.evaluate(async () => { const c = window.STRYKER_VELA.chart; const m = c.orchestrator.config.market; await c.setMarket({ symbol: m.symbol, timeframe: m.timeframe, session: m.session === 'eth' ? 'rth' : 'eth', data: [] }); try { delete c.orchestrator.config.market.data; } catch (e) {} }); await p.waitForTimeout(2500);
+  await still('session reload (same symbol + timeframe)');
+  // Layers' first-paint fits (heatmap / liquidity / footprint / chart types) must not re-anchor a scrolled-back chart
+  const ap = await p.evaluate(() => { const R = window.STRYKER_VELA.chart.renderer.renderer, v = R.coords.getViewport(); return { ro: v.rightOffset }; });
+  check(ap.ro < -5, `${t}: still scrolled back before ensureRoom check`, ap);
   await p.evaluate(() => { try { window.STRYKER_PINE && window.STRYKER_PINE.ensureRoom(window.STRYKER_VELA.chart); } catch (e) {} }); await still('indicator room timer (ensureRoom)');
   await p.screenshot({ path: `${OUT}/${TAG}-${sym.replace(/\W/g, '')}-${vp.w}-${vp.theme}.png` });
   // 3) Latest button / symbol switch still return to the live edge

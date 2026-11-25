@@ -415,7 +415,7 @@ class FootprintEngine {
       this.roomTm = 0;
       try {
         const ws = window.STRYKER_VELA, rr = ws && ws.chart && ws.chart.renderer, ctl = rr && (rr.applyViewport ? rr : rr.renderer), v = this.lastCo && this.lastCo.getViewport();
-        if (ctl && ctl.applyViewport && v) ctl.applyViewport({ barSpacing: v.barSpacing, rightOffset: v.rightOffset + Math.ceil(over / bw) });
+        if (ctl && ctl.applyViewport && v && v.rightOffset >= 0) ctl.applyViewport({ barSpacing: v.barSpacing, rightOffset: v.rightOffset + Math.ceil(over / bw) });
       } catch (e) {}
     }, 0);
   }
@@ -730,7 +730,7 @@ function footprintLayer() {
             const vp = co.getViewport();
             const ws = window.STRYKER_VELA, rr = ws && ws.chart && ws.chart.renderer;
             const ctl = rr && (rr.applyViewport ? rr : rr.renderer);
-            if (ctl && ctl.applyViewport) { ctl.applyViewport({ barSpacing: vp.barSpacing * want / bw, rightOffset: Math.max(vp.rightOffset, 4) }); bw = want; }
+            if (ctl && ctl.applyViewport) { ctl.applyViewport({ barSpacing: vp.barSpacing * want / bw, rightOffset: vp.rightOffset < 0 ? vp.rightOffset : Math.max(vp.rightOffset, 4) }); bw = want; }
           } catch (e) {}
         }
       }

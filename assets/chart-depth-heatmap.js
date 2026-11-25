@@ -236,7 +236,7 @@ export function dhLayer(H) {
         try {
           const vp = co.getViewport(), want = Math.ceil(ladW / Math.max(1, co.pxPerBar())) + 2;
           const ws = window.STRYKER_VELA, rr = ws && ws.chart && ws.chart.renderer, ctl = rr && (rr.applyViewport ? rr : rr.renderer);
-          if (ctl && ctl.applyViewport && vp.rightOffset < want) ctl.applyViewport({ barSpacing: vp.barSpacing, rightOffset: want });
+          if (ctl && ctl.applyViewport && vp.rightOffset >= 0 && vp.rightOffset < want) ctl.applyViewport({ barSpacing: vp.barSpacing, rightOffset: want });
         } catch (e) {}
       }
       // ---- visible window, history (+ the smoothing lookback), no sample after the clock ----

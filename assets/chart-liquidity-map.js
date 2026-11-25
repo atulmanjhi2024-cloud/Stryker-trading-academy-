@@ -319,7 +319,7 @@ export function makeLayer(H) {
           const tfm = a.bars.length > 1 ? Math.max(1000, a.bars[a.bars.length - 1].time - a.bars[a.bars.length - 2].time) : 60000;
           const mins = d.kind === 'fut' ? 15 : 45;
           const spacing = tfm <= 300000 ? Math.max(0.5, (plotR - 10) / ((mins * 60000) / tfm + want)) : vp.barSpacing;
-          if (ctl && ctl.applyViewport) ctl.applyViewport({ barSpacing: spacing, rightOffset: Math.max(vp.rightOffset, want) });
+          if (ctl && ctl.applyViewport && vp.rightOffset >= 0) ctl.applyViewport({ barSpacing: spacing, rightOffset: Math.max(vp.rightOffset, want) });
         } catch (e) {}
       }
       g.save(); g.beginPath(); g.rect(0, top, W, H0); g.clip();

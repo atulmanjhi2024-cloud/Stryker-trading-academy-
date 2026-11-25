@@ -353,7 +353,7 @@ function keepViewOnSwitch(R, cell){
   R.__stkKeepView = true;
   const orig = R.setBars.bind(R);
   let pending = null;
-  const keyOf = () => { try { const m = cell && cell.chart && cell.chart.market; return m ? [m.symbol, m.timeframe, m.session].join('|') : ''; } catch (e) { return ''; } };
+  const keyOf = () => { try { const m = cell && cell.chart && cell.chart.market; return m ? [m.symbol, m.timeframe].join('|') : ''; } catch (e) { return ''; } };
   R.setBars = (bars, opts) => {
     const had = R.didInitialFit === true;
     if (!pending && had) {
@@ -373,7 +373,7 @@ function keepViewOnSwitch(R, cell){
         try {
           if (!(opts && opts.preserveView === true)) {
             let ro = null;
-            if (p.at != null && key && key === p.key) {   // same symbol + timeframe + session: keep the historical position
+            if (p.at != null && key && key === p.key) {   // same symbol + timeframe (a session reload too): keep the historical position
               let lo = 0, hi = bars.length - 1;
               while (lo < hi) { const mid = (lo + hi + 1) >> 1; if (bars[mid].time <= p.at) lo = mid; else hi = mid - 1; }
               ro = lo + p.frac - (bars.length - 1);

@@ -24,6 +24,7 @@
 // ws.active), chart-onebar.js (bar), chart-watchlist.js (.stkw-rail), style.css (.stkt-* block).
 
 import { UI_ICONS } from './chart-tool-icons.js?v=1276';
+import { mountSelZoom } from './chart-sel-zoom.js?v=1276';
 
 const LS_LOCK = 'stkc_tv_lockall';
 const LS_HIDE = 'stkc_tv_hideall';
@@ -38,7 +39,8 @@ const IC = {
   importLevels: 'importLevels', zoomIn: 'zoomIn', zoomOut: 'zoomOut', lock: 'lock', unlock: 'unlock', eye: 'eye', eyeOff: 'eyeOff', trash: 'trash',
   full: '<path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/>',
   fullOff: '<path d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5"/>',
-  arrow: '<path d="M9 6l6 6-6 6"/>'
+  arrow: '<path d="M9 6l6 6-6 6"/>',
+  sel: '<path d="M4 9V6a2 2 0 0 1 2-2h3M15 4h3a2 2 0 0 1 2 2v3M20 15v3a2 2 0 0 1-2 2h-3M9 20H6a2 2 0 0 1-2-2v-3"/><path d="M10 14l4-4M11 10h3v3"/>'
 };
 const sized = (markup, s) => markup.replace('width="1em" height="1em"', 'width="' + s + '" height="' + s + '"').replace('<svg ', '<svg aria-hidden="true" ');
 const svg = (d, s) => (UI_ICONS[d] ? sized(UI_ICONS[d], s || 28) : '<svg width="' + (s || 18) + '" height="' + (s || 18) + '" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + d + '</svg>');
@@ -55,6 +57,8 @@ export function mountTvToolbars(ws, opts){
   if (!ws || !ws.root) return null;
   const root = ws.root;
   const cells = () => { try { return ws.cells().map((c) => (c && c.chart ? c : ws.cell(c.id))).filter((c) => c && c.chart); } catch (e) { return []; } };
+  const selZoom = mountSelZoom(ws, { toast });
+  window.__stkSelZoom = selZoom;
   const activeChart = () => { try { return ws.cell(ws.active.id).chart; } catch (e) { try { return ws.active.chart; } catch (e2) { return null; } } };
 
   // ------------------------------------------------------------------ lock / hide all
@@ -239,7 +243,8 @@ export function mountTvToolbars(ws, opts){
   function build(){
     nodes.zoom = cell('stkt-zoom', 'Zoom in', IC.zoomIn, () => zoom(lastZoom === 'in' ? 0.8 : 1.25), () => [
       { label: 'Zoom in', icon: IC.zoomIn, hint: navigator.platform && /Mac/.test(navigator.platform) ? '⌘↑' : 'Ctrl+↑', run: () => { lastZoom = 'in'; paintZoom(); zoom(0.8); } },
-      { label: 'Zoom out', icon: IC.zoomOut, hint: navigator.platform && /Mac/.test(navigator.platform) ? '⌘↓' : 'Ctrl+↓', run: () => { lastZoom = 'out'; paintZoom(); zoom(1.25); } }
+      { label: 'Zoom out', icon: IC.zoomOut, hint: navigator.platform && /Mac/.test(navigator.platform) ? '⌘↓' : 'Ctrl+↓', run: () => { lastZoom = 'out'; paintZoom(); zoom(1.25); } },
+      { label: 'Zoom to selection', icon: IC.sel, hint: 'Alt+Z', run: () => selZoom.start() }
     ]);
     nodes.lock = btn('stkt-lock', IC.lock, 'Lock all drawings', () => setSwitch('lock', !st.lock));
     nodes.hide = cell('stkt-hide', 'Hide all drawings', IC.eye, () => setHideMode(!st.hide, st.hideInd), () => {

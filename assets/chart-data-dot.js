@@ -22,10 +22,10 @@
 // and shared-layout links all get the dot in every cell. The word "delayed" is allowed
 // here (Owner asked for it); the GEX wording ban is GEX-only.
 
-import { rtOnChange, isRealtimeAdmin, rtConfirmed, rtKnown } from './rt-access.js?v=1294';
-import { hubCovers } from './live-source.js?v=1294';
-import { labelFor } from './byo-core.js?v=1294';
-import { parseMonth, isLiveMonth } from './fut-months.js?v=1294';   // contract-month charts (futures:MESZ2026)   // member's own connected source (Connect your own data)
+import { rtOnChange, isRealtimeAdmin, rtConfirmed, rtKnown } from './rt-access.js?v=1295';
+import { hubCovers } from './live-source.js?v=1295';
+import { labelFor } from './byo-core.js?v=1295';
+import { parseMonth, isLiveMonth } from './fut-months.js?v=1295';   // contract-month charts (futures:MESZ2026)   // member's own connected source (Connect your own data)
 
 const H = 3600;
 const LAG_TTL_MS = 60000;        // re-measure each futures root at most once a minute

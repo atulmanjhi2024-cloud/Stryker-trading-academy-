@@ -17,9 +17,9 @@ export const BROKER_AVAILABLE = {
                                 //   members see "Coming soon" (the MT4 tile keeps the own-MetaTrader + EA path). Members back on: set true.
   'ninjatrader': false,         // Owner 24 Nov: coming soon (runs on the same Tradovate backend that fails via Finatic)
   'rithmic': false,             // Finatic connect returns "permission denied (code 13)": not enabled for our app
-  'tastytrade': true,           // Finatic tasty_trade adapter exists; no failed orders on record
+  'tastytrade': false,          // Owner 25 Nov: coming soon
   'tradovate': false,           // every Tradovate order via Finatic failed with 504 (4 of 4, 2 users, 21-23 Nov); Finatic's order schema has no Tradovate entry; support ticket open. Set true once Finatic confirms
-  'webull': true,               // Finatic webull adapter exists; no failed orders on record
+  'webull': false,              // Owner 25 Nov: coming soon
 };
 const esc = (s) => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 const toast = (t, m) => { try { window.showToast(t, m); } catch (e) {} };

@@ -4,7 +4,7 @@
 import assert from 'node:assert/strict';
 
 globalThis.window = globalThis.window || {};
-const { IdxProvider } = await import('../../assets/chart-futures-provider.js?v=1277');
+const { IdxProvider } = await import('../../assets/chart-futures-provider.js?v=1278');
 
 const T = 1795550760;   // a minute
 const p = new IdxProvider();

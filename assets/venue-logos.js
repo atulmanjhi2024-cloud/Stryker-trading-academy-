@@ -3,8 +3,8 @@
 // the Book panel's source chips. Marks are local 32 px PNGs in assets/venue-logos/ (shown at 14 px in an 18 px
 // transparent box; the few marks that vanish on one theme get a per-file filter, see INVERT_DARK), loaded lazily; no venue file = a neutral letter chip.
 // Data vendors are NOT venues and never get a logo. Education only. Not financial advice.
-import { fxMark, fxCss } from './fx-flags.js?v=1277';
-import { symLogoOf } from './symbol-logos.js?v=1277';
+import { fxMark, fxCss } from './fx-flags.js?v=1278';
+import { symLogoOf } from './symbol-logos.js?v=1278';
 const DIR = '/assets/venue-logos/';
 // lower-case venue / exchange code -> file stem. CME Group's own mark covers CME, CBOT, NYMEX and COMEX (all CME Group
 // exchanges). NYSE (NYSE, AMEX, ARCA) has no usable official file, so it gets the letter chip. Never a wrong picture.
@@ -30,7 +30,7 @@ export function venueFile(venue, ticker, byoId) {
   return FILE[v] || '';
 }
 let byoLabel = null;   // byo-core labelFor: which connected own source (Alpaca, tastytrade ...) serves a symbol
-import('./byo-core.js?v=1277').then((m) => { byoLabel = m.labelFor; }).catch(() => {});
+import('./byo-core.js?v=1278').then((m) => { byoLabel = m.labelFor; }).catch(() => {});
 export function venueLabel(venue, ticker) {   // letter for the fallback chip
   const v = String(venue || '').trim();
   const m = /^(?:stocks:)?([A-Za-z_]+):/.exec(String(ticker || ''));

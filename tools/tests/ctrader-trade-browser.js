@@ -289,6 +289,70 @@ async function trade(b, w, h, mobile, theme) {
   await ctx.close();
 }
 
+// Trade history / Order history on a cTrader account (Owner bug 25 Nov: "No trades yet" though he had traded). Mocked socket only:
+// 3 deals (Sample data) -> 3 rows newest first; an execution event + a new deal -> a 4th row without a reload; a failing history call ->
+// the error line with Retry, never "No trades yet". READ-ONLY: this test sends no order (it counts every write type).
+const DAY = 86400000;
+const deal = (id, ago, sym, sideN, vol, px, close) => Object.assign({ dealId: id, orderId: id + 500, positionId: id + 900, symbolId: sym, tradeSide: sideN, volume: vol, filledVolume: vol, executionPrice: px, dealStatus: 2, createTimestamp: Date.now() - ago, executionTimestamp: Date.now() - ago, commission: -6, moneyDigits: 2 },
+  close ? { closePositionDetail: { entryPrice: px - 0.001, grossProfit: close, swap: -12, commission: -6, balance: 1000000, moneyDigits: 2 } } : {});
+async function history(b, w, h, mobile, theme) {
+  const tag = 'hist-' + w + '-' + theme;
+  const { ctx, p, errors } = await open(b, { w, h, mobile, theme });
+  await p.evaluate((ds) => { window.__ctM.deals = ds; window.__ctM.history = [{ orderId: 601, orderStatus: 2, orderType: 1, executionPrice: 1.0855, executedVolume: 100000, utcLastUpdateTimestamp: Date.now() - 3600000, tradeData: { symbolId: 1, volume: 100000, tradeSide: 1 } }]; },
+    [deal(11, 2 * DAY, 1, 1, 100000, 1.0841), deal(12, DAY, 1, 2, 100000, 1.0863, 2200), deal(13, 3600000, 3, 1, 10000000, 2650.15)]);
+  await p.waitForFunction(() => window.__stkLive && window.__stkLive.state.accounts.some((a) => a.ct), null, { timeout: 20000 });
+  await openMenu(p);
+  await p.evaluate(() => document.querySelector('#stkc-trade-pop [data-a=live][data-id="ct-77"]').click());
+  await opWait(p, () => window.__stkLive.state.lastOkStart > 0, null, 15000);
+  await closeMenu(p);
+  const W0 = await p.evaluate(() => window.__ctM.sent.filter((m) => [2106, 2108, 2109, 2110, 2111].includes(m.payloadType)).length);
+  if (mobile) for (let i = 0; i < 6; i++) { await p.evaluate(() => { const x = document.querySelector('#stkop:not([hidden]) [data-a=close]'); if (x) x.click(); }); await sleep(250); }   // phone: the order sheet and the dock sheet share the bottom
+  await sleep(300);
+  await p.evaluate(() => { if (!window.__stkPosOrders.open) window.__stkPosOrders.toggle(true); document.querySelector('#stkpo-dock [role=tab][data-t=th]').click(); });
+  const got3 = await opWait(p, () => document.querySelectorAll('#stkpo-dock .stkpo-t tbody tr').length === 3, null, 10000);
+  const rows = await p.evaluate(() => [...document.querySelectorAll('#stkpo-dock .stkpo-t tbody tr')].map((r) => [...r.cells].map((c) => c.textContent)));
+  check(got3, tag + ': 3 deals from the mocked cTrader -> 3 rows', rows);
+  const tv = await p.evaluate(() => { const tl = document.querySelector('#stkpo-dock .stkpo-tabs').getBoundingClientRect(), b = document.querySelector('#stkpo-dock [role=tab].on').getBoundingClientRect(); return { l: b.left - tl.left, r: tl.right - b.right }; });
+  check(tv.l >= -1 && tv.r >= -1, tag + ': the picked tab is fully in view in the tab row', tv);
+  check(rows.length === 3 && rows[0][1] === 'XAUUSD' && rows[2][1] === 'EURUSD' && rows[0][3] === '1.00' && rows[1][3] === '0.01', tag + ': newest first, broker symbol names, volume in lots', rows);
+  check(rows[1] && /Sell · close/.test(rows[1][2]) && /\+\$22\.00/.test(rows[1][5]) && /-\$0\.06/.test(rows[1][6]) && /-\$0\.12/.test(rows[1][7]), tag + ': closing deal shows gross P&L, commission and swap', rows[1]);
+  check(await p.evaluate(() => window.__ctM.sent.some((m) => m.payloadType === 2133)), tag + ': DealListReq (2133) was asked');
+  await sleep(300);
+  const al = await p.evaluate(() => {
+    const t = document.querySelector('#stkpo-dock .stkpo-t'), tr = t.querySelector('tbody tr'), cs = [...tr.cells].map((c) => c.getBoundingClientRect());
+    const cy = cs.map((c) => c.top + c.height / 2), num = [...tr.cells].filter((c) => c.classList.contains('n')).every((c) => getComputedStyle(c).textAlign === 'right');
+    const clip = [...t.querySelectorAll('td,th')].some((c) => c.scrollWidth > c.clientWidth + 1);
+    return { spread: Math.max(...cy) - Math.min(...cy), num, tab: getComputedStyle(t).fontVariantNumeric, clip, hs: document.documentElement.scrollWidth > window.innerWidth + 1 };
+  });
+  check(al.spread <= 1 && al.num && /tabular/.test(al.tab) && !al.clip && !al.hs, tag + ': rows share one centre, numbers right-aligned tabular, nothing clipped, no page h-scroll', al);
+  await p.screenshot({ path: OUT + '/after-' + tag + '-3.png' });
+  // a new deal + an execution event (the socket's own push) -> a 4th row, no reload
+  await p.evaluate(() => { const M = window.__ctM; M.deals = [{ dealId: 14, orderId: 514, positionId: 914, symbolId: 1, tradeSide: 1, volume: 200000, filledVolume: 200000, executionPrice: 1.0871, dealStatus: 2, createTimestamp: Date.now(), executionTimestamp: Date.now(), commission: -12, moneyDigits: 2 }].concat(M.deals);
+    M.socket.relay.onUp(JSON.stringify({ payloadType: 2126, payload: { ctidTraderAccountId: 77, executionType: 3, order: { orderId: 514, orderStatus: 2, tradeData: { symbolId: 1, volume: 200000, tradeSide: 1 } }, position: { positionId: 914, positionStatus: 1, price: 1.0871, tradeData: { symbolId: 1, volume: 200000, tradeSide: 1 } } } })); });
+  const got4 = await opWait(p, () => document.querySelectorAll('#stkpo-dock .stkpo-t tbody tr').length === 4, null, 8000);
+  const top = await p.evaluate(() => [...document.querySelector('#stkpo-dock .stkpo-t tbody tr').cells].map((c) => c.textContent));
+  check(got4 && top[1] === 'EURUSD' && top[3] === '0.02', tag + ': an execution event adds the 4th row on top without a reload', top);
+  // Order history from OrderListReq
+  await p.evaluate(() => document.querySelector('#stkpo-dock [role=tab][data-t=oh]').click());
+  const oh = await opWait(p, () => /Filled · Market/.test((document.querySelector('#stkpo-dock .stkpo-view') || {}).textContent || ''), null, 8000);
+  check(oh && (await p.evaluate(() => window.__ctM.sent.some((m) => m.payloadType === 2175))), tag + ': Order history from OrderListReq (2175) shows the filled order', await p.evaluate(() => document.querySelector('#stkpo-dock .stkpo-view').textContent.slice(0, 200)));
+  await p.screenshot({ path: OUT + '/after-' + tag + '-orders.png' });
+  // failure -> the error line with Retry (never "No trades yet"); Retry after the fault clears -> rows again
+  await p.evaluate(() => { window.__ctM.histFail = true; const L = window.__stkLive; L.state.hist.th.rows = null; L.state.hist.th.at = 0; document.querySelector('#stkpo-dock [role=tab][data-t=th]').click(); });
+  const er = await opWait(p, () => /Couldn’t load trade history from cTrader/.test(document.querySelector('#stkpo-dock .stkpo-view').textContent), null, 8000);
+  const et = await p.evaluate(() => document.querySelector('#stkpo-dock .stkpo-view').textContent);
+  check(er && !/No trades yet/.test(et) && !!(await p.$('#stkpo-dock [data-retry=th]')), tag + ': a failed call shows the error line with Retry', et);
+  const ea = await p.evaluate(() => { const e = document.querySelector('#stkpo-dock .stkpo-err'), bt = e.querySelector('button').getBoundingClientRect(), r = e.querySelector('span').getBoundingClientRect(); return Math.abs((bt.top + bt.height / 2) - (r.top + r.height / 2)); });
+  check(ea <= 1, tag + ': error text and Retry share one centre', ea);
+  await p.screenshot({ path: OUT + '/after-' + tag + '-error.png' });
+  await p.evaluate(() => { window.__ctM.histFail = false; document.querySelector('#stkpo-dock [data-retry=th]').click(); });
+  check(await opWait(p, () => document.querySelectorAll('#stkpo-dock .stkpo-t tbody tr').length === 4, null, 8000), tag + ': Retry loads the rows');
+  const W1 = await p.evaluate(() => window.__ctM.sent.filter((m) => [2106, 2108, 2109, 2110, 2111].includes(m.payloadType)).length);
+  check(W1 === W0 && W0 === 0, tag + ': read-only: no order was placed, changed or cancelled', [W0, W1]);
+  check(!errors.length, tag + ': no page errors', errors);
+  await ctx.close();
+}
+
 (async () => {
   const b = await launch({ args: ['--js-flags=--max-old-space-size=768'] });
   try {
@@ -299,6 +363,7 @@ async function trade(b, w, h, mobile, theme) {
       if (process.env.ONE && process.env.ONE !== w + '-' + theme) continue;
       if (!only || only === 'allow') await notConnected(b, w, h, mobile, theme);
       if (!only || only === 'trade') await trade(b, w, h, mobile, theme);
+      if (!BEFORE && (!only || only === 'history')) await history(b, w, h, mobile, theme);
     }
   } finally { await b.close(); }
   console.log(fail ? 'FAILED ' + fail : 'ALL PASS');

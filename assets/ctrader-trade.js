@@ -93,6 +93,37 @@ export function mapTrader(t, assets, now = Date.now()) {
   const a = (assets || []).find((x) => x && n(x.assetId) === n(t.depositAssetId)), cur = a && /^[A-Z]{3}$/.test(String(a.name || a.displayName || '')) ? String(a.name || a.displayName) : '';
   return [{ balance: n(t.balance) / Math.pow(10, md), currency: cur, updatedAt: new Date(now).toISOString() }];
 }
+// HISTORY (read-only; Owner bug 25 Nov "Trade history says No trades yet on cTrader"). DealListRes / OrderListRes -> rows for the
+// Positions & Orders dock, newest first. Volumes are cTrader cents (lotSize is in the same unit); money is an integer with moneyDigits.
+export const HIST_MS = 7 * 86400000 - 60000;   // cTrader serves at most one week per call
+const lotsAt = (v, id, details) => { const d = details.get(n(id)); return d && d.lotSize > 0 ? n(v) / d.lotSize : n(v) / 100 / 100000; };
+const tsOf = (...v) => { for (const x of v) { const t = n(x); if (t > 0) return t; } return 0; };
+const money = (v, md) => (v == null || !Number.isFinite(n(v)) ? null : n(v) / Math.pow(10, Number.isInteger(n(md)) ? n(md) : 2));
+const dealOk = (st) => st == null || /^(2|3|FILLED|PARTIALLY_FILLED)$/.test(String(st));
+// -> [{ t, symbolId, sym, side, lots, price, closing, gross, swap, commission, pnl, dealId, orderId, positionId }]
+export function mapDeals(pl, names, details) {
+  return ((pl && pl.deal) || []).filter((d) => d && dealOk(d.dealStatus) && n(d.filledVolume != null ? d.filledVolume : d.volume) > 0).map((d) => {
+    const c = d.closePositionDetail || null, md = c && c.moneyDigits != null ? c.moneyDigits : d.moneyDigits;
+    const comm = money(d.commission, d.moneyDigits), gross = c ? money(c.grossProfit, md) : null, swap = c ? money(c.swap, md) : null;
+    const cComm = c ? money(c.commission, md) : null;
+    return { t: tsOf(d.executionTimestamp, d.createTimestamp, d.utcLastUpdateTimestamp), symbolId: n(d.symbolId), sym: names.get(n(d.symbolId)) || String(d.symbolId || '—'),
+      side: side(d.tradeSide), lots: lotsAt(d.filledVolume != null ? d.filledVolume : d.volume, d.symbolId, details), price: n(d.executionPrice) || null, closing: !!c,
+      gross, swap, commission: cComm != null ? cComm : comm, pnl: c ? (gross || 0) + (swap || 0) + (cComm != null ? cComm : comm || 0) : null,
+      dealId: String(d.dealId || ''), orderId: String(d.orderId || ''), positionId: String(d.positionId || '') };
+  }).sort((a, b) => b.t - a.t);
+}
+const OSTAT = { 1: 'Working', 2: 'Filled', 3: 'Rejected', 4: 'Expired', 5: 'Cancelled' };
+const OTYPE = { 1: 'Market', 2: 'Limit', 3: 'Stop', 4: 'Stop loss / take profit', 5: 'Market range', 6: 'Stop limit' };
+const enumTxt = (v, map, pre) => map[n(v)] || String(v || '').replace(pre, '').replace(/_/g, ' ').toLowerCase().replace(/^./, (x) => x.toUpperCase());
+// -> [{ t, sym, side, lots, price, status, type, orderId }]  (closing / protective orders included; newest first)
+export function mapOrders(pl, names, details) {
+  return ((pl && pl.order) || []).filter((o) => o && o.tradeData).map((o) => {
+    const td = o.tradeData;
+    return { t: tsOf(o.utcLastUpdateTimestamp, td.closeTimestamp, td.openTimestamp), sym: names.get(n(td.symbolId)) || String(td.symbolId || '—'), side: side(td.tradeSide),
+      lots: lotsAt(o.executedVolume > 0 ? o.executedVolume : td.volume, td.symbolId, details), price: n(o.executionPrice) || n(o.limitPrice) || n(o.stopPrice) || null,
+      status: enumTxt(o.orderStatus, OSTAT, /^ORDER_STATUS_/), type: enumTxt(o.orderType, OTYPE, /^ORDER_TYPE_?/), orderId: String(o.orderId || '') };
+  }).sort((a, b) => b.t - a.t);
+}
 // chart-live write body (buildPlaceMt shape + sl / tp) -> [payloadType, payload] | { error }
 export function buildNewOrder(b, ctx) {
   const d = ctx.details.get(ctx.symbolId); if (!d) return { error: 'This symbol’s size rules are still loading. Try again in a moment.' };
@@ -259,6 +290,14 @@ export function ctOps(link, { lastPrice } = {}) {
         return { data: mapTrader(m.payload && m.payload.trader, link.assets) };
       }
       if (op === 'fills') return { data: [] };
+      // read-only history for the Positions & Orders dock: deals (Trade history) and orders (Order history), the last 7 days
+      if (op === 'deals' || op === 'orders') {
+        const to = Date.now(), m = await link.call(op === 'deals' ? 2133 : 2175, op === 'deals' ? { fromTimestamp: to - HIST_MS, toTimestamp: to, maxRows: 250 } : { fromTimestamp: to - HIST_MS, toTimestamp: to });
+        const pl = m.payload || {}, rows = op === 'deals' ? pl.deal : pl.order;
+        const ids = [...new Set((rows || []).map((x) => n(x && (x.symbolId || (x.tradeData && x.tradeData.symbolId)))).filter((x) => x > 0 && !link.details.has(x)))];
+        for (let i = 0; i < ids.length; i += 40) { try { const r = await link.call(2116, { symbolId: ids.slice(i, i + 40) }); for (const s of (r.payload && r.payload.symbol) || []) link.details.set(n(s.symbolId), { ...s, lotSize: n(s.lotSize), minVolume: n(s.minVolume), maxVolume: n(s.maxVolume), stepVolume: n(s.stepVolume), digits: n(s.digits) }); } catch (e) { /* lots fall back */ } }
+        return { data: op === 'deals' ? mapDeals(pl, link.names, link.details) : mapOrders(pl, link.names, link.details) };
+      }
       throw fail('Not available for cTrader.', { status: 400 });
     },
     async order(b) {

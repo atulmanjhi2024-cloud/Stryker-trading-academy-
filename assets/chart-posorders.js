@@ -41,12 +41,12 @@ function paperData() {
     nPos: Object.keys(st.positions).length, nOrd: st.orders.length
   };
 }
-const liveData = () => { const L = P.live; return L && L.dock ? L.dock() : null; };
+const liveData = () => { const L = P.live; return L && L.dock ? L.dock(ui.open ? ui.tab : '') : null; };
 const data = () => { try { return (P.live ? liveData() : null) || (P.live ? null : paperData()); } catch (e) { return null; } };
 
 // ---- view -----------------------------------------------------------------------------------------------------------------------
 const tbl = (head, rows, empty) => rows.length
-  ? '<div class="stkpo-tw"><table class="stkpo-t"><thead><tr>' + head.map((h, i) => '<th' + (/Qty|Avg|Last|P&amp;L|Price/.test(esc(h)) ? ' class="n"' : '') + '>' + esc(h) + '</th>').join('') + '</tr></thead><tbody>' + rows.join('') + '</tbody></table></div>'
+  ? '<div class="stkpo-tw"><table class="stkpo-t"><thead><tr>' + head.map((h, i) => '<th' + (/Qty|Avg|Last|P&amp;L|Price|Commission|Swap/.test(esc(h)) ? ' class="n"' : '') + '>' + esc(h) + '</th>').join('') + '</tr></thead><tbody>' + rows.join('') + '</tbody></table></div>'
   : '<p class="stkpo-empty">' + esc(empty) + '</p>';
 const X = (i, label) => '<td class="x"><button type="button" class="stkpo-x" data-x="' + i + '" aria-label="' + esc(label) + '" title="' + esc(label) + '"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg></button></td>';
 function body(d) {
@@ -54,8 +54,17 @@ function body(d) {
   if (t === 'pos') return tbl(['Symbol', 'Side', 'Qty', 'Avg price', 'Last', 'Open P&L', ''], d.pos.map((p, i) => '<tr><td class="s">' + esc(p.sym) + '</td><td class="' + (p.buy ? 'up' : 'down') + '">' + p.side + '</td><td class="n">' + esc(p.qty) + '</td><td class="n">' + esc(p.avg) + '</td><td class="n">' + esc(p.last) + '</td><td class="n ' + cls(p.pnl) + '">' + (p.pnl == null ? '—' : money(p.pnl, true)) + '</td>' + (p.close ? X(i, 'Close ' + p.sym) : '<td></td>') + '</tr>'), 'No open positions');
   if (t === 'ord') return (d.ord.length && d.cancelAll ? '<div class="stkpo-tools"><button type="button" class="stkpo-b" data-all="1">Cancel all</button></div>' : '') +
     tbl(['Symbol', 'Side', 'Type', 'Qty', 'Price', 'Status', ''], d.ord.map((o, i) => '<tr><td class="s">' + esc(o.sym) + '</td><td class="' + (o.buy ? 'up' : 'down') + '">' + o.side + '</td><td>' + esc(o.type) + '</td><td class="n">' + esc(o.qty) + '</td><td class="n">' + esc(o.price) + '</td><td>' + esc(o.status) + '</td>' + (o.cancel ? X(i, 'Cancel ' + o.sym + ' order') : '<td></td>') + '</tr>'), 'No open orders');
+  const err = (m, k) => '<p class="stkpo-empty stkpo-err" role="alert"><span>' + esc(m) + '</span><button type="button" class="stkpo-b" data-retry="' + k + '">Retry</button></p>';
+  if (t === 'oh' && d.ohErr && !(Array.isArray(d.oh) && d.oh.length)) return err(d.ohErr, 'oh');
+  if (t === 'oh' && (d.oh == null || d.oh === 'loading')) return '<p class="stkpo-empty">Loading…</p>';
   if (t === 'oh') return tbl(['Time', 'Symbol', 'Side', 'Qty', 'Price', 'Status'], d.oh.map((o) => '<tr><td>' + esc(when(o.t)) + '</td><td class="s">' + esc(o.sym) + '</td><td class="' + (o.buy ? 'up' : o.side === '—' ? '' : 'down') + '">' + o.side + '</td><td class="n">' + esc(o.qty) + '</td><td class="n">' + esc(o.price) + '</td><td>' + esc(o.note) + '</td></tr>'), 'No order history yet');
-  if (t === 'th') return d.th === 'loading' ? '<p class="stkpo-empty">Loading…</p>' : tbl(['Time', 'Symbol', 'Side', 'Qty', 'Price', 'P&L'], d.th.map((o) => '<tr><td>' + esc(when(o.t)) + '</td><td class="s">' + esc(o.sym) + '</td><td class="' + (o.buy ? 'up' : o.side === '—' ? '' : 'down') + '">' + o.side + '</td><td class="n">' + esc(o.qty) + '</td><td class="n">' + esc(o.price) + '</td><td class="n ' + cls(o.pnl) + '">' + (o.pnl == null ? '—' : money(o.pnl, true)) + '</td></tr>'), 'No trades yet');
+  if (t === 'th') {
+    if (d.thErr && !(Array.isArray(d.th) && d.th.length)) return err(d.thErr, 'th');
+    if (d.th === 'loading' || d.th == null) return '<p class="stkpo-empty">Loading…</p>';
+    if (d.thNote && !d.th.length) return '<p class="stkpo-empty">' + esc(d.thNote) + '</p>';
+    const ext = d.thExt || [];
+    return tbl(['Time', 'Symbol', 'Side', 'Qty', 'Price', 'P&L'].concat(ext), d.th.map((o) => '<tr><td>' + esc(when(o.t)) + '</td><td class="s">' + esc(o.sym) + '</td><td class="' + (o.buy ? 'up' : o.side === '—' ? '' : 'down') + '">' + esc(o.side) + '</td><td class="n">' + esc(o.qty) + '</td><td class="n">' + esc(o.price) + '</td><td class="n ' + cls(o.pnl) + '">' + esc(o.pnlTxt != null ? o.pnlTxt : o.pnl == null ? '—' : money(o.pnl, true)) + '</td>' + ext.map((_, i) => '<td class="n ' + cls((o.extN || [])[i]) + '">' + esc((o.ext || [])[i] || '—') + '</td>').join('') + '</tr>'), d.live && d.thDays ? 'No trades in the last ' + d.thDays + ' days' : 'No trades yet');
+  }
   return d.bal.length ? '<div class="stkpo-bal">' + d.bal.map(([k, v, n]) => '<div><em>' + esc(k) + '</em><b class="' + cls(n) + '">' + esc(v) + '</b></div>').join('') + '</div>' : '<p class="stkpo-empty">No balance to show</p>';
 }
 let cur = null;
@@ -69,9 +78,12 @@ function render(force) {
   if (!ui.open || !d) return;
   cur = d;
   for (const b of dock.querySelectorAll('[role=tab]')) { const o = b.dataset.t === ui.tab; b.classList.toggle('on', o); b.setAttribute('aria-selected', String(o)); b.tabIndex = o ? 0 : -1; }
+  { const tl = dock.querySelector('.stkpo-tabs'), on = tl.querySelector('[role=tab].on');   // phones: the picked tab is never cut off at the row's edge
+    if (on && tl.scrollWidth > tl.clientWidth) { const l = on.offsetLeft - tl.offsetLeft, r = l + on.offsetWidth; if (l < tl.scrollLeft) tl.scrollLeft = l; else if (r > tl.scrollLeft + tl.clientWidth) tl.scrollLeft = r - tl.clientWidth; } }
   dock.querySelector('[data-c=pos]').textContent = nP || ''; dock.querySelector('[data-c=ord]').textContent = nO || '';
   if (ui.tab === 'th' && d.live && d.th == null) d.th = 'loading';
-  const s = JSON.stringify([ui.tab, d.live, d.pos, d.ord, d.oh, d.th, d.bal, tzOf()].map((x) => x === 'loading' ? x : x));
+  if (ui.tab === 'oh' && d.live && d.oh == null) d.oh = 'loading';
+  const s = JSON.stringify([ui.tab, d.live, d.pos, d.ord, d.oh, d.th, d.bal, d.thErr, d.ohErr, d.thNote, tzOf()]);
   if (!force && s === sig) return; sig = s;
   const v = dock.querySelector('.stkpo-view'), top = v.scrollTop;
   v.innerHTML = body(d); v.scrollTop = top;
@@ -117,12 +129,13 @@ function build() {
   dock.querySelector('.stkpo-close').onclick = () => toggle(false);
   dock.addEventListener('keydown', (e) => e.stopPropagation());
   dock.addEventListener('pointerdown', (e) => e.stopPropagation());
-  dock.querySelector('.stkpo-tabs').addEventListener('click', (e) => { const b = e.target.closest('[role=tab]'); if (!b) return; ui.tab = b.dataset.t; save(); if (ui.tab === 'th' && P.live && P.live.dockTrades) P.live.dockTrades(); render(true); });
+  dock.querySelector('.stkpo-tabs').addEventListener('click', (e) => { const b = e.target.closest('[role=tab]'); if (!b) return; ui.tab = b.dataset.t; save(); if ((ui.tab === 'th' || ui.tab === 'oh') && P.live && P.live.dockTrades) P.live.dockTrades(false, ui.tab); render(true); });
   dock.querySelector('.stkpo-tabs').addEventListener('keydown', (e) => { const i = TABS.findIndex((t) => t[0] === ui.tab), j = e.key === 'ArrowRight' ? i + 1 : e.key === 'ArrowLeft' ? i - 1 : -1; if (j < 0 || j >= TABS.length) return; ui.tab = TABS[j][0]; save(); render(true); dock.querySelector('[role=tab].on').focus(); });
   dock.querySelector('.stkpo-view').addEventListener('click', (e) => {
     const x = e.target.closest('[data-x]'), all = e.target.closest('[data-all]');
     if (x && cur) { const r = (ui.tab === 'pos' ? cur.pos : cur.ord)[+x.dataset.x]; if (r) (r.close || r.cancel)(); setTimeout(() => render(true), 60); }
     if (all && cur && cur.cancelAll) { cur.cancelAll(); setTimeout(() => render(true), 60); }
+    const rt = e.target.closest('[data-retry]'); if (rt && P.live && P.live.dockTrades) { P.live.dockTrades(true, rt.dataset.retry); render(true); }
   });
   const grip = dock.querySelector('.stkpo-grip');
   grip.addEventListener('pointerdown', (e) => {
@@ -173,6 +186,8 @@ const CSS = `
 .stkpo-b{ height:28px; padding:0 12px; border:1px solid var(--line); border-radius:8px; background:none; color:var(--ink-1); font:600 12px/1 var(--font-body, sans-serif); cursor:pointer; }
 .stkpo-b:hover{ background:var(--bg-2); color:var(--ink-0); }
 .stkpo-empty{ margin:16px 4px; color:var(--ink-3); }
+.stkpo-err{ display:flex; align-items:center; gap:12px; color:var(--ink-2); }
+.stkpo-err span{ flex:1 1 auto; min-width:0; max-width:640px; } .stkpo-err .stkpo-b{ flex:none; }
 .stkpo-bal{ display:grid; grid-template-columns:repeat(auto-fill, minmax(160px, 1fr)); gap:8px; padding-top:12px; }
 .stkpo-bal div{ display:flex; flex-direction:column; gap:4px; padding:12px; border:1px solid var(--line-soft); border-radius:12px; background:var(--bg-1); }
 .stkpo-bal em{ font-style:normal; font-size:11px; color:var(--ink-3); } .stkpo-bal b{ font:600 15px/20px var(--font-body, sans-serif); font-variant-numeric:tabular-nums; color:var(--ink-0); }

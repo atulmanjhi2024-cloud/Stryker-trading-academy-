@@ -1,7 +1,7 @@
 // MOCK cTrader for the trading tests (Node + browser). A fake WebSocket class for assets/ctrader-trade.js whose other end is the REAL
 // relay rules (functions/connect/ctrader/_relay.js + _trade.js) talking to a fake cTrader server below. Nothing leaves the process.
 // All numbers are Sample data. M (state) knobs: reject ('NOT_ENOUGH_MONEY' -> OrderErrorEvent), silent (no answer to a write),
-// dropOnWrite (the link drops mid-order), scope (0 = view-only token), gates overrides.
+// dropOnWrite (the link drops mid-order), scope (0 = view-only token), gates overrides, deals (DealListRes rows), histFail (history calls error).
 import { createRelay } from '../../functions/connect/ctrader/_relay.js';
 import { tradeHooks } from '../../functions/connect/ctrader/_trade.js';
 
@@ -54,7 +54,8 @@ export function makeWS(M, { now = () => Date.now() } = {}) {
       if (t === 2124) return R(2125, { position: M.positions, order: M.orders });
       if (t === 2121) return R(2122, { trader: { ctidTraderAccountId: ACC, balance: M.balance, moneyDigits: 2, depositAssetId: 1 } });
       if (t === 2112) return R(2113, { asset: [{ assetId: 1, name: 'USD' }, { assetId: 2, name: 'EUR' }] });
-      if (t === 2175) return R(2176, { order: (M.history || []) });
+      if (t === 2175) { if (M.histFail) return R(2142, { errorCode: 'INTERNAL_ERROR', description: 'Sample failure' }); return R(2176, { order: (M.history || []) }); }
+      if (t === 2133) { if (M.histFail) return R(2142, { errorCode: 'INTERNAL_ERROR', description: 'Sample failure' }); return R(2134, { deal: (M.deals || []), hasMore: false }); }
       if (t === 51) return;
       if ([2106, 2108, 2109, 2110, 2111].includes(t)) {
         if (M.dropOnWrite) { M.dropOnWrite = false; return this.relay.onUpClose(); }

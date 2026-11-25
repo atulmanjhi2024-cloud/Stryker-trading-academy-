@@ -602,8 +602,12 @@ export function chipParts(sym, l) {
 // the active account's fills on this chart's instrument, for Trade display > Executions: today's fills, plus the Trade history tab's when loaded
 export function execs(sym) {
   const i = info(sym); if (!i || !S.acct) return [];
-  dockTrades();   // throttled to one read per 30 s
+  dockTrades(false, 'th');   // throttled to one read per 30 s
   const out = [], seen = new Set();
+  if (S.acct.ct) {   // cTrader: its own deal list (symbol = the broker's name, the chart's mapped code)
+    for (const d of (S.hist.id === S.acct.id && S.hist.th.rows) || []) if (d.sym === i.code && d.t > 0 && d.price > 0) out.push({ t: d.t, price: d.price, side: d.side, qty: Number.isFinite(d.lots) ? d.lots.toFixed(2) : '' });
+    return out.sort((x, y) => x.t - y.t);
+  }
   for (const f of [].concat(S.day.fills || [], S.fills.rows || [])) {
     if (L.contractOf(f) !== i.code) continue;
     const t = Date.parse(first(f, ['filledAt', 'timestamp', 'createdAt', 'executedAt', 'time'])), p = Number(first(f, ['price', 'fillPrice', 'executionPrice'])), s = String(first(f, ['side', 'action'])).toLowerCase();
@@ -814,19 +818,46 @@ async function flattenCt(symOrCode) {
 }
 
 // ---- read-only copy of the poll data for the Positions & Orders dock (assets/chart-posorders.js). No new routes: positions/orders come from
-// the 10 s poll, balances from balance(), fills from the existing data op "fills" (one read per 30 s while the Trade history tab is open).
+// the 10 s poll, balances from balance(). Trade history: broker-link accounts read the existing data op "fills"; cTrader reads its own deal
+// list (DealListReq) and order list (OrderListReq) for the last 7 days on the open trade link (read-only). Re-read every 30 s while the tab
+// is open and at once on an execution event (Owner bug 25 Nov 2026: "No trades yet" on a cTrader account that had traded).
 S.fills = { at: 0, busy: false, rows: null };
+S.hist = { id: '', th: { at: 0, busy: false, rows: null, err: '' }, oh: { at: 0, busy: false, rows: null, err: '' } };
+const HIST_MS = 30000;
 const first = (o, ks) => { for (const k of ks) if (o && o[k] != null && o[k] !== '') return o[k]; return ''; };
-export function dockTrades() {
-  if (!S.acct || S.fills.busy || now() - S.fills.at < 30000) return;
-  const ids = S.data.orders.filter((o) => /FILLED/i.test(o.status || '')).map((o) => String(o.orderId || o.id || '')).filter((x) => /^[A-Za-z0-9._:-]{1,80}$/.test(x)).slice(0, 25), id = S.acct.id;
-  if (!ids.length) { S.fills = { at: now(), busy: false, rows: [] }; return; }
-  S.fills.busy = true;
-  data('fills', { accountId: id, orderIds: ids }).then((r) => { if (S.acct && S.acct.id === id) S.fills = { at: now(), busy: false, rows: Array.isArray(r.data) ? r.data : [] }; })
-    .catch(() => { S.fills = { at: now(), busy: false, rows: S.fills.rows || [] }; });
+function histReset(id) { S.hist = { id, th: { at: 0, busy: false, rows: null, err: '' }, oh: { at: 0, busy: false, rows: null, err: '' } }; S.fills = { at: 0, busy: false, rows: null }; }
+// one history read for the active account; kind 'th' (trades) | 'oh' (orders, cTrader only: the others derive it from the poll)
+function histLoad(kind, force) {
+  if (!S.acct) return;
+  const id = S.acct.id; if (S.hist.id !== id) histReset(id);
+  const h = S.hist[kind]; if (h.busy || (!force && now() - h.at < HIST_MS)) return;
+  if (S.acct.ct) {
+    h.busy = true; h.at = now();
+    data(kind === 'th' ? 'deals' : 'orders', { accountId: id }).then((r) => { if (S.hist.id === id) Object.assign(S.hist[kind], { at: now(), busy: false, rows: Array.isArray(r.data) ? r.data : [], err: '' }); },
+      (e) => { if (S.hist.id === id) Object.assign(S.hist[kind], { at: now(), busy: false, err: 'Couldn’t load ' + (kind === 'th' ? 'trade' : 'order') + ' history from cTrader.' + (e && e.message && !/did not answer|closed/i.test(e.message) ? ' ' + e.message : '') }); });
+    return;
+  }
+  if (kind !== 'th') return;
+  if (S.acct.b3) { Object.assign(h, { at: now(), rows: [], err: '' }); return; }   // BROKERS 3: no fill history route yet (dock says so)
+  const ids = S.data.orders.filter((o) => /FILLED/i.test(o.status || '')).map((o) => String(o.orderId || o.id || '')).filter((x) => /^[A-Za-z0-9._:-]{1,80}$/.test(x)).slice(0, 25);
+  if (!ids.length) { Object.assign(h, { at: now(), rows: [], err: '' }); S.fills = { at: now(), busy: false, rows: [] }; return; }
+  h.busy = true; h.at = now(); S.fills.busy = true;
+  data('fills', { accountId: id, orderIds: ids }).then((r) => { if (S.hist.id !== id) return; const rows = Array.isArray(r.data) ? r.data : []; S.fills = { at: now(), busy: false, rows }; Object.assign(h, { at: now(), busy: false, rows, err: '' }); },
+    () => { if (S.hist.id !== id) return; S.fills.busy = false; S.fills.at = now(); Object.assign(h, { at: now(), busy: false, err: 'Couldn’t load trade history from ' + (S.acct.broker || 'your broker') + '.' }); });
 }
-export function dock() {
+// tab: 'th' | 'oh' | undefined (both); force = read now (Retry button, an execution event)
+export function dockTrades(force, tab) {
+  if (!S.acct) return;
+  if (!tab || tab === 'th') histLoad('th', force);
+  if (S.acct.ct && (!tab || tab === 'oh')) histLoad('oh', force);
+}
+// an execution event on the picked account: history re-read now (and once more shortly after: a deal can land a moment after its event)
+let histT = [];
+function histSoon() { histT.forEach(clearTimeout); histT = [600, 3000].map((ms) => setTimeout(() => { if (S.acct && (S.hist.th.rows || S.hist.oh.rows)) dockTrades(true); }, ms)); }
+export function dock(tab) {
   if (!S.acct) return null;
+  if (S.hist.id !== S.acct.id) histReset(S.acct.id);
+  if (tab === 'th' || tab === 'oh') dockTrades(false, tab);   // throttled: one read per 30 s while that tab is open
   const codes = new Set(), add = (c) => { if (c) codes.add(c); };
   const symOf = S.acct.mt ? (r) => String((r && (r.symbol || r.brokerProvidedSymbol || (r.instrument && r.instrument.providerSymbol))) || '') : L.contractOf;
   S.data.positions.forEach((p) => add(symOf(p))); S.data.orders.forEach((o) => add(symOf((o.legs || [])[0] || {}) || symOf(o)));
@@ -840,10 +871,21 @@ export function dock() {
   const done = S.data.orders.filter((o) => !L.workingOrders([o], L.contractOf((o.legs || [])[0] || {}) || L.contractOf(o)).length);
   const oh = done.map((o) => { const leg = (o.legs || [])[0] || {}, s = String(leg.side || o.side || o.action || '').toLowerCase(); return { t: first(o, ['updatedAt', 'filledAt', 'createdAt', 'submittedAt', 'timestamp']), sym: L.contractOf(leg) || L.contractOf(o) || '—', side: s === 'buy' ? 'Buy' : s === 'sell' ? 'Sell' : '—', buy: s === 'buy', qty: first(leg, ['quantity']) || first(o, ['orderQty', 'quantity']) || '—', price: px(Number(first(o, ['averageFillPrice', 'avgFillPrice', 'limitPrice', 'price']) || first(leg, ['limitPrice', 'price'])) || null), note: String(o.status || '').replace(/_/g, ' ').toLowerCase().replace(/^./, (c) => c.toUpperCase()) }; })
     .sort((a, b) => String(b.t).localeCompare(String(a.t))).slice(0, 100);
-  const th = S.fills.rows == null ? null : S.fills.rows.map((f) => { const s = String(first(f, ['side', 'action'])).toLowerCase(); return { t: first(f, ['filledAt', 'timestamp', 'createdAt', 'executedAt', 'time']), sym: L.contractOf(f) || '—', side: s === 'buy' ? 'Buy' : s === 'sell' ? 'Sell' : '—', buy: s === 'buy', qty: first(f, ['quantity', 'qty', 'units']) || '—', price: px(Number(first(f, ['price', 'fillPrice', 'executionPrice'])) || null), pnl: null }; }).sort((a, b) => String(b.t).localeCompare(String(a.t)));
-  const sm = summary(), bal = [];
+  const sm = summary(), cur = sm && sm.cur, fm = (v, sign) => (v == null ? '—' : L.fmtMoney(v, cur, sign));
+  let th, oh2 = oh, thErr = S.hist.th.err, ohErr = '', thNote = '', thExt = null;
+  if (S.acct.ct) {
+    const lot = (q) => (Number.isFinite(q) ? q.toFixed(2) : '—');
+    thExt = ['Commission', 'Swap'];
+    th = S.hist.th.rows == null ? null : S.hist.th.rows.map((d) => ({ t: d.t, sym: d.sym, side: (d.side === 'buy' ? 'Buy' : 'Sell') + (d.closing ? ' · close' : ''), buy: d.side === 'buy', qty: lot(d.lots), price: d.price != null ? String(d.price) : '—', pnl: d.closing ? d.gross : null, pnlTxt: d.closing ? fm(d.gross, true) : '—', ext: [fm(d.commission, true), d.closing ? fm(d.swap, true) : '—'], extN: [d.commission, d.closing ? d.swap : null] }));
+    oh2 = S.hist.oh.rows == null ? null : S.hist.oh.rows.slice(0, 200).map((o) => ({ t: o.t, sym: o.sym, side: o.side === 'buy' ? 'Buy' : 'Sell', buy: o.side === 'buy', qty: lot(o.lots), price: o.price != null ? String(o.price) : '—', note: o.status + (o.type ? ' · ' + o.type : '') }));
+    ohErr = S.hist.oh.err;
+  } else {
+    th = S.hist.th.rows == null ? null : S.hist.th.rows.map((f) => { const s = String(first(f, ['side', 'action'])).toLowerCase(); return { t: first(f, ['filledAt', 'timestamp', 'createdAt', 'executedAt', 'time']), sym: L.contractOf(f) || '—', side: s === 'buy' ? 'Buy' : s === 'sell' ? 'Sell' : '—', buy: s === 'buy', qty: first(f, ['quantity', 'qty', 'units']) || '—', price: px(Number(first(f, ['price', 'fillPrice', 'executionPrice'])) || null), pnl: null }; }).sort((a, b) => String(b.t).localeCompare(String(a.t)));
+    if (S.acct.b3) thNote = 'Trade history from ' + (S.acct.broker || 'this broker') + ' isn’t available here yet. Your filled orders are under Order history.';
+  }
+  const bal = [];
   if (sm && sm.bal != null) { bal.push(['Balance' + (sm.age ? ' (' + sm.age + ')' : ''), L.fmtMoney(sm.bal, sm.cur)]); if (sm.rp != null) bal.push(['Realized P&L today', L.fmtMoney(sm.rp, sm.cur, true), sm.rp]); if (sm.up != null) bal.push(['Open P&L', L.fmtMoney(sm.up, sm.cur, true), sm.up]); }
-  return { live: true, pos, ord, oh, th, bal, cancelAll: null, nPos: pos.length, nOrd: ord.length };
+  return { live: true, pos, ord, oh: oh2, th, thErr, ohErr, thNote, thExt, thDays: S.acct.ct ? 7 : 0, bal, cancelAll: null, nPos: pos.length, nOrd: ord.length };
 }
 // drag a working order line to a new price
 export async function drag(sym, d) {
@@ -1142,7 +1184,7 @@ async function loadCt() {
     if (!c || !c.access || !c.accountId) { CT.acct = null; return; }
     CT.creds = c; CT.link = new CT.mod.TradeLink(c, TEST && TEST.ctDeps ? TEST.ctDeps : undefined);
     CT.link.keep = () => !!(S.acct && S.acct.ct);   // heartbeats only while the account is picked; else the relay's idle close ends it
-    CT.link.onEvent = (k, m) => { if (k === 'exec' && S.acct && S.acct.ct) fastReads(); if (k === 'resolved') { toast('Your last cTrader order was checked: ' + (m.result === 'accepted' ? 'it reached cTrader.' : 'it did not reach cTrader. Nothing was sent twice.'), 'info'); if (S.acct && S.acct.ct) read(); } };
+    CT.link.onEvent = (k, m) => { if (k === 'exec' && S.acct && S.acct.ct) { fastReads(); histSoon(); } if (k === 'resolved') { toast('Your last cTrader order was checked: ' + (m.result === 'accepted' ? 'it reached cTrader.' : 'it did not reach cTrader. Nothing was sent twice.'), 'info'); if (S.acct && S.acct.ct) read(); } };
     CT.ops = CT.mod.ctOps(CT.link, { lastPrice: () => { const i = P && P.activeSymbol ? infoMt(P.activeSymbol()) : null; return i && Number.isFinite(i.last) ? i.last : null; } });
     const a = L.acctInfo({ accountId: 'ct-' + c.accountId, accountNumber: String(c.login || c.accountId) });
     a.broker = 'cTrader'; a.text = 'cTrader ' + a.number + (c.isLive === false ? ' demo' : ''); a.name = a.number; a.mt = 'cTrader'; a.ct = true; a.demo = c.isLive === false;
@@ -1155,7 +1197,7 @@ function b3Tick(code, key) { const r = S.placeSchema && S.placeSchema.rules && S
 function b3Feed(a) {
   if (B3S.feed) { B3S.feed.stop(); B3S.feed = null; }
   if (!a || !a.b3 || !B3S.mod || !B3S.creds[a.b3]) return;
-  B3S.feed = new B3S.mod.StatusFeed(a.b3, B3S.creds[a.b3], [a.acctNo], (ev) => { if (S.acct && S.acct.id === a.id) { fastReads(); if (ev.type === 'fill') toast(a.broker + ': order ' + ev.id + ' filled.', 'info'); } }, TEST && TEST.b3Deps ? TEST.b3Deps : undefined);
+  B3S.feed = new B3S.mod.StatusFeed(a.b3, B3S.creds[a.b3], [a.acctNo], (ev) => { if (S.acct && S.acct.id === a.id) { fastReads(); histSoon(); if (ev.type === 'fill') toast(a.broker + ': order ' + ev.id + ' filled.', 'info'); } }, TEST && TEST.b3Deps ? TEST.b3Deps : undefined);
   B3S.feed.start().catch(() => {});
 }
 async function loadB3() {
@@ -1234,6 +1276,6 @@ export function mountLive(paperApi, opts) {
   // Copy trading: admins + beta testers (Owner 23 Nov). The server (functions/connect/finatic/copy.js) re-checks every call.
   if (isAdmin) mountCopyTrading(); else betaReady().then((b) => { if (b) mountCopyTrading(); });
   window.addEventListener('storage', (e) => { if (e.key === lsUserKey()) loadAccounts(); });
-  Object.assign(window.__stkLive, { openSymPicker, closeSymPicker, mtFor, mtSetSymbol, mtRemember, srcSymbols, srcSpec, connect, reconnect, pick, leave, read, loadAccounts, info, confirmSheet, balance, summary, metaOf, saveMeta, disconnect, L, envCheck, retryEnv, syncGroup, enableLive, get admin() { return isAdmin; } });
+  Object.assign(window.__stkLive, { dockTrades, openSymPicker, closeSymPicker, mtFor, mtSetSymbol, mtRemember, srcSymbols, srcSpec, connect, reconnect, pick, leave, read, loadAccounts, info, confirmSheet, balance, summary, metaOf, saveMeta, disconnect, L, envCheck, retryEnv, syncGroup, enableLive, get admin() { return isAdmin; } });
   Object.defineProperty(window.__stkLive, 'blockReason', { configurable: true, get: () => blockReason() });   // a getter (Object.assign would copy one frozen value)
 }

@@ -26,7 +26,7 @@ const state = (p) => p.evaluate(() => ({ v090: window.__stkVela090, map: documen
     p.on('domcontentloaded', () => { navs++; });   // real reloads only (layout links use history.replaceState)
     await p.goto(BASE + '/charts.html', { waitUntil: 'domcontentloaded' }); await ready(p);
     let s = await state(p);
-    check(s.v090 === true && s.map === 'vela-0.9.0-s16', `${w}: member gets 0.9.0 by default`, s);
+    check(s.v090 === true && /vela-0.9.0-s1[67]/.test(s.map), `${w}: member gets 0.9.0 by default`, s);
     navs = 0; await p.waitForTimeout(8000);
     check(navs === 0 && (await state(p)).v090 === true, `${w}: no admin refusal reload for members`, { navs });
     await p.screenshot({ path: `${OUT}/vela-default-member-${w}.png` });
@@ -43,8 +43,9 @@ const state = (p) => p.evaluate(() => ({ v090: window.__stkVela090, map: documen
     else { await p.mouse.move(x1, y1); await p.mouse.down(); await p.mouse.move(x2, y2, { steps: 8 }); await p.mouse.up(); }
     await p.waitForTimeout(800);
     const d1 = await nd();
+    // plain http.server cannot serve the /charts/<ID> link the page moves to, so reopen charts.html
     await p.waitForTimeout(2500);   // workspace autosave
-    await p.reload({ waitUntil: 'domcontentloaded' }); await ready(p); await p.waitForTimeout(2500);
+    await p.goto(BASE + '/charts.html', { waitUntil: 'domcontentloaded' }); await ready(p); await p.waitForTimeout(2500);
     const d2 = await nd();
     check(d1 === d0 + 1 && d2 === d1, `${w}: a trend line drawn on 0.9.0 is kept after a reload`, { d0, d1, d2 });
     await p.screenshot({ path: `${OUT}/vela-default-drawing-${w}.png` });

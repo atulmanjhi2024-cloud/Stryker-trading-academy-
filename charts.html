@@ -108,9 +108,9 @@
     on = localStorage.getItem('stryker_vela06') === '1' ? false : (VELA090_DEFAULT || localStorage.getItem('stryker_vela090') === '1');
     sessionStorage.removeItem('stryker_vela090_no');
   } catch (e) {}
-  // s17 (text alignment, drawing copy/paste) is opt-in per browser (?vela=s17, ?vela=0.9 undoes it) until it is made the default; members stay on s16.
-  try { var q2 = new URLSearchParams(location.search).get('vela'); if (q2 === 's17') localStorage.setItem('stryker_vela_s17', '1'); else if (q2 === '0.9' || q2 === '090' || q2 === '0.6' || q2 === 'off') localStorage.removeItem('stryker_vela_s17'); } catch (e) {}
-  var s17 = on; try { s17 = on && localStorage.getItem('stryker_vela_s17') === '1'; } catch (e) {}
+  // s17 (text alignment incl. Horizontal Ray, drawing copy/paste) is the default for everyone; ?vela=s16 goes back to s16 on this browser, ?vela=s17 or ?vela=0.9 clears that.
+  try { var q2 = new URLSearchParams(location.search).get('vela'); if (q2 === 's16') localStorage.setItem('stryker_vela_s16', '1'); else if (q2 === 's17' || q2 === '0.9' || q2 === '090') localStorage.removeItem('stryker_vela_s16'); } catch (e) {}
+  var s17 = on; try { s17 = on && localStorage.getItem('stryker_vela_s16') !== '1'; } catch (e) {}
   window.__stkVela090 = on;
   window.__stkVelaDir = on ? (s17 ? 'vela-0.9.0-s17' : 'vela-0.9.0-s16') : 'vela-0.6.17-s4';
   var V = '/assets/vendor/' + window.__stkVelaDir + '/';

@@ -64,6 +64,7 @@ jobs:
           - { name: shell 2/3, kind: shell, shard: '2/3' }
           - { name: shell 3/3, kind: shell, shard: '3/3' }
           - { name: charts live a, kind: suites, suites: 'chart-live-of-browser.js drawer-touch-browser.js' }
+          - { name: charts settings, kind: suites, suites: 'chart-settings-open-browser.js spread-browser.js' }
           - { name: charts live b, kind: suites, suites: 'chart-rt-access-browser.js byo-browser.js ts-bigtrades-browser.js' }
           - { name: charts l2 a, kind: suites, suites: 'ts-l2-browser.js', part: 'L2_PART=a' }
           - { name: charts l2 b, kind: suites, suites: 'ts-l2-browser.js', part: 'L2_PART=b' }

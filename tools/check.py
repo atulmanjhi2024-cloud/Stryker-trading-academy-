@@ -712,6 +712,33 @@ def check_drawer_touch():
         fail('drawer touch test failed (tools/tests/drawer-touch-browser.js):\n' + '\n'.join(l for l in r.stdout.splitlines() if 'FAIL' in l or 'rror' in l)[:600] + r.stderr[-300:])
 
 
+def check_settings_open():
+    """Owner bug 25 Nov (build 1289): right-click -> Settings… on the chart did nothing (one settings row threw, which aborts
+    the engine's whole dialog). When a chart asset changed versus origin/main, run tools/tests/chart-settings-open-browser.js:
+    Settings opens from every entry point, every tab works, a candle colour change applies and survives a reload. Also in
+    GitHub (site-checks.yml, 'charts settings'). STRYKER_FORCE_SETTINGS_TEST=1 forces it; a missing browser runtime skips with a note."""
+    import subprocess, shutil, tempfile, socket
+    try:
+        names = subprocess.run(['git', 'diff', '--name-only', 'origin/main'], capture_output=True, text=True, cwd=ROOT).stdout.split()
+    except Exception:
+        names = []
+    if os.environ.get('STRYKER_FORCE_SETTINGS_TEST') != '1' and not any(re.match(r'assets/(chart-|vela-chart|byo-|vendor/vela)', n) or n == 'charts.html' for n in names):
+        return
+    if not shutil.which('node') or subprocess.run(['node', '-e', "process.exit(require('./tools/tests/lib.js').executablePath()?0:1)"], capture_output=True, cwd=ROOT).returncode != 0:
+        print('note: playwright-core / Chromium missing, chart settings test skipped'); return
+    with socket.socket() as s:
+        s.bind(('127.0.0.1', 0)); port = s.getsockname()[1]
+    srv = subprocess.Popen([sys.executable, '-m', 'http.server', str(port), '--bind', '127.0.0.1'], cwd=ROOT, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    try:
+        env = dict(os.environ, CHART_BASE=f'http://127.0.0.1:{port}')
+        with tempfile.TemporaryDirectory() as out:
+            r = subprocess.run([SLOT, '-w', '3400', 'node', 'tools/tests/chart-settings-open-browser.js', out], capture_output=True, text=True, cwd=ROOT, env=env, timeout=900)
+        if r.returncode != 0:
+            fail('chart settings test failed (tools/tests/chart-settings-open-browser.js):\n' + '\n'.join(l for l in r.stdout.splitlines() if 'FAIL' in l)[:800] + r.stderr[-300:])
+    finally:
+        srv.kill()
+
+
 def check_app_shell():
     """Every page that loads app-nav.js (the member dock) must also carry the app shell
     (dash-nav.js + <aside class="sidebar">), or be listed in tools/tests/app-shell-allowlist.json.
@@ -1019,7 +1046,7 @@ def main():
     # all checks are independent read-only scans (failures are sorted by check order below); the
     # two browser checks start first so they overlap the rest
     fast = '--fast' in sys.argv   # static checks only; the browser suites run in GitHub (site-checks.yml)
-    browser = [] if fast else [check_app_shell_browser, check_drawer_touch]
+    browser = [] if fast else [check_app_shell_browser, check_drawer_touch, check_settings_open]
     order = [check_desktop_signin, check_pro_features, check_compare_page, check_push_rules, check_stripe_void, check_ctrader, check_brokers3, check_metric_alerts, check_phantom, check_days_load, check_finatic, check_workspaces, check_account_sync, check_latency, check_zscript_engine, check_thinkscript_engine, check_mql5_engine, *browser, check_roadmap_log, check_roadmap_cards,
              check_nav_features_menu, check_home_stats, check_charts_css_subset, check_merge_markers, check_unversioned_assets,
              check_module_import_versions, check_versioned_sources, check_js_syntax, check_html_structure,

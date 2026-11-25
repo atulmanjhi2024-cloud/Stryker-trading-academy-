@@ -130,7 +130,7 @@ async function run(b, w, h, mobile, theme) {
   // OWNER ADDITION 2: price-scale tags for the entry (side colour), SL (loss colour) and the working limit (side colour, faded); the
   // ask tag; none over the last-price tag
   // Sample data: the ask (the mock sends no spot events); the bid is the chart's last price
-  await p.evaluate(async (b) => { const m = await import('/assets/byo-ctrader.js?v=1286'); m.QUOTES.set('CT:EURUSD', { bid: b, ask: Math.round((b + 0.00012) * 1e5) / 1e5, at: Date.now() }); }, bid);
+  await p.evaluate(async (b) => { window.__stkQuotes.put('CT:EURUSD', b, Math.round((b + 0.00012) * 1e5) / 1e5); }, bid);   // byo-core.js QUOTES (the app's own instance)
   await opWait(p, () => { const R = window.__stkAxisTags.rendererOf(window.__stkAxisTags.cellsOf()[0]); return window.__stkAxisTags.boxes(R).some((b) => b.kind === 'ask'); }, null, 5000);
   const AX = await p.evaluate(() => { const cell = window.__stkAxisTags.cellsOf()[0], R = window.__stkAxisTags.rendererOf(cell), sc = R.scene, pane = sc.panes.get('price'), co = R.coords;
     const n = sc.bars.length, ly = co.priceToY(sc.bars[n - 1].close, pane.scale, pane.bounds); const tv = window.__stkTradeView.get().col;
@@ -143,7 +143,7 @@ async function run(b, w, h, mobile, theme) {
   check(AX.inSl ? sT && hx(sT.color) === hx(AX.col.sl) : !sT, tag + ': SL tag 0.89000 in the SL colour while in view (none when off-screen)', AX);
   check(AX.inLim ? lT && lT.fade > 0 && lT.fade < 1 : !lT, tag + ': working limit tag 0.88500 faded while in view (none when off-screen)', AX);
   check(AX.boxes.some((b) => b.kind === 'ask'), tag + ': ask tag on the scale', AX.boxes);
-  check(!AX.last.on || AX.boxes.every((b) => b.top + b.h <= AX.last.t + 0.5 || b.top >= AX.last.b - 0.5), tag + ': no tag covers the last-price tag', AX);
+  check(!AX.last.on || AX.boxes.every((b) => b.kind === 'bid' || /^Ask /.test(b.text) || b.top + b.h <= AX.last.t + 0.5 || b.top >= AX.last.b - 0.5), tag + ': no tag covers the last-price tag (Bid / Ask lines sit on their exact price by design, as in MT5)', AX);
 
   // ---- BUG 2b: TP handle -> drag -> confirm off -> one 2110 with the dragged price, stop loss kept
   await ready(p);

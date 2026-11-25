@@ -41,24 +41,30 @@ function paperData() {
     nPos: Object.keys(st.positions).length, nOrd: st.orders.length
   };
 }
+// Spread column (Owner 25 Nov 2026): Positions / Open orders rows of broker symbols whose chart feed streams bid + ask (byo-core.js
+// QUOTES, the chart's own stream) show the live spread in pips / points; shown only when at least one row has one.
+// (Build 1287 dropped it by accident together with the bid / ask lines; restored in build 1290.)
+// live spread of a dock row's symbol: the cTrader account chart (CT:NAS100) first, then the plain name (EURUSD / EUR_USD)
+const spreadOf = (sym) => { const Q = window.__stkQuotes; if (!Q || !sym) return null; const q = Q.get('CT:' + sym) || Q.get(sym); return q ? String(Math.round(q.spread * 10) / 10) : null; };
 const liveData = () => { const L = P.live; return L && L.dock ? L.dock(ui.open ? ui.tab : '') : null; };
 const data = () => { try { return (P.live ? liveData() : null) || (P.live ? null : paperData()); } catch (e) { return null; } };
 
 // ---- view -----------------------------------------------------------------------------------------------------------------------
 const tbl = (head, rows, empty) => rows.length
-  ? '<div class="stkpo-tw"><table class="stkpo-t"><thead><tr>' + head.map((h, i) => '<th' + (/Qty|Avg|Last|P&amp;L|Price|Commission|Swap|^TP$|^SL$/.test(esc(h)) ? ' class="n"' : '') + '>' + esc(h) + '</th>').join('') + '</tr></thead><tbody>' + rows.join('') + '</tbody></table></div>'
+  ? '<div class="stkpo-tw"><table class="stkpo-t"><thead><tr>' + head.map((h, i) => '<th' + (/Qty|Avg|Last|Spread|P&amp;L|Price|Commission|Swap|^TP$|^SL$/.test(esc(h)) ? ' class="n"' : '') + '>' + esc(h) + '</th>').join('') + '</tr></thead><tbody>' + rows.join('') + '</tbody></table></div>'
   : '<p class="stkpo-empty">' + esc(empty) + '</p>';
 const X = (i, label) => '<td class="x"><button type="button" class="stkpo-x" data-x="' + i + '" aria-label="' + esc(label) + '" title="' + esc(label) + '"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg></button></td>';
 function body(d) {
-  const t = ui.tab;
+  const t = ui.tab, sp = (rows) => rows.some((r) => r.spread != null), spTd = (r) => '<td class="n">' + esc(r.spread != null ? r.spread : '—') + '</td>';
+  const sP = sp(d.pos), sO = sp(d.ord);
   // AUTO-TPSL: live cTrader rows get a TP and an SL cell; a tap opens a small inline editor (Enter sets, Esc cancels, empty = remove)
   const lv = (p, i, k) => !p.setLevel ? '<td class="n">—</td>' : '<td class="n lv"><button type="button" class="stkpo-lv ' + k + (p[k] ? '' : ' add') + '" data-lv="' + k + '" data-i="' + i + '" aria-label="' + (p[k] ? 'Change ' : 'Add ') + (k === 'tp' ? 'take profit' : 'stop loss') + ' for ' + esc(p.sym) + '">' + esc(p[k] || '+ Add') + '</button></td>';
-  if (t === 'pos') return tbl(['Symbol', 'Side', 'Qty', 'Avg price', 'Last'].concat(d.sltp ? ['TP', 'SL'] : []).concat(['Open P&L', '']), d.pos.map((p, i) => '<tr><td class="s">' + esc(p.sym) + '</td><td class="' + (p.buy ? 'up' : 'down') + '">' + p.side + '</td><td class="n">' + esc(p.qty) + '</td><td class="n">' + esc(p.avg) + '</td><td class="n">' + esc(p.last) + '</td>' + (d.sltp ? lv(p, i, 'tp') + lv(p, i, 'sl') : '') + '<td class="n ' + cls(p.pnl) + '">' + (p.pnl == null ? '—' : money(p.pnl, true)) + '</td>' + (p.close ? X(i, 'Close ' + p.sym) : '<td></td>') + '</tr>'), 'No open positions');
+  if (t === 'pos') return tbl(['Symbol', 'Side', 'Qty', 'Avg price', 'Last'].concat(sP ? ['Spread'] : [], d.sltp ? ['TP', 'SL'] : []).concat(['Open P&L', '']), d.pos.map((p, i) => '<tr><td class="s">' + esc(p.sym) + '</td><td class="' + (p.buy ? 'up' : 'down') + '">' + p.side + '</td><td class="n">' + esc(p.qty) + '</td><td class="n">' + esc(p.avg) + '</td><td class="n">' + esc(p.last) + '</td>' + (sP ? spTd(p) : '') + (d.sltp ? lv(p, i, 'tp') + lv(p, i, 'sl') : '') + '<td class="n ' + cls(p.pnl) + '">' + (p.pnl == null ? '—' : money(p.pnl, true)) + '</td>' + (p.close ? X(i, 'Close ' + p.sym) : '<td></td>') + '</tr>'), 'No open positions');
   if (t === 'ord') return (d.ord.length && d.cancelAll ? '<div class="stkpo-tools"><button type="button" class="stkpo-b" data-all="1">Cancel all</button></div>' : '') +
     (d.live && d.sltp
       // AUTO-TPSL: live cTrader: SL / TP of each working order, its time, and the positions' own stop loss / take profit orders
-      ? tbl(['Symbol', 'Side', 'Type', 'Qty', 'Price', 'SL', 'TP', 'Time', 'Status', ''], d.ord.map((o, i) => '<tr' + (o.prot ? ' class="prot ' + o.prot + '"' : '') + '><td class="s">' + esc(o.sym) + '</td><td class="' + (o.buy ? 'up' : 'down') + '">' + o.side + '</td><td>' + esc(o.type) + '</td><td class="n">' + esc(o.qty) + '</td><td class="n">' + esc(o.price) + '</td><td class="n">' + esc(o.sl || '—') + '</td><td class="n">' + esc(o.tp || '—') + '</td><td>' + esc(o.t ? when(o.t) : '—') + '</td><td>' + esc(o.status) + '</td>' + (o.cancel ? X(i, (o.prot ? 'Remove ' + (o.prot === 'sl' ? 'stop loss' : 'take profit') + ' of ' : 'Cancel ') + o.sym + (o.prot ? ' position' : ' order')) : '<td></td>') + '</tr>'), 'No open orders')
-      : tbl(['Symbol', 'Side', 'Type', 'Qty', 'Price', 'Status', ''], d.ord.map((o, i) => '<tr><td class="s">' + esc(o.sym) + '</td><td class="' + (o.buy ? 'up' : 'down') + '">' + o.side + '</td><td>' + esc(o.type) + '</td><td class="n">' + esc(o.qty) + '</td><td class="n">' + esc(o.price) + '</td><td>' + esc(o.status) + '</td>' + (o.cancel ? X(i, 'Cancel ' + o.sym + ' order') : '<td></td>') + '</tr>'), 'No open orders'));
+      ? tbl(['Symbol', 'Side', 'Type', 'Qty', 'Price'].concat(sO ? ['Spread'] : [], ['SL', 'TP', 'Time', 'Status', '']), d.ord.map((o, i) => '<tr' + (o.prot ? ' class="prot ' + o.prot + '"' : '') + '><td class="s">' + esc(o.sym) + '</td><td class="' + (o.buy ? 'up' : 'down') + '">' + o.side + '</td><td>' + esc(o.type) + '</td><td class="n">' + esc(o.qty) + '</td><td class="n">' + esc(o.price) + '</td>' + (sO ? spTd(o) : '') + '<td class="n">' + esc(o.sl || '—') + '</td><td class="n">' + esc(o.tp || '—') + '</td><td>' + esc(o.t ? when(o.t) : '—') + '</td><td>' + esc(o.status) + '</td>' + (o.cancel ? X(i, (o.prot ? 'Remove ' + (o.prot === 'sl' ? 'stop loss' : 'take profit') + ' of ' : 'Cancel ') + o.sym + (o.prot ? ' position' : ' order')) : '<td></td>') + '</tr>'), 'No open orders')
+      : tbl(['Symbol', 'Side', 'Type', 'Qty', 'Price'].concat(sO ? ['Spread'] : [], ['Status', '']), d.ord.map((o, i) => '<tr><td class="s">' + esc(o.sym) + '</td><td class="' + (o.buy ? 'up' : 'down') + '">' + o.side + '</td><td>' + esc(o.type) + '</td><td class="n">' + esc(o.qty) + '</td><td class="n">' + esc(o.price) + '</td>' + (sO ? spTd(o) : '') + '<td>' + esc(o.status) + '</td>' + (o.cancel ? X(i, 'Cancel ' + o.sym + ' order') : '<td></td>') + '</tr>'), 'No open orders'));
   const err = (m, k) => '<p class="stkpo-empty stkpo-err" role="alert"><span>' + esc(m) + '</span><button type="button" class="stkpo-b" data-retry="' + k + '">Retry</button></p>';
   if (t === 'oh' && d.ohErr && !(Array.isArray(d.oh) && d.oh.length)) return err(d.ohErr, 'oh');
   if (t === 'oh' && (d.oh == null || d.oh === 'loading')) return '<p class="stkpo-empty">Loading…</p>';
@@ -82,6 +88,7 @@ function render(force) {
   const al = 'Positions & Orders' + (n ? ', ' + n + ' open' : ''); if (btn.getAttribute('aria-label') !== al) btn.setAttribute('aria-label', al); if (btn.title !== 'Positions & Orders') btn.title = 'Positions & Orders';
   if (!ui.open || !d) return;
   cur = d;
+  if (d.live) for (const r of d.pos.concat(d.ord)) r.spread = spreadOf(r.sym);   // live broker rows only; paper rows stay as they are
   for (const b of dock.querySelectorAll('[role=tab]')) { const o = b.dataset.t === ui.tab; b.classList.toggle('on', o); b.setAttribute('aria-selected', String(o)); b.tabIndex = o ? 0 : -1; }
   { const tl = dock.querySelector('.stkpo-tabs'), on = tl.querySelector('[role=tab].on');   // phones: the picked tab is never cut off at the row's edge
     if (on && tl.scrollWidth > tl.clientWidth) { const l = on.offsetLeft - tl.offsetLeft, r = l + on.offsetWidth; if (l < tl.scrollLeft) tl.scrollLeft = l; else if (r > tl.scrollLeft + tl.clientWidth) tl.scrollLeft = r - tl.clientWidth; } }

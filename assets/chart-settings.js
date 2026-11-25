@@ -176,7 +176,7 @@ function hookCell(cell){
   rc.__stkSettings = true;
   // Keep our host sections next to the cell's own whenever the cell re-pushes them.
   const origSet = rc.setSettingsSections.bind(rc);
-  rc.setSettingsSections = (secs) => origSet([...(secs || []), ...ourSections(id)]);
+  rc.setSettingsSections = (secs) => origSet([...(secs || []), ...safeRows(ourSections(id))]);
   const R = inner(cell);
   keepViewOnSwitch(R, cell);
   ownSymbolDrawings(cell);
@@ -547,6 +547,12 @@ function daysRow(id){
       try { window.__stkHistoryPager.kick(id); } catch (e) {}
     } };
 }
+// One row whose getter throws aborts the engine's whole dialog build (Owner bug 25 Nov, build 1289: Settings did not open at all),
+// so every row getter here falls back to undefined instead of throwing.
+function safeRows(secs){
+  for (const s of secs) for (const r of s.rows || []) if (typeof r.get === 'function') { const f = r.get; r.get = () => { try { return f(); } catch (e) { console.warn('TradeZoro settings row', r.id, e); return undefined; } }; }
+  return secs;
+}
 function ourSections(id){
   const g = (k) => () => S(id)[k];
   const st = (k) => (v) => setVal(id, k, v);
@@ -584,7 +590,7 @@ function ourSections(id){
     ] },
     { title: 'Scales and lines' + MARK, id: 'stk-scales', placement: 'end', rows: [
       { kind: 'heading', label: 'Broker prices' },
-      { kind: 'toggle', label: 'Show bid / ask lines', id: 'bid-ask', get: () => { const A = window.__stkAxisTags; return A ? A.bidAskOn() : true; }, set: (v) => { const A = window.__stkAxisTags; if (A) A.setBidAsk(!!v); },
+      { kind: 'toggle', label: 'Show bid / ask lines', id: 'bid-ask', get: () => { const A = window.__stkAxisTags; return A && A.bidAskOn ? A.bidAskOn() : true; }, set: (v) => { const A = window.__stkAxisTags; if (A && A.setBidAsk) A.setBidAsk(!!v); },
         title: 'Broker CFD and forex charts (cTrader, OANDA): a Bid line and an Ask line with their prices on the scale, like MetaTrader. Other charts have no bid / ask feed, so nothing shows there. Saved for your account on this device.' },
       { kind: 'heading', label: 'More' }, off('Price scale on the left'), off('Previous day close line'), off('High and low price labels'),
       off('Indicator labels on the price scale'), off('Currency and unit label'),

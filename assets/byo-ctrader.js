@@ -5,6 +5,9 @@
 // /connect/ctrader/ws (it adds the secret and lets only market-data messages through). Nothing is stored on our side;
 // the member's tokens stay in the encrypted, user-bound device vault. Docs: help.ctrader.com/open-api.
 import { ADAPTERS, ROUTERS, SOURCES, Hub, QUOTES, candleBuilder, normTf, saveSource, srcById } from './byo-core.js?v=1292';
+// the latest bid / ask of a cTrader symbol (account feed 'CT:EURUSD' first, then the data feed 'EURUSD'), for the SL / TP side checks
+// in assets/chart-live.js. Build 1289 dropped this export while merging, so those checks lost the live bid / ask: restored.
+export const quoteOf = (name) => { const q = QUOTES.get('CT:' + name) || QUOTES.get(name); return q && Date.now() - q.at < 120000 ? q : null; };
 
 const MIN = 60000;
 export const CT = {

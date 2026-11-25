@@ -65,7 +65,7 @@ const setSym = (p, s) => p.evaluate(async (s) => { const ws = window.STRYKER_VEL
 // a cTrader spot on the view-only data socket (prices in 1/100000), like ProtoOASpotEvent
 // (waits for an open data socket: the relay may drop one for history bursts while the chart loads, the hub then reconnects + resubscribes)
 const spot = async (p, bid, ask) => { await opWait(p, () => { const s = window.__ctM.dataSocket; return s && s.readyState === 1 && window.__ctM.sent.lastIndexOf(window.__ctM.sent.filter((m) => m.payloadType === 2127).pop()) >= 0; }, null, 20000); return p.evaluate(({ bid, ask }) => { const s = window.__ctM.dataSocket; s.relay.onUp(JSON.stringify({ payloadType: 2131, payload: { ctidTraderAccountId: 77, symbolId: 13, bid: Math.round(bid * 1e5), ask: Math.round(ask * 1e5), timestamp: Date.now() } })); }, { bid, ask }); };
-const baBoxes = (p) => p.evaluate(() => { const A = window.__stkAxisTags, R = A.rendererOf(A.cellsOf()[0]); const pr = R.plot.getBoundingClientRect(); return A.boxes(R).filter((b) => b.kind).map((b) => ({ kind: b.kind, text: b.text, x: b.x, w: b.w, right: b.x + b.w, plotW: R.plot.clientWidth, coW: R.coords.width, top: b.top + pr.top, h: b.h, y: b.y })); });
+const baBoxes = (p) => p.evaluate(() => { const A = window.__stkAxisTags, R = A.rendererOf(A.cellsOf()[0]); const pr = R.plot.getBoundingClientRect(); return A.boxes(R).filter((b) => /^(Bid|Ask) /.test(b.text)).map((b) => ({ kind: b.kind, text: b.text, x: b.x, w: b.w, right: b.x + b.w, plotW: R.plot.clientWidth, coW: R.coords.width, top: b.top + pr.top, h: b.h, y: b.y })); });
 const writes = (p) => p.evaluate(() => window.__ctM.sent.filter((m) => [2106, 2108, 2109, 2110, 2111].includes(m.payloadType)).length);
 
 async function run(b, w, h, mobile, theme) {

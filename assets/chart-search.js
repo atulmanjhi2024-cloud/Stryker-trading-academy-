@@ -19,12 +19,12 @@
 // favourites collection and rule; the Indicators window ignores sym: keys); guests -> localStorage. Recents: localStorage.
 // Education only. Not financial advice.
 
-import { classify, venueOf, pairOf, metaOf, search, symOf, keyOf, quoteOf, decimalsOf, VENUE_LABEL, VENUE_ORDER, CRYPTO_VENUES } from './chart-search-core.js?v=1264';
-import { parseFormula, bodyOf } from './chart-formula-core.js?v=1264';
-import { resolveLegs } from './chart-formula.js?v=1264';
-import { venueChip } from './venue-logos.js?v=1264';
-import { fxMark } from './fx-flags.js?v=1264';
-import { getInfo } from './chart-symbol-info.js?v=1264';
+import { classify, venueOf, pairOf, metaOf, search, symOf, keyOf, quoteOf, decimalsOf, VENUE_LABEL, VENUE_ORDER, CRYPTO_VENUES } from './chart-search-core.js?v=1265';
+import { parseFormula, bodyOf } from './chart-formula-core.js?v=1265';
+import { resolveLegs } from './chart-formula.js?v=1265';
+import { venueChip } from './venue-logos.js?v=1265';
+import { fxMark } from './fx-flags.js?v=1265';
+import { getInfo } from './chart-symbol-info.js?v=1265';
 
 const PHONE_MAX = 700;
 const PAGE = 50;
@@ -254,7 +254,7 @@ export function mountSearch(ws, o = {}) {
 
   // ---------------- your brokers & feeds (assets/chart-search-sources.js, loaded on the first open) ----------------
   let SRC = null;
-  const srcMod = () => SRC || (SRC = import('./chart-search-sources.js?v=1264'));
+  const srcMod = () => SRC || (SRC = import('./chart-search-sources.js?v=1265'));
   const srcKey = (x) => x.id;
   async function refreshSources() {
     try { const m = await srcMod(); const l = await m.listSources(); const sig = (a) => (a || []).map((x) => x.id + x.ok + x.label).join('|'); if (sig(l) !== sig(S.srcs) || !S.srcs) { S.srcs = l; if (!srcMenu.hidden) paintMenu(); } }

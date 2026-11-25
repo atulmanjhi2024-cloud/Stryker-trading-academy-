@@ -237,3 +237,10 @@
   .refx-st-note{ display:none; }
   .refx-head{ flex-wrap:wrap; }
 }
+
+/* ?embed=1 (the ZoroCharts "Get Pro free" popup): the page alone, no site chrome */
+html.rx-embed .appnav-dock, html.rx-embed .mobile-topnav, html.rx-embed .sidebar, html.rx-embed .sidebar-backdrop, html.rx-embed .skip-link, html.rx-embed .appnav-sheet, html.rx-embed .site-footer, html.rx-embed footer{ display:none !important; }
+html.rx-embed body{ padding:0 !important; background:var(--bg-1, var(--bg)); }
+html.rx-embed .dash-shell{ display:block; min-height:0; }
+html.rx-embed .dash-main{ padding:24px 24px 32px; margin:0 auto; max-width:760px; }
+@media (max-width:600px){ html.rx-embed .dash-main{ padding:60px 16px 24px; } }

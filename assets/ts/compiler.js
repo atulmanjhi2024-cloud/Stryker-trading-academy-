@@ -11,10 +11,10 @@
 // Model: every bar runs the statements top to bottom (bar 0 .. n-1). Each def keeps its value per bar, so x[1] reads the
 // bar before. A def that reads its own past (def count = count[1] + 1) is recursive: before the first bar that past is 0.
 // Reading the future (close[-1]) or whole-chart values (HighestAll) needs a second pass; the first pass fills the histories.
-import { parse } from './parser.js?v=1263';
-import { TsError } from './lexer.js?v=1263';
-import { NATIVES, NS_LC, NS_NAMES, CONSTS, BAR_FIELDS, UNSUPPORTED, AGG, AVG_TYPES, COLOR, PALETTE, num, truth, text, isColor, colorOf, allOf, crossAt } from './natives.js?v=1263';
-import { LIBRARY } from './library.js?v=1263';
+import { parse } from './parser.js?v=1264';
+import { TsError } from './lexer.js?v=1264';
+import { NATIVES, NS_LC, NS_NAMES, CONSTS, BAR_FIELDS, UNSUPPORTED, AGG, AVG_TYPES, COLOR, PALETTE, num, truth, text, isColor, colorOf, allOf, crossAt } from './natives.js?v=1264';
+import { LIBRARY } from './library.js?v=1264';
 
 // ms / ops: no time or total-work limit (Owner 22 Nov, "remove the limit altogether"); a fold is still capped at foldIter. opts.deadline can still set one.
 export const LIMITS = { source: 256 * 1024, bars: 50000, ops: Infinity, foldIter: 20000, vars: 4000, instances: 400, depth: 12, labels: 40, bubbles: 2000, vlines: 500, plots: 64, ms: Infinity, cells: 2.5e7, text: 10000 };

@@ -1,7 +1,7 @@
 // MetaTrader 4 / 5 sign-in sheet (Owner order 22 Nov 2026): Server (search), Login, Password, read-only switch, Connect.
 // The password goes to /connect/mt/link once, over HTTPS with the member's sign-in token. It is kept sealed on TradeZoro's server and
 // never comes back to the browser. Sheet styling = the Connect sheet's tokens (rithmic-journal-ui CSS, design standard).
-import { CSS } from './rithmic-journal-ui.js?v=1286';
+import { CSS } from './rithmic-journal-ui.js?v=1287';
 
 const esc = (s) => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 const X = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg>';

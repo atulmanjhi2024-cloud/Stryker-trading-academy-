@@ -172,6 +172,10 @@ export function symbolOf(t) {
 const PERIOD = { '1': 1, '5': 5, '15': 7, '30': 8, '60': 9, '240': 10, D: 12, W: 13, M: 14 };
 const SPAN = { '1': MIN, '5': 5 * MIN, '15': 15 * MIN, '30': 30 * MIN, '60': 60 * MIN, '240': 240 * MIN, D: 864e5, W: 7 * 864e5, M: 31 * 864e5 };
 const PX = 1e5;   // cTrader prices are integers in 1/100000
+// SLIPPAGE (25 Nov): the broker's latest bid / ask per symbol key ('CT:NAS100'), as plotted on its own chart; chart-live reads it at the
+// click (a market buy expects the ask, a sell the bid). Read-only: prices only, nothing here can send anything.
+export const QUOTES = new Map();
+export const quoteOf = (key) => { const q = QUOTES.get(String(key || '').toUpperCase()); return q ? { bid: q.bid, ask: q.ask, at: q.at } : null; };
 const symCache = new WeakMap();   // creds -> Map(key -> { id, desc }); memory only, per account
 async function symbolId(c, key, d) { return (await symRec(c, key, d)).id; }
 async function symRec(c, key, d) {
@@ -233,6 +237,7 @@ export const ctrader = {
               const k = back.get(e.symbolId); if (!k) return;
               const l = last.get(k) || {}; if (e.bid != null) l.bid = e.bid; if (e.ask != null) l.ask = e.ask; last.set(k, l);
               if (l.bid == null) return;
+              QUOTES.set(String(k).toUpperCase(), { bid: round(l.bid / PX), ask: l.ask != null ? round(l.ask / PX) : null, at: Date.now() });
               onTick(k, round(l.bid / PX), e.timestamp > 0 ? e.timestamp : Date.now(), 0);   // chart plots the bid, like a broker chart
             }));
             subbed = ids.map((x) => x[0]);

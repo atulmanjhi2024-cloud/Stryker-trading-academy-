@@ -264,5 +264,25 @@ await t('who may trade: admin or beta tester (verified email on settings/betaTes
   assert.equal(r.status, 503, 'an unreadable check refuses the socket'); const rj = await r.json(); assert.equal(rj.code, 'gate_unreadable'); assert.doesNotMatch(rj.error, /admins and beta testers/);
 });
 
+await t('SLIPPAGE maths (Owner 25 Nov): expected = ask for a buy, bid for a sell, last when none; positive = worse for the trader', async () => {
+  const LC = await import('../../assets/chart-live-core.js');
+  assert.deepEqual(LC.expectedPrice('sell', { bid: 100, ask: 100.5 }, 99), { price: 100, src: 'bid' });
+  assert.deepEqual(LC.expectedPrice('buy', { bid: 100, ask: 100.5 }, 99), { price: 100.5, src: 'ask' });
+  assert.deepEqual(LC.expectedPrice('buy', null, 99.25), { price: 99.25, src: 'last' });
+  assert.equal(LC.expectedPrice('buy', null, undefined), null);
+  const s1 = LC.slippage('sell', 100, 99.8, null, 0.01); assert.equal(s1.pts, 0.2); assert.equal(s1.money, null);
+  assert.equal(LC.slipText(s1, (v) => v.toFixed(2)), ' (expected 100.00, 0.2 pts slippage)');
+  const s0 = LC.slippage('sell', 100, 100, 1, 0.01); assert.equal(s0.pts, 0); assert.equal(LC.slipText(s0, String), '', 'no slippage text at the same price');
+  const s2 = LC.slippage('buy', 25330.1, 25328.81, 1, 0.01); assert.equal(s2.pts, -1.29); assert.match(LC.slipText(s2, String), /1\.29 pts better/);
+  const s3 = LC.slippage('sell', 25330.1, 25328.81, 2, 0.01); assert.equal(s3.pts, 1.29); assert.equal(s3.money, 2.58);
+  assert.equal(LC.slipCell(1.29, 2.58, 'USD'), '1.29 pts · -$2.58'); assert.equal(LC.slipCell(-0.5, null, 'USD'), '−0.5 pts'); assert.equal(LC.slipCell(0, 0, 'USD'), '0');
+  assert.equal(LC.slippage('buy', 0, 1, 1, 0.01), null); assert.equal(LC.slippage('buy', 1, null, 1, 0.01), null);
+  // the log fields pass the relay's 9001 schema; anything else is refused (the socket is closed)
+  const ok = checkClientFrame(f({ clientMsgId: KEY, payloadType: 9001, payload: { c_ack: 5, exp_px: 100, fill_px: 99.8, slip_pts: -0.2, slip_money: 1.5 } }), TRADE_ALLOW); assert.ok(ok.ok);
+  assert.equal(checkClientFrame(f({ clientMsgId: KEY, payloadType: 9001, payload: { slip_pts: 'x' } }), TRADE_ALLOW).ok, false);
+  assert.equal(checkClientFrame(f({ clientMsgId: KEY, payloadType: 9001, payload: { exp_px: -1 } }), TRADE_ALLOW).ok, false);
+  assert.equal(checkClientFrame(f({ clientMsgId: KEY, payloadType: 9001, payload: { note: 'x' } }), TRADE_ALLOW).ok, false);
+});
+
 console.log(n + ' cTrader trading tests passed');
 process.exit(0);   // the endpoint's 1-minute admin re-check timers would keep Node alive

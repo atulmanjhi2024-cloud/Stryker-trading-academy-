@@ -38,7 +38,7 @@ export const TRADE_ALLOW = {
   51: {},                                                          // Heartbeat
   // NOT a cTrader type: the browser's latency marks for one of ITS writes (FASTORDER 25 Nov). Always dropped by the relay, never
   // forwarded; only accepted for a key this socket itself sent, merged into that order's audit row (numbers only)
-  9001: { c_open: 'ms', c_send: 'ms', c_ack: 'ms', c_toast: 'ms', c_cf: 'ms', c_fill: 'ms' }
+  9001: { c_open: 'ms', c_send: 'ms', c_ack: 'ms', c_toast: 'ms', c_cf: 'ms', c_fill: 'ms', exp_px: 'px', fill_px: 'px', slip_pts: 'sn', slip_money: 'sn' }
 };
 export const WRITES = new Set([2106, 2109, 2108, 2110, 2111]);
 export const TRADE_SERVER_ALLOW = new Set([2103, 2150, 2113, 2115, 2117, 2122, 2123, 2125, 2126, 2132, 2176, 2134, 2142, 50, 51, 2147, 2148, 2164]);

@@ -92,7 +92,8 @@ const data = (op, extra) => { const o = ownOps(extra && extra.accountId); return
 // finatic/copy.js). The reply is the leader's own reply plus copy.results.
 const COPY_OPS = ['place', 'modify', 'cancel', 'flatten'];
 const order = (b, timing) => {
-  if (isOwn(S.acct)) return ownOps(S.acct.id).order(b);   // never copy-traded: copy trading stays on the broker-link accounts
+  // our own links get the click's latency record (b.lat, never sent anywhere but the browser's own trade socket's 9001 marks)
+  if (isOwn(S.acct)) return ownOps(S.acct.id).order(timing && timing.lat && S.acct.ct ? Object.assign({}, b, { lat: timing.lat }) : b);   // never copy-traded: copy trading stays on the broker-link accounts
   const lead = Object.assign({ src: 'chart', userId: S.userId, accountId: S.acct.id }, S.acct.mt && b.op !== 'env' && b.op !== 'schema' ? { venue: 'mt' } : {}, b), cp = window.__stkCopy;
   if (cp && COPY_OPS.includes(b.op) && cp.active(S.acct.id)) return call('/connect/finatic/copy', { op: 'fan', lead }, timing).then((r) => { try { cp.after(lead, r); } catch (e) {} return r; });
   return call('/connect/finatic/order', lead, timing);
@@ -378,6 +379,7 @@ async function pick(id) {
   S.day = { at: 0, busy: false, key: '', fills: [], truncated: false, sig: '' }; balance(id, true);
   // 'env' also pre-warms the server (Finatic session + kill switch cached) and the browser's connection; reads start in parallel
   read(); readKill(); loadFronts(); b3Feed(a);
+  if (a.ct && CT.link) ctWarm();   // FASTORDER: the link and this chart's symbol rules load now, not on the first click
   await envCheck();
   schemaCheck();
   render();
@@ -467,7 +469,9 @@ setInterval(() => {
   read();
 }, POLL_MS);
 window.addEventListener('beforeunload', (e) => { if (groupOpen()) { e.preventDefault(); e.returnValue = ''; } });
-document.addEventListener('visibilitychange', () => { if (!document.hidden && S.acct) { S.hiddenAt = 0; read(); } });
+document.addEventListener('visibilitychange', () => { if (!document.hidden && S.acct) { S.hiddenAt = 0; read(); if (S.acct.ct) ctWarm(); } });
+// FASTORDER: open the cTrader link (if a close let it rest) and load the chart symbol's size rules, in the background
+function ctWarm() { try { const i = P && P.activeSymbol ? infoMt(P.activeSymbol()) : null; CT.link.warm(i && i.code); } catch (e) {} }
 ['pointerdown', 'keydown'].forEach((ev) => window.addEventListener(ev, () => { S.lastAct = Date.now(); }, { passive: true, capture: true }));
 
 function gate() { return L.readsOk({ lastOkStart: S.lastOkStart, lastWriteAt: S.lastWriteAt, unknown: S.unknown, now: now(), maxAge: STALE_MS }); }
@@ -664,8 +668,12 @@ export function chipParts(sym, l) {
 // the active account's fills on this chart's instrument, for Trade display > Executions: today's fills, plus the Trade history tab's when loaded
 export function execs(sym) {
   const i = info(sym); if (!i || !S.acct) return [];
-  dockTrades();   // throttled to one read per 30 s
+  dockTrades(false, 'th');   // throttled to one read per 30 s
   const out = [], seen = new Set();
+  if (S.acct.ct) {   // cTrader: its own deal list (symbol = the broker's name, the chart's mapped code)
+    for (const d of (S.hist.id === S.acct.id && S.hist.th.rows) || []) if (d.sym === i.code && d.t > 0 && d.price > 0) out.push({ t: d.t, price: d.price, side: d.side, qty: Number.isFinite(d.lots) ? d.lots.toFixed(2) : '' });
+    return out.sort((x, y) => x.t - y.t);
+  }
   for (const f of [].concat(S.day.fills || [], S.fills.rows || [])) {
     if (L.contractOf(f) !== i.code) continue;
     const t = Date.parse(first(f, ['filledAt', 'timestamp', 'createdAt', 'executedAt', 'time'])), p = Number(first(f, ['price', 'fillPrice', 'executionPrice'])), s = String(first(f, ['side', 'action'])).toLowerCase();
@@ -754,11 +762,21 @@ export function enableLive() {
 
 // ------------------------------------------------------------------------------------------ writes
 // pending: optional "sending" line drawn on the chart right away (L.pendingLine), removed when the answer arrives
-async function write(body, what, pending) {
+// FASTORDER (25 Nov): a cTrader write is timed hop by hop from the click (lat.t0, set in place / placeMt): link ready (c_open), sent on
+// the socket (c_send), cTrader's answer back (c_ack), toast shown (c_toast), the fill of a market order (c_fill). The marks go to
+// that order's log row (brokerOrderAudit, admin-read) through the relay, so the Owner's next live orders give real numbers.
+// The toast says "sending…" at once, then what cTrader answered: "filled @ price" (market) or "accepted" (limit / stop).
+async function write(body, what, pending, lat) {
   S.busy = true; S.lastWriteAt = now(); S.pending = pending || null; render();
-  const tm = { op: body.op, t0: performance.now() };
+  const tm = { op: body.op, t0: lat && lat.t0 ? lat.t0 : performance.now(), lat: lat || null };
   let okW = null;
-  try { const r = await order(body, tm); tm.ok = true; okW = r || {}; toast(r.settled ? L.settledText(what, r) : what + ' sent. ' + (r.status ? 'Broker status: ' + r.status + '.' : ''), 'success'); return r; }
+  const ct = !!(lat && S.acct && S.acct.ct);
+  if (ct && body.op === 'place') toast(what + ' sending…', 'info');
+  try {
+    const r = await order(body, tm); tm.ok = true; okW = r || {};
+    if (ct) { ctToast(what, r, lat); return r; }
+    toast(r.settled ? L.settledText(what, r) : what + ' sent. ' + (r.status ? 'Broker status: ' + r.status + '.' : ''), 'success'); return r;
+  }
   catch (e) {
     // the server's message says what the broker answered and whether a read already looked for the order (21 Nov)
     if (e.code === 'unknown' || e.network) { S.unknown = true; toast(e.code === 'unknown' && e.message ? e.message : 'No answer from TradeZoro (your connection dropped). The order may or may not have gone through. Check your positions and working orders before you send it again.', 'error'); }
@@ -770,7 +788,62 @@ async function write(body, what, pending) {
     if (S.pending && okW && S.pending.type !== 'market') { S.pending = Object.assign({}, S.pending, { sent: true, oid: okW.orderId ? String(okW.orderId) : '', at: now() }); } else S.pending = null;
     render();
     fastReads();
+    if (ct && !lat.wait) ctMarks(body, lat);
   }
+}
+const ms0 = (lat, k) => (lat && lat[k] ? Math.max(0, Math.round(lat[k] - lat.t0)) : undefined);
+function ctMarks(body, lat) {
+  if (!lat || lat.sentMarks || !CT.link || !body.idemKey) return; lat.sentMarks = true;
+  const m = { c_cf: ms0(lat, 'cf'), c_open: ms0(lat, 'open'), c_send: ms0(lat, 'send'), c_ack: ms0(lat, 'ack'), c_toast: ms0(lat, 'toast'), c_fill: ms0(lat, 'fillAt') };
+  if (lat.exp) m.exp_px = lat.exp.price;
+  if (lat.slip) Object.assign(m, { fill_px: lat.slip.fill, slip_pts: lat.slip.pts }, lat.slip.money != null ? { slip_money: lat.slip.money } : {});
+  S.lat = Object.assign({ at: Date.now(), op: body.op }, m, lat.watch && lat.watch.server ? lat.watch.server : {}); window.__stkLat = S.lat;
+  CT.link.marks(body.idemKey, m);
+}
+const pxTxt = (v, tick) => { const d = tick > 0 ? Math.max(0, Math.min(8, Math.round(-Math.log10(tick)))) : 2; return Number(v).toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d }); };
+// ---- SLIPPAGE (Owner 25 Nov). lat.exp = the price the member saw at the click (placeMt, market orders on the broker's own prices);
+// at the fill: L.slippage (positive = worse for the trader), kept per account on this device by cTrader order id so Trade history can
+// show Expected / Slippage for orders sent from TradeZoro (other rows stay blank), and sent with the click's marks to the order's log
+// row (ctMarks, after the order, never before). Money only when the symbol is quoted in USD (same rule as the chart P&L, ctPnl).
+const slipKey = () => 'stryker_slip_' + uid + '_' + (S.acct ? S.acct.id : '');
+function slipBook() { try { const j = JSON.parse(localStorage.getItem(slipKey()) || '{}'); return j && typeof j === 'object' ? j : {}; } catch (e) { return {}; } }
+function slipSave(oid, s) {
+  if (!oid || !s) return; const b = slipBook(); b[oid] = { e: s.exp, f: s.fill, p: s.pts, m: s.money, s: s.src, at: Date.now() };
+  const ks = Object.keys(b); if (ks.length > 300) ks.sort((x, y) => (b[x].at || 0) - (b[y].at || 0)).slice(0, ks.length - 300).forEach((k) => delete b[k]);
+  try { localStorage.setItem(slipKey(), JSON.stringify(b)); } catch (e) { /* full: only the history column is lost */ }
+}
+function ctUnits(code, lots) {   // broker units for money, USD-quoted symbols only (else null: points only)
+  if (!CT.link) return null;
+  const K = String(code || '').toUpperCase(), id = CT.link.byName.get(K), d = id && CT.link.details.get(id); if (!d || !(d.lotSize > 0)) return null;
+  const qa = CT.link.quote && CT.link.quote.get(K), as = CT.link.assets && qa ? CT.link.assets.find((a) => a && Number(a.assetId) === qa) : null;
+  const usd = as ? String(as.name || as.displayName || '').toUpperCase() === 'USD' : /USD$/.test(K);
+  return usd ? Number(lots) * d.lotSize / 100 : null;
+}
+function ctSlip(lat, r, fill) {
+  if (!lat || !lat.exp || !lat.body) return null;
+  const b = lat.body, s = L.slippage(b.side, lat.exp.price, fill, ctUnits(b.symbol, b.qty), lat.tick); if (!s) return null;
+  s.src = lat.exp.src; lat.slip = s; slipSave(r && r.orderId ? String(r.orderId) : '', s);
+  return s;
+}
+// the price on screen at the click: the broker's own bid / ask (its chart plots the bid) when fresh, else the chart's last price
+function expectedAt(i, side, sym) {
+  if (!i || !i.map || !i.map.same) return null;   // a mapped futures chart is not the broker's price: no expected price
+  let q = null; try { q = CT.byo && CT.byo.quoteOf ? CT.byo.quoteOf('CT:' + String(i.code || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase()) : null; } catch (e) { q = null; }
+  if (TEST && TEST.ctQuote) q = TEST.ctQuote(i.code, sym);
+  if (q && q.at && Date.now() - q.at > 15000) q = null;   // stale quote: the chart's last price is what was on screen
+  return L.expectedPrice(side, q, i.last);
+}
+function ctToast(what, r, lat) {
+  const st = String(r.status || ''), tick = lat.tick || 0;
+  const done = (msg) => { toast(msg, 'success'); lat.toast = performance.now(); };
+  const at = (v) => ' @ ' + pxTxt(v, tick) + L.slipText(ctSlip(lat, r, v), (x) => pxTxt(x, tick)) + '.';
+  if (/FILL/.test(st)) { lat.fillAt = lat.ack; done(what + ' filled' + (r.price ? at(r.price) : '.')); return; }
+  if (r.fill && typeof r.fill.then === 'function') {   // a market order cTrader accepted first: the fill event follows
+    lat.wait = true;
+    r.fill.then((p) => { lat.wait = false; if (p) { lat.fillAt = performance.now(); done(what + ' filled' + at(p)); } else done(what + ': cTrader accepted it. The fill shows in your positions.'); ctMarks(lat.body, lat); });
+    return;
+  }
+  done(what + (/ACCEPTED|PENDING/.test(st) || !st ? ': order accepted by cTrader.' : ' sent. cTrader status: ' + st.toLowerCase().replace(/_/g, ' ') + '.'));
 }
 // read soon after a write (fill / working order shows within ~¼ s), then a few more, then the normal poll
 let fastT = [];
@@ -804,6 +877,7 @@ async function place(sym, o, src) {
 // MetaTrader: lots, the broker symbol, market / limit / stop (limit / stop only when the chart is the broker's own instrument), no TradeZoro size limit
 // every server guard of the futures path applies (kill switch, audit, read gate)
 async function placeMt(sym, o, src) {
+  const lat = S.acct && S.acct.ct ? { t0: performance.now() } : null;
   if (!S.envBusy && (!S.env || now() - S.envAt > ENV_MAX_AGE)) await envCheck();
   if (isOwn(S.acct) && S.env && S.env.consent === false && S.env.blocked !== true) { enableLive(); return null; }   // one-time step; nothing sent
   const why = blockReason(); if (why) { if (/^Pick the .* symbol/.test(why)) toastAct(why, 'Choose', () => openSymPicker(sym), 'error'); else toast(why, 'error'); return null; }
@@ -819,7 +893,8 @@ async function placeMt(sym, o, src) {
   if (i.ct) { const sig = JSON.stringify(Object.assign({}, body, { idemKey: '' })), t = now(); if (S.lastSend && S.lastSend.sig === sig && t - S.lastSend.at < L.DUP_MS) return null; S.lastSend = { sig, at: t }; }   // double-click guard
   const desc = sideWord(o.side) + ' ' + lotTxt(qty) + ' ' + i.code + ' ' + (o.type === 'market' ? 'MARKET' : o.type.toUpperCase() + ' @ ' + px(Number(body.limitPrice || body.stopPrice)));
   const pl = i.map.same ? L.pendingLine(body, i.last) : null; if (pl && i.ct) Object.assign(pl, { sl: Number(body.sl) > 0 ? Number(body.sl) : null, tp: Number(body.tp) > 0 ? Number(body.tp) : null });   // cTrader: SL / TP lines from the click too
-  return write(body, desc + (src ? ' (' + src + ')' : ''), pl);
+  if (lat) { lat.tick = i.tick; lat.body = body; lat.exp = o.type === 'market' && i.ct ? expectedAt(i, o.side, sym) : null; lat.cf = performance.now(); }   // c_cf: the chart's own checks done, the order leaves
+  return write(body, desc + (src ? ' (' + src + ')' : ''), pl, lat);
 }
 const MT_NO_SLTP = 'Stop loss and take profit for MetaTrader: set them in MetaTrader for now.';
 const CT_NO_SLTP = 'This chart’s prices are not your broker’s prices for this symbol, so stop loss and take profit can’t be set from here.';
@@ -881,19 +956,46 @@ async function flattenCt(symOrCode) {
 }
 
 // ---- read-only copy of the poll data for the Positions & Orders dock (assets/chart-posorders.js). No new routes: positions/orders come from
-// the 10 s poll, balances from balance(), fills from the existing data op "fills" (one read per 30 s while the Trade history tab is open).
+// the 10 s poll, balances from balance(). Trade history: broker-link accounts read the existing data op "fills"; cTrader reads its own deal
+// list (DealListReq) and order list (OrderListReq) for the last 7 days on the open trade link (read-only). Re-read every 30 s while the tab
+// is open and at once on an execution event (Owner bug 25 Nov 2026: "No trades yet" on a cTrader account that had traded).
 S.fills = { at: 0, busy: false, rows: null };
+S.hist = { id: '', th: { at: 0, busy: false, rows: null, err: '' }, oh: { at: 0, busy: false, rows: null, err: '' } };
+const HIST_MS = 30000;
 const first = (o, ks) => { for (const k of ks) if (o && o[k] != null && o[k] !== '') return o[k]; return ''; };
-export function dockTrades() {
-  if (!S.acct || S.fills.busy || now() - S.fills.at < 30000) return;
-  const ids = S.data.orders.filter((o) => /FILLED/i.test(o.status || '')).map((o) => String(o.orderId || o.id || '')).filter((x) => /^[A-Za-z0-9._:-]{1,80}$/.test(x)).slice(0, 25), id = S.acct.id;
-  if (!ids.length) { S.fills = { at: now(), busy: false, rows: [] }; return; }
-  S.fills.busy = true;
-  data('fills', { accountId: id, orderIds: ids }).then((r) => { if (S.acct && S.acct.id === id) S.fills = { at: now(), busy: false, rows: Array.isArray(r.data) ? r.data : [] }; })
-    .catch(() => { S.fills = { at: now(), busy: false, rows: S.fills.rows || [] }; });
+function histReset(id) { S.hist = { id, th: { at: 0, busy: false, rows: null, err: '' }, oh: { at: 0, busy: false, rows: null, err: '' } }; S.fills = { at: 0, busy: false, rows: null }; }
+// one history read for the active account; kind 'th' (trades) | 'oh' (orders, cTrader only: the others derive it from the poll)
+function histLoad(kind, force) {
+  if (!S.acct) return;
+  const id = S.acct.id; if (S.hist.id !== id) histReset(id);
+  const h = S.hist[kind]; if (h.busy || (!force && now() - h.at < HIST_MS)) return;
+  if (S.acct.ct) {
+    h.busy = true; h.at = now();
+    data(kind === 'th' ? 'deals' : 'orders', { accountId: id }).then((r) => { if (S.hist.id === id) Object.assign(S.hist[kind], { at: now(), busy: false, rows: Array.isArray(r.data) ? r.data : [], err: '' }); },
+      (e) => { if (S.hist.id === id) Object.assign(S.hist[kind], { at: now(), busy: false, err: 'Couldn’t load ' + (kind === 'th' ? 'trade' : 'order') + ' history from cTrader.' + (e && e.message && !/did not answer|closed/i.test(e.message) ? ' ' + e.message : '') }); });
+    return;
+  }
+  if (kind !== 'th') return;
+  if (S.acct.b3) { Object.assign(h, { at: now(), rows: [], err: '' }); return; }   // BROKERS 3: no fill history route yet (dock says so)
+  const ids = S.data.orders.filter((o) => /FILLED/i.test(o.status || '')).map((o) => String(o.orderId || o.id || '')).filter((x) => /^[A-Za-z0-9._:-]{1,80}$/.test(x)).slice(0, 25);
+  if (!ids.length) { Object.assign(h, { at: now(), rows: [], err: '' }); S.fills = { at: now(), busy: false, rows: [] }; return; }
+  h.busy = true; h.at = now(); S.fills.busy = true;
+  data('fills', { accountId: id, orderIds: ids }).then((r) => { if (S.hist.id !== id) return; const rows = Array.isArray(r.data) ? r.data : []; S.fills = { at: now(), busy: false, rows }; Object.assign(h, { at: now(), busy: false, rows, err: '' }); },
+    () => { if (S.hist.id !== id) return; S.fills.busy = false; S.fills.at = now(); Object.assign(h, { at: now(), busy: false, err: 'Couldn’t load trade history from ' + (S.acct.broker || 'your broker') + '.' }); });
 }
-export function dock() {
+// tab: 'th' | 'oh' | undefined (both); force = read now (Retry button, an execution event)
+export function dockTrades(force, tab) {
+  if (!S.acct) return;
+  if (!tab || tab === 'th') histLoad('th', force);
+  if (S.acct.ct && (!tab || tab === 'oh')) histLoad('oh', force);
+}
+// an execution event on the picked account: history re-read now (and once more shortly after: a deal can land a moment after its event)
+let histT = [];
+function histSoon() { histT.forEach(clearTimeout); histT = [600, 3000].map((ms) => setTimeout(() => { if (S.acct && (S.hist.th.rows || S.hist.oh.rows)) dockTrades(true); }, ms)); }
+export function dock(tab) {
   if (!S.acct) return null;
+  if (S.hist.id !== S.acct.id) histReset(S.acct.id);
+  if (tab === 'th' || tab === 'oh') dockTrades(false, tab);   // throttled: one read per 30 s while that tab is open
   const codes = new Set(), add = (c) => { if (c) codes.add(c); };
   const symOf = S.acct.mt ? (r) => String((r && (r.symbol || r.brokerProvidedSymbol || (r.instrument && r.instrument.providerSymbol))) || '') : L.contractOf;
   S.data.positions.forEach((p) => add(symOf(p))); S.data.orders.forEach((o) => add(symOf((o.legs || [])[0] || {}) || symOf(o)));
@@ -908,10 +1010,26 @@ export function dock() {
   const done = S.data.orders.filter((o) => !L.workingOrders([o], L.contractOf((o.legs || [])[0] || {}) || L.contractOf(o)).length);
   const oh = done.map((o) => { const leg = (o.legs || [])[0] || {}, s = String(leg.side || o.side || o.action || '').toLowerCase(); return { t: first(o, ['updatedAt', 'filledAt', 'createdAt', 'submittedAt', 'timestamp']), sym: L.contractOf(leg) || L.contractOf(o) || '—', side: s === 'buy' ? 'Buy' : s === 'sell' ? 'Sell' : '—', buy: s === 'buy', qty: first(leg, ['quantity']) || first(o, ['orderQty', 'quantity']) || '—', price: px(Number(first(o, ['averageFillPrice', 'avgFillPrice', 'limitPrice', 'price']) || first(leg, ['limitPrice', 'price'])) || null), note: String(o.status || '').replace(/_/g, ' ').toLowerCase().replace(/^./, (c) => c.toUpperCase()) }; })
     .sort((a, b) => String(b.t).localeCompare(String(a.t))).slice(0, 100);
-  const th = S.fills.rows == null ? null : S.fills.rows.map((f) => { const s = String(first(f, ['side', 'action'])).toLowerCase(); return { t: first(f, ['filledAt', 'timestamp', 'createdAt', 'executedAt', 'time']), sym: L.contractOf(f) || '—', side: s === 'buy' ? 'Buy' : s === 'sell' ? 'Sell' : '—', buy: s === 'buy', qty: first(f, ['quantity', 'qty', 'units']) || '—', price: px(Number(first(f, ['price', 'fillPrice', 'executionPrice'])) || null), pnl: null }; }).sort((a, b) => String(b.t).localeCompare(String(a.t)));
-  const sm = summary(), bal = [];
+  const sm = summary(), cur = sm && sm.cur, fm = (v, sign) => (v == null ? '—' : L.fmtMoney(v, cur, sign));
+  let th, oh2 = oh, thErr = S.hist.th.err, ohErr = '', thNote = '', thExt = null;
+  if (S.acct.ct) {
+    const lot = (q) => (Number.isFinite(q) ? q.toFixed(2) : '—');
+    thExt = ['Commission', 'Swap', 'Expected', 'Slippage'];
+    const sb = slipBook(), dg = (sym) => { const t = ctTick(sym, ''); return t > 0 ? Math.max(0, Math.min(8, Math.round(-Math.log10(t)))) : 2; };
+    th = S.hist.th.rows == null ? null : S.hist.th.rows.map((d) => {
+      const x = !d.closing && d.orderId ? sb[d.orderId] : null, n = x ? dg(d.sym) : 0;   // Expected / Slippage: only orders sent from TradeZoro
+      return { t: d.t, sym: d.sym, side: (d.side === 'buy' ? 'Buy' : 'Sell') + (d.closing ? ' · close' : ''), buy: d.side === 'buy', qty: lot(d.lots), price: d.price != null ? (x ? Number(d.price).toFixed(n) : String(d.price)) : '—', pnl: d.closing ? d.gross : null, pnlTxt: d.closing ? fm(d.gross, true) : '—',
+        ext: [fm(d.commission, true), d.closing ? fm(d.swap, true) : '—', x ? Number(x.e).toFixed(n) : '', x ? L.slipCell(x.p, x.m, cur) : ''], extN: [d.commission, d.closing ? d.swap : null, null, x ? -x.p : null], extT: [null, null, x ? 'Price on screen at the click (' + (x.s || 'last') + ')' : null, x ? 'Positive = filled worse than expected' : null] };
+    });
+    oh2 = S.hist.oh.rows == null ? null : S.hist.oh.rows.slice(0, 200).map((o) => ({ t: o.t, sym: o.sym, side: o.side === 'buy' ? 'Buy' : 'Sell', buy: o.side === 'buy', qty: lot(o.lots), price: o.price != null ? String(o.price) : '—', note: o.status + (o.type ? ' · ' + o.type : '') }));
+    ohErr = S.hist.oh.err;
+  } else {
+    th = S.hist.th.rows == null ? null : S.hist.th.rows.map((f) => { const s = String(first(f, ['side', 'action'])).toLowerCase(); return { t: first(f, ['filledAt', 'timestamp', 'createdAt', 'executedAt', 'time']), sym: L.contractOf(f) || '—', side: s === 'buy' ? 'Buy' : s === 'sell' ? 'Sell' : '—', buy: s === 'buy', qty: first(f, ['quantity', 'qty', 'units']) || '—', price: px(Number(first(f, ['price', 'fillPrice', 'executionPrice'])) || null), pnl: null }; }).sort((a, b) => String(b.t).localeCompare(String(a.t)));
+    if (S.acct.b3) thNote = 'Trade history from ' + (S.acct.broker || 'this broker') + ' isn’t available here yet. Your filled orders are under Order history.';
+  }
+  const bal = [];
   if (sm && sm.bal != null) { bal.push(['Balance' + (sm.age ? ' (' + sm.age + ')' : ''), L.fmtMoney(sm.bal, sm.cur)]); if (sm.rp != null) bal.push(['Realized P&L today', L.fmtMoney(sm.rp, sm.cur, true), sm.rp]); if (sm.up != null) bal.push(['Open P&L', L.fmtMoney(sm.up, sm.cur, true), sm.up]); }
-  return { live: true, pos, ord, oh, th, bal, cancelAll: null, nPos: pos.length, nOrd: ord.length };
+  return { live: true, pos, ord, oh: oh2, th, thErr, ohErr, thNote, thExt, thDays: S.acct.ct ? 7 : 0, bal, cancelAll: null, nPos: pos.length, nOrd: ord.length };
 }
 // drag a working order line to a new price
 export async function drag(sym, d) {
@@ -1215,7 +1333,7 @@ async function loadCt() {
     if (!c || !c.access || !c.accountId) { CT.acct = null; return; }
     CT.creds = c; CT.link = new CT.mod.TradeLink(c, TEST && TEST.ctDeps ? TEST.ctDeps : undefined);
     CT.link.keep = () => !!(S.acct && S.acct.ct);   // heartbeats only while the account is picked; else the relay's idle close ends it
-    CT.link.onEvent = (k, m) => { if (k === 'exec' && S.acct && S.acct.ct) fastReads(); if (k === 'resolved') { toast('Your last cTrader order was checked: ' + (m.result === 'accepted' ? 'it reached cTrader.' : 'it did not reach cTrader. Nothing was sent twice.'), 'info'); if (S.acct && S.acct.ct) read(); } };
+    CT.link.onEvent = (k, m) => { if (k === 'exec' && S.acct && S.acct.ct) { fastReads(); histSoon(); } if (k === 'resolved') { toast('Your last cTrader order was checked: ' + (m.result === 'accepted' ? 'it reached cTrader.' : 'it did not reach cTrader. Nothing was sent twice.'), 'info'); if (S.acct && S.acct.ct) read(); } };
     CT.ops = CT.mod.ctOps(CT.link, { lastPrice: () => { const i = P && P.activeSymbol ? infoMt(P.activeSymbol()) : null; return i && Number.isFinite(i.last) ? i.last : null; } });
     const a = L.acctInfo({ accountId: 'ct-' + c.accountId, accountNumber: String(c.login || c.accountId) });
     a.broker = 'cTrader'; a.text = 'cTrader ' + a.number + (c.isLive === false ? ' demo' : ''); a.name = a.number; a.mt = 'cTrader'; a.ct = true; a.demo = c.isLive === false;
@@ -1227,7 +1345,7 @@ async function loadCt() {
 // useTradeAccount: trendbars + spots over the view-only data relay). Re-registered after a sign-in change clears the own-data feeds.
 function ctFeed() {
   if (!CT.creds || !CT.mod) return Promise.resolve(false);
-  return Promise.all([import('./byo-ctrader.js?v=1279'), import('./byo-core.js?v=1279')]).then(([b, c]) => { if (CT.creds) b.useTradeAccount(CT.creds, CT.mod.freshTrade, TEST && TEST.ctDeps ? TEST.ctDeps : undefined, c); return true; }, () => false);
+  return Promise.all([import('./byo-ctrader.js?v=1279'), import('./byo-core.js?v=1279')]).then(([b, c]) => { CT.byo = b; if (CT.creds) b.useTradeAccount(CT.creds, CT.mod.freshTrade, TEST && TEST.ctDeps ? TEST.ctDeps : undefined, c); return true; }, () => false);
 }
 window.addEventListener('tz:byo', (e) => { if (e.detail && e.detail.id === '*' && CT.acct) ctFeed(); });
 // ---- BROKERS 3 (admins and beta testers): tastytrade / TradeStation / OANDA trading sign-ins become live accounts
@@ -1236,7 +1354,7 @@ function b3Tick(code, key) { const r = S.placeSchema && S.placeSchema.rules && S
 function b3Feed(a) {
   if (B3S.feed) { B3S.feed.stop(); B3S.feed = null; }
   if (!a || !a.b3 || !B3S.mod || !B3S.creds[a.b3]) return;
-  B3S.feed = new B3S.mod.StatusFeed(a.b3, B3S.creds[a.b3], [a.acctNo], (ev) => { if (S.acct && S.acct.id === a.id) { fastReads(); if (ev.type === 'fill') toast(a.broker + ': order ' + ev.id + ' filled.', 'info'); } }, TEST && TEST.b3Deps ? TEST.b3Deps : undefined);
+  B3S.feed = new B3S.mod.StatusFeed(a.b3, B3S.creds[a.b3], [a.acctNo], (ev) => { if (S.acct && S.acct.id === a.id) { fastReads(); histSoon(); if (ev.type === 'fill') toast(a.broker + ': order ' + ev.id + ' filled.', 'info'); } }, TEST && TEST.b3Deps ? TEST.b3Deps : undefined);
   B3S.feed.start().catch(() => {});
 }
 async function loadB3() {
@@ -1315,6 +1433,6 @@ export function mountLive(paperApi, opts) {
   // Copy trading: admins + beta testers (Owner 23 Nov). The server (functions/connect/finatic/copy.js) re-checks every call.
   if (isAdmin) mountCopyTrading(); else betaReady().then((b) => { if (b) mountCopyTrading(); });
   window.addEventListener('storage', (e) => { if (e.key === lsUserKey()) loadAccounts(); });
-  Object.assign(window.__stkLive, { openSymPicker, closeSymPicker, mtFor, mtSetSymbol, mtRemember, srcSymbols, srcSpec, ctFeed, connect, reconnect, pick, leave, read, loadAccounts, info, confirmSheet, balance, summary, metaOf, saveMeta, disconnect, L, envCheck, retryEnv, syncGroup, enableLive, get admin() { return isAdmin; }, get blockReason() { return blockReason(); } });
+  Object.assign(window.__stkLive, { dockTrades, openSymPicker, closeSymPicker, mtFor, mtSetSymbol, mtRemember, srcSymbols, srcSpec, ctFeed, connect, reconnect, pick, leave, read, loadAccounts, info, confirmSheet, balance, summary, metaOf, saveMeta, disconnect, L, envCheck, retryEnv, syncGroup, enableLive, get admin() { return isAdmin; }, get blockReason() { return blockReason(); } });
   Object.defineProperty(window.__stkLive, 'blockReason', { configurable: true, get: () => blockReason() });   // a getter (Object.assign would copy one frozen value)
 }

@@ -522,6 +522,38 @@ export function fmtMoney(n, cur, sign) {
   let t; try { t = new Intl.NumberFormat('en-US', { style: 'currency', currency: c, minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Math.abs(n)); } catch (e) { t = c + ' ' + Math.abs(n).toFixed(2); }
   return (n < 0 ? '-' : sign && n > 0 ? '+' : '') + t;
 }
+// ---- SLIPPAGE (Owner 25 Nov: "was my fill price slippage?"). At the click we keep the price the member SAW on the broker's chart:
+// a market BUY trades into the ask, a SELL into the bid; the chart's last price when there is no bid / ask. When the fill comes back:
+// pts = how far the fill was from that price, in price units, signed so that POSITIVE = WORSE for the trader (a buy filled higher, a
+// sell filled lower); money = pts x units (the broker's units, e.g. cTrader lots x lotSize / 100), only when the caller knows the units
+// are in the account's money (USD-quoted on a USD account). Nothing here is an estimate: no expected price or no fill = null.
+// -> { exp, fill, pts, money, src } | null
+export function expectedPrice(side, q, last) {
+  const b = q && Number(q.bid) > 0 ? Number(q.bid) : null, a = q && Number(q.ask) > 0 ? Number(q.ask) : null;
+  if (side === 'buy' && a) return { price: a, src: 'ask' };
+  if (side === 'sell' && b) return { price: b, src: 'bid' };
+  return Number(last) > 0 ? { price: Number(last), src: 'last' } : null;
+}
+export function slippage(side, exp, fill, units, tick) {
+  const e = Number(exp), f = Number(fill); if (!(e > 0) || !(f > 0) || (side !== 'buy' && side !== 'sell')) return null;
+  const dp = tick > 0 ? Math.max(0, Math.min(8, Math.round(-Math.log10(tick)))) : 5, k = Math.pow(10, dp);
+  let pts = Math.round((side === 'buy' ? f - e : e - f) * k) / k; if (Object.is(pts, -0)) pts = 0;
+  const money = Number(units) > 0 ? Math.round(pts * Number(units) * 100) / 100 : null;
+  return { exp: e, fill: f, pts, money: money === 0 ? 0 : money };
+}
+// "1.29 pts" (no trailing zeros, tabular-friendly), the toast's tail: " (expected 25,330.10, 1.29 pts slippage)" | " (expected …, 0.4 pts better)" | ''
+export const ptsTxt = (v) => { const a = Math.abs(Number(v)); return (a >= 1000 ? a.toLocaleString('en-US', { maximumFractionDigits: 8 }) : String(Number(a.toFixed(8)))) + ' pt' + (a === 1 ? '' : 's'); };
+// Trade history cell: "1.29 pts · -$1.29" (money shown as the trader's gain / loss: slippage costs money, so it is negative)
+export function slipCell(pts, money, cur) {
+  if (pts == null || !Number.isFinite(Number(pts))) return '';
+  if (!Number(pts)) return '0';
+  const t = (pts > 0 ? '' : '−') + ptsTxt(pts);
+  return money != null && Number.isFinite(Number(money)) && Number(money) ? t + ' · ' + fmtMoney(-money, cur, true) : t;
+}
+export function slipText(sl, fmtPx) {
+  if (!sl || !sl.pts) return '';
+  return ' (expected ' + fmtPx(sl.exp) + ', ' + ptsTxt(sl.pts) + (sl.pts > 0 ? ' slippage)' : ' better)');
+}
 // ---- per-account notes the admin adds (pencil): label, prop firm, account type -------------------------------------------
 export const FIRMS = ['Apex', 'Topstep', 'Tradeify', 'Take Profit Trader', 'My Funded Futures', 'Lucid', 'Bulenox', 'Alpha Futures', 'Elite Trader Funding', 'Earn2Trade', 'The Trading Pit', 'FundingPips', 'FTMO', 'Own account'];
 export const TYPES = [['eval', 'Evaluation'], ['funded', 'Funded'], ['live', 'Live'], ['sim', 'Sim']];

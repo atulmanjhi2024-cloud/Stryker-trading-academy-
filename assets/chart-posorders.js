@@ -46,7 +46,7 @@ const data = () => { try { return (P.live ? liveData() : null) || (P.live ? null
 
 // ---- view -----------------------------------------------------------------------------------------------------------------------
 const tbl = (head, rows, empty) => rows.length
-  ? '<div class="stkpo-tw"><table class="stkpo-t"><thead><tr>' + head.map((h, i) => '<th' + (/Qty|Avg|Last|P&amp;L|Price|Commission|Swap/.test(esc(h)) ? ' class="n"' : '') + '>' + esc(h) + '</th>').join('') + '</tr></thead><tbody>' + rows.join('') + '</tbody></table></div>'
+  ? '<div class="stkpo-tw"><table class="stkpo-t"><thead><tr>' + head.map((h, i) => '<th' + (/Qty|Avg|Last|P&amp;L|Price|Commission|Swap|Expected|Slippage/.test(esc(h)) ? ' class="n"' : '') + '>' + esc(h) + '</th>').join('') + '</tr></thead><tbody>' + rows.join('') + '</tbody></table></div>'
   : '<p class="stkpo-empty">' + esc(empty) + '</p>';
 const X = (i, label) => '<td class="x"><button type="button" class="stkpo-x" data-x="' + i + '" aria-label="' + esc(label) + '" title="' + esc(label) + '"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg></button></td>';
 function body(d) {
@@ -63,7 +63,7 @@ function body(d) {
     if (d.th === 'loading' || d.th == null) return '<p class="stkpo-empty">Loading…</p>';
     if (d.thNote && !d.th.length) return '<p class="stkpo-empty">' + esc(d.thNote) + '</p>';
     const ext = d.thExt || [];
-    return tbl(['Time', 'Symbol', 'Side', 'Qty', 'Price', 'P&L'].concat(ext), d.th.map((o) => '<tr><td>' + esc(when(o.t)) + '</td><td class="s">' + esc(o.sym) + '</td><td class="' + (o.buy ? 'up' : o.side === '—' ? '' : 'down') + '">' + esc(o.side) + '</td><td class="n">' + esc(o.qty) + '</td><td class="n">' + esc(o.price) + '</td><td class="n ' + cls(o.pnl) + '">' + esc(o.pnlTxt != null ? o.pnlTxt : o.pnl == null ? '—' : money(o.pnl, true)) + '</td>' + ext.map((_, i) => '<td class="n ' + cls((o.extN || [])[i]) + '">' + esc((o.ext || [])[i] || '—') + '</td>').join('') + '</tr>'), d.live && d.thDays ? 'No trades in the last ' + d.thDays + ' days' : 'No trades yet');
+    return tbl(['Time', 'Symbol', 'Side', 'Qty', 'Price', 'P&L'].concat(ext), d.th.map((o) => '<tr><td>' + esc(when(o.t)) + '</td><td class="s">' + esc(o.sym) + '</td><td class="' + (o.buy ? 'up' : o.side === '—' ? '' : 'down') + '">' + esc(o.side) + '</td><td class="n">' + esc(o.qty) + '</td><td class="n">' + esc(o.price) + '</td><td class="n ' + cls(o.pnl) + '">' + esc(o.pnlTxt != null ? o.pnlTxt : o.pnl == null ? '—' : money(o.pnl, true)) + '</td>' + ext.map((_, i) => { const v = (o.ext || [])[i], tt = (o.extT || [])[i]; return '<td class="n ' + cls((o.extN || [])[i]) + '"' + (tt ? ' title="' + esc(tt) + '"' : '') + '>' + esc(v === '' ? '' : v || '—') + '</td>'; }).join('') + '</tr>'), d.live && d.thDays ? 'No trades in the last ' + d.thDays + ' days' : 'No trades yet');
   }
   return d.bal.length ? '<div class="stkpo-bal">' + d.bal.map(([k, v, n]) => '<div><em>' + esc(k) + '</em><b class="' + cls(n) + '">' + esc(v) + '</b></div>').join('') + '</div>' : '<p class="stkpo-empty">No balance to show</p>';
 }

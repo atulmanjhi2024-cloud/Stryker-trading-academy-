@@ -110,6 +110,18 @@ await t('parallel checks: a duplicate key -> nothing sent, the lock this write t
   assert.deepEqual(M.audits['ct-' + dup], { result: 'accepted', sample: true });
   L.shut();
 });
+await t('SLIPPAGE: the expected price + the fill + the slippage go to THIS order\'s log row (marks, after the order), bad values refused', async () => {
+  const LC = await import('../../assets/chart-live-core.js?v=1278');
+  const M = mockState({ fsMs: 0, ctMs: 20, twoStep: true, fillMs: 30, fillPx: 99.8 }); const { L, ops } = mk(M);
+  await L.warm('US100');
+  const a = await timeOrder(ops, { side: 'sell' }); const fill = await a.r.fill; assert.equal(fill, 99.8);
+  const key = Object.keys(M.upAt)[0], row0 = { ...M.audits['ct-' + key] };
+  assert.equal(row0.exp_px, undefined, 'nothing about slippage on the row before the order (attempt row)');
+  const sl = LC.slippage('sell', 100, fill, 1, 0.01); assert.deepEqual(sl, { exp: 100, fill: 99.8, pts: 0.2, money: 0.2 });
+  L.marks(key, { c_ack: 5, exp_px: sl.exp, fill_px: sl.fill, slip_pts: sl.pts, slip_money: sl.money }); await sleep(40);
+  const row = M.audits['ct-' + key]; assert.equal(row.exp_px, 100); assert.equal(row.fill_px, 99.8); assert.equal(row.slip_pts, 0.2); assert.equal(row.slip_money, 0.2); assert.equal(row.result, 'accepted');
+  L.shut();
+});
 console.table(rows.map(([what, ms, mock]) => ({ case: what, 'click->answer ms': ms, 'mock delays ms': mock, 'our overhead ms': ms - mock })));
 if (process.env.BENCH_JSON) console.log(JSON.stringify(rows));
 console.log(n + ' cTrader latency tests passed');

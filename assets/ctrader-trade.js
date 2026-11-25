@@ -283,6 +283,9 @@ export class TradeLink {
   // the browser's own latency marks for one of its writes (ms from the click), stored on that order's log row by the relay
   marks(key, m) {
     const pl = {}; for (const k of ['c_cf', 'c_open', 'c_send', 'c_ack', 'c_toast', 'c_fill']) { const v = Math.round(Number(m && m[k])); if (Number.isInteger(v) && v >= 0 && v <= 600000) pl[k] = v; }
+    // SLIPPAGE (25 Nov): the price on screen at the click, the fill, and the slippage (points; money when known). Same order, same row.
+    for (const k of ['exp_px', 'fill_px']) { const v = Number(m && m[k]); if (Number.isFinite(v) && v > 0 && v < 1e7) pl[k] = v; }
+    for (const k of ['slip_pts', 'slip_money']) { const v = Number(m && m[k]); if (m && m[k] != null && Number.isFinite(v) && Math.abs(v) < 1e7) pl[k] = v; }
     try { if (Object.keys(pl).length) this.raw({ clientMsgId: key, payloadType: 9001, payload: pl }); } catch (e) { /* closed: the marks are only lost */ }
   }
   // one write: the key is the chart's idempotency key; never retried here

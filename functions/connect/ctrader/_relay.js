@@ -115,7 +115,7 @@ export function createRelay({ client, up, clientId, clientSecret, now = () => Da
         if (!tokenSeen || p.accessToken !== tokenSeen || !known.has(p.ctidTraderAccountId) || ++authCalls > 2) return end(1008, 'not allowed');
         if (H.authOk && !H.authOk(p.ctidTraderAccountId, known.get(p.ctidTraderAccountId))) return end(1008, 'not allowed');
       } else if (p.ctidTraderAccountId !== undefined && !authed.has(p.ctidTraderAccountId)) return end(1008, 'not allowed');   // only accounts this socket authorised
-      if (c.type === 2129 || c.type === 2158) subs = Math.max(0, subs - p.symbolId.length);
+      if (c.type === 2129 || c.type === 2158 || c.type === 2136) subs = Math.max(0, subs - (c.type === 2136 ? 1 : p.symbolId.length));   // 2136 frees its live trendbar slot (charts re-subscribe on every reconnect)
       if (c.type === 2127 || c.type === 2156 || c.type === 2135) { subs += c.type === 2135 ? 1 : p.symbolId.length; if (subs > LIMITS.subs) return end(1008, 'too many'); }
       if (H.intercept) { const r = H.intercept(c); if (r === 'drop') return; if (r && typeof r.then === 'function') return r; }
       if (!appReady) { if (queue.length >= LIMITS.buffer) return end(1008, 'too fast'); queue.push(c.frame); } else toUp(c.frame);

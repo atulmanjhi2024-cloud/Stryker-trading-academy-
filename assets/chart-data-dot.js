@@ -25,7 +25,6 @@
 import { rtOnChange, isRealtimeAdmin, rtConfirmed, rtKnown } from './rt-access.js?v=1288';
 import { hubCovers } from './live-source.js?v=1288';
 import { labelFor } from './byo-core.js?v=1288';
-import { INFO_LINE as DXY_INFO } from './chart-dxy-core.js?v=1288';
 import { parseMonth, isLiveMonth } from './fut-months.js?v=1288';   // contract-month charts (futures:MESZ2026)   // member's own connected source (Connect your own data)
 
 const H = 3600;
@@ -35,7 +34,6 @@ const CRYPTO = /^(binance|coinbase|hyperliquid|bybit|okx|bitget|kraken|vest):/i;
 const FUT = /^futures:/i;
 const FX = /^fx:/i;
 const IDX = /^idx:/i;
-const DXY = /^dxy:/i;   // calculated dollar index (assets/chart-dxy.js): forex hours, delayed like the fx pairs it is built from
 // Bybit blocks some countries (providers/bybit.js sets window.__stkVenueBlocked.bybit on a 403 / refused request).
 const BYBIT_BLOCKED = "Bybit isn't available in your region. Pick another exchange in symbol search.";
 const blockedVenue = (v) => !!(window.__stkVenueBlocked && window.__stkVenueBlocked[v]);
@@ -139,15 +137,17 @@ export function installDataDot(ws, opts = {}) {
     if (CRYPTO.test(sym)) return { s: 'rt', text: 'Real-time data', tag: 'Real-time' };
     // Own source (assets/byo-core.js): the one place a source name shows on the chart. Green only while its stream is live.
     const own = labelFor(sym);
-    if (own) return own.status === 'live' ? { s: 'rt', text: 'Data feed: your ' + own.name, tag: 'Your feed' }
-      : { s: 'delayed', text: 'Data feed: your ' + own.name + (own.status === 'error' ? ' (refused, check the Data source sheet)' : ' (connecting)'), tag: own.status === 'error' ? 'Feed error' : 'Connecting' };
-    if (FX.test(sym) || DXY.test(sym)) {
+    // cTrader broker-price charts name the source (Owner 25 Nov): "cTrader" while live, "cTrader · reconnecting" otherwise
+    const ct = own && (own.id === 'ctacct' || own.id === 'ctrader');
+    if (own) return own.status === 'live' ? { s: 'rt', text: 'Data feed: your ' + own.name, tag: ct ? 'cTrader' : 'Your feed' }
+      : { s: 'delayed', text: 'Data feed: your ' + own.name + (own.status === 'error' ? ' (refused, check the Data source sheet)' : ' (connecting)'), tag: own.status === 'error' ? (ct ? 'cTrader · reconnect' : 'Feed error') : ct ? 'cTrader · reconnecting' : 'Connecting' };
+    if (FX.test(sym)) {
       const now = Date.now();
       if (!fxOpen(now)) {
         const n = nextOpen(now, true);
         return { s: 'closed', text: 'Forex market closed' + (n ? ' · opens ' + istLabel(n) + ' IST' : ''), tag: 'Closed' };
       }
-      const key = 'FX:' + (DXY.test(sym) ? 'EURUSD' : rootOf(sym));
+      const key = 'FX:' + rootOf(sym);
       measure(key);
       const m = lag.get(key);
       return { s: 'delayed', text: 'Delayed data' + (m && m.min ? ' · about ' + m.min + ' min' : ''), tag: 'Delayed' + (m && m.min ? ' ' + m.min + 'm' : '') };
@@ -266,12 +266,6 @@ export function installDataDot(ws, opts = {}) {
       else if (dot.previousElementSibling !== meta) meta.after(dot);
       if (!sl.classList.contains('stkc-has-dd')) sl.classList.add('stkc-has-dd');
       if (dot.dataset.s !== st.s) dot.dataset.s = st.s;
-      // DXY is computed by us: say so, right after the data dot (tap / hover = the info line).
-      let chip = sl.querySelector('.stkc-calc');
-      const isCalc = DXY.test(String(bySym[cell.getAttribute('data-cell-id')] || ''));
-      if (isCalc && !chip) { chip = document.createElement('span'); chip.className = 'stkc-calc'; chip.textContent = 'Calculated'; chip.title = DXY_INFO; chip.setAttribute('tabindex', '0'); chip.setAttribute('aria-label', 'Calculated. ' + DXY_INFO); }
-      if (isCalc && chip.previousElementSibling !== dot) dot.after(chip);
-      if (!isCalc && chip) chip.remove();
       const sym = String(bySym[cell.getAttribute('data-cell-id')] || '');
       if (dot.dataset.sym !== sym) dot.dataset.sym = sym;
       const t = dot.querySelector('.stkc-dd-t');
@@ -293,7 +287,6 @@ export function installDataDot(ws, opts = {}) {
   // (assets/rithmic-ui.js writes that one to dataset.fut and leaves the text alone on crypto).
   const VENUE = { binance: 'Binance', coinbase: 'Coinbase', hyperliquid: 'Hyperliquid', bybit: 'Bybit', okx: 'OKX', bitget: 'Bitget', kraken: 'Kraken', vest: 'Vest' };
   function creditFor(sym) {
-    if (DXY.test(String(sym || ''))) return DXY_INFO + ' · Education only. Not financial advice.';
     const own = labelFor(sym);
     if (own) return 'Data feed: your ' + own.name + ' · market data goes straight from your account to your browser · Education only. Not financial advice.';
     const m = /^(binance|coinbase|hyperliquid|bybit|okx|bitget|kraken|vest):/i.exec(String(sym || ''));

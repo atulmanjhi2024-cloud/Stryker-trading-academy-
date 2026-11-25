@@ -200,7 +200,7 @@ export function candleBuilder(tf, seed, emit) {
   tf = norm(tf);
   const step = TF_MS[tf] || 0;
   let cur = seed ? { ...seed } : null;
-  return (price, ts, size = 0) => {
+  const f = (price, ts, size = 0) => {
     if (!Number.isFinite(price) || !Number.isFinite(ts)) return;
     let t;
     if (step) t = seed && ts >= seed.time ? seed.time + Math.floor((ts - seed.time) / step) * step : Math.floor(ts / step) * step;
@@ -213,6 +213,9 @@ export function candleBuilder(tf, seed, emit) {
     else cur = { time: t, open: price, high: price, low: price, close: price, volume: size };
     emit({ ...cur });
   };
+  // the source's own forming bar (cTrader live trendbar): replaces ours for that time; never an older one
+  f.set = (b) => { if (!b || !Number.isFinite(b.time) || (cur && b.time < cur.time)) return; cur = { ...b }; emit({ ...cur }); };
+  return f;
 }
 
 // ---------- connection hub: one live connection per source, shared by every chart ----------

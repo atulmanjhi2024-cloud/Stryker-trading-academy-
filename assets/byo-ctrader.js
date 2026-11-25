@@ -4,7 +4,7 @@
 // Our function /connect/ctrader/token swaps the code (it holds the client secret). Prices come over our relay
 // /connect/ctrader/ws (it adds the secret and lets only market-data messages through). Nothing is stored on our side;
 // the member's tokens stay in the encrypted, user-bound device vault. Docs: help.ctrader.com/open-api.
-import { ADAPTERS, ROUTERS, SOURCES, Hub, candleBuilder, normTf, saveSource, srcById } from './byo-core.js?v=1288';
+import { ADAPTERS, ROUTERS, SOURCES, Hub, QUOTES, candleBuilder, normTf, saveSource, srcById } from './byo-core.js?v=1288';
 
 const MIN = 60000;
 export const CT = {
@@ -121,7 +121,16 @@ class Session {
     if (m.payloadType === 2147 || m.payloadType === 2148 || m.payloadType === 2164) this.shut(fail('Reconnect cTrader', { reconnect: true }));
   }
   raw(o) { if (this.ws && this.ws.readyState === 1) this.ws.send(guardCt(o)); else throw fail('cTrader closed the link', { status: 0 }); }
-  send(type, payload) {
+  // The relay closes a socket that asks for history more than 4 times a second (LIMITS.historyPerSec): a chart load, the live seed,
+  // a gap heal and the 60 s check landing together used to trip it, and the dropped socket left missing minutes (CFDGAPS 25 Nov).
+  async send(type, payload) {
+    if (type === 2137 || type === 2145) {
+      const h = this.hist || (this.hist = []);
+      for (;;) { const now = Date.now(); while (h.length && now - h[0] >= 1100) h.shift(); if (h.length < 3) { h.push(now); break; } await new Promise((r) => setTimeout(r, 1100 - (now - h[0]) + 5)); }
+    }
+    return this.sendNow(type, payload);
+  }
+  sendNow(type, payload) {
     return new Promise((res, rej) => {
       const id = 'm' + (++this.n);
       const t = setTimeout(() => { this.pending.delete(id); rej(fail('cTrader did not answer', { status: 0 })); }, 15000);
@@ -172,10 +181,6 @@ export function symbolOf(t) {
 const PERIOD = { '1': 1, '5': 5, '15': 7, '30': 8, '60': 9, '240': 10, D: 12, W: 13, M: 14 };
 const SPAN = { '1': MIN, '5': 5 * MIN, '15': 15 * MIN, '30': 30 * MIN, '60': 60 * MIN, '240': 240 * MIN, D: 864e5, W: 7 * 864e5, M: 31 * 864e5 };
 const PX = 1e5;   // cTrader prices are integers in 1/100000
-// AUTO-TPSL: the latest bid / ask per streamed symbol key ('EURUSD' data feed, 'CT:EURUSD' trading account feed); read-only, for the
-// stop loss / take profit side check (a buy's SL below the bid, TP above the ask) in assets/chart-live.js
-export const QUOTES = new Map();
-export const quoteOf = (name) => { const k = String(name || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase(); const q = QUOTES.get('CT:' + k) || QUOTES.get(k); return q && Date.now() - q.at < 120000 ? q : null; };
 const symCache = new WeakMap();   // creds -> Map(key -> { id, desc }); memory only, per account
 async function symbolId(c, key, d) { return (await symRec(c, key, d)).id; }
 async function symRec(c, key, d) {
@@ -199,6 +204,24 @@ const barOf = (t) => {
   const low = +t.low, o = low + (+t.deltaOpen || 0), h = low + (+t.deltaHigh || 0), cl = low + (+t.deltaClose || 0);
   return { time: (+t.utcTimestampInMinutes) * MIN, open: round(o / PX), high: round(h / PX), low: round(low / PX), close: round(cl / PX), volume: +t.volume || 0 };
 };
+
+// Trendbar period: cTrader may send the enum name ('M1') or its number.
+const PERIOD_OF = { M1: 1, M2: 2, M3: 3, M4: 4, M5: 5, M10: 6, M15: 7, M30: 8, H1: 9, H4: 10, H12: 11, D1: 12, W1: 13, MN1: 14 };
+// The live bar = cTrader's own forming trendbar (open/high/low from the server) closed at the latest BID, so it matches the history
+// bars (also bid) and a tick missed while away cannot bend it. Ticks between trendbar events still move the close.
+export const liveTbBar = (tb, bid) => {
+  const b = barOf({ ...tb, deltaClose: tb.deltaClose != null ? tb.deltaClose : 0 });
+  if (tb.deltaClose == null && Number.isFinite(bid)) b.close = bid;
+  if (Number.isFinite(b.close)) { b.high = Math.max(b.high, b.close); b.low = Math.min(b.low, b.close); }
+  return b;
+};
+function ctSub(hub, key, timeframe, seed, onBar) {
+  const tf = normTf(timeframe), per = PERIOD[tf], b = candleBuilder(timeframe, seed, onBar);
+  const w = per && hub.tbs ? { per, fn: (tb, bid) => b.set(liveTbBar(tb, bid)) } : null;
+  if (w) { if (!hub.tbs.has(key)) hub.tbs.set(key, new Set()); hub.tbs.get(key).add(w); }
+  const off = hub.add(key, b);
+  return () => { if (w) { const set = hub.tbs.get(key); if (set) { set.delete(w); if (!set.size) hub.tbs.delete(key); } } off(); };
+}
 
 export const ctrader = {
   id: 'ctrader',
@@ -224,12 +247,17 @@ export const ctrader = {
     } finally { rel(); }
   },
   hub(c, onStatus, d) {
-    return new Hub({
+    // tbs: symbol -> Set({ per, fn }) of charts that want cTrader's own live trendbar for that period (subscribe below)
+    const tbs = new Map();
+    const h = new Hub({
       onStatus,
       open: (syms, onTick, ctl) => {
-        const s = sessionOf(c, d), rel = s.hold(); let dead = false, off = [], subbed = [];
+        const s = sessionOf(c, d), rel = s.hold(); let dead = false, off = [], subbed = [], tbSubbed = [];
         (async () => {
           try {
+            // open the socket first: after a drop the symbol ids come from the cache, so nothing else re-opens it (CFDGAPS 25 Nov:
+            // every reconnect failed on a closed socket and the chart stayed on its last candle until a reload)
+            await s.open();
             const ids = await Promise.all(syms.map(async (k) => [await symbolId(c, k, d), k]));
             if (dead) return;
             const back = new Map(ids), last = new Map();   // spots carry only the side that changed: keep the other
@@ -237,23 +265,37 @@ export const ctrader = {
               const k = back.get(e.symbolId); if (!k) return;
               const l = last.get(k) || {}; if (e.bid != null) l.bid = e.bid; if (e.ask != null) l.ask = e.ask; last.set(k, l);
               if (l.bid == null) return;
-              QUOTES.set(k, { bid: round(l.bid / PX), ask: l.ask != null ? round(l.ask / PX) : null, at: Date.now() });   // AUTO-TPSL: SL / TP side checks
-              onTick(k, round(l.bid / PX), e.timestamp > 0 ? e.timestamp : Date.now(), 0);   // chart plots the bid, like a broker chart
+              if (l.ask != null) QUOTES.put(k, round(l.bid / PX), round(l.ask / PX), e.timestamp);   // the same spot: Bid / Ask lines + spread
+              const bid = round(l.bid / PX);
+              onTick(k, bid, e.timestamp > 0 ? e.timestamp : Date.now(), 0);   // chart plots the bid, like a broker chart (cTrader trendbars are bid bars too)
+              const w = tbs.get(k);
+              if (w && Array.isArray(e.trendbar)) for (const tb of e.trendbar) for (const x of w) if (x.per === +tb.period || x.per === PERIOD_OF[tb.period]) { try { x.fn(tb, bid); } catch (er) { /* a chart error must not stop the feed */ } }
             }));
             subbed = ids.map((x) => x[0]);
             await s.send(2127, { ctidTraderAccountId: c.accountId, symbolId: subbed, subscribeToSpotTimestamp: true });
-            ctl.live();
             s.onDead = (err) => ctl.fail(!!(err && err.reconnect), err && err.reconnect ? 'Reconnect cTrader' : '');
+            ctl.live();
+            // cTrader's own live trendbar for each chart period (ProtoOASubscribeLiveTrendbarReq): spot events then carry the forming bar
+            for (const [id, k] of ids) for (const per of new Set([...(tbs.get(k) || [])].map((x) => x.per))) {
+              if (dead) break;
+              try { await s.send(2135, { ctidTraderAccountId: c.accountId, symbolId: id, period: per }); tbSubbed.push([id, per]); } catch (e) { /* ticks still build the bar */ }
+            }
           } catch (e) {
             if (dead) return;
             ctl.fail(!!(e && (e.reconnect || e.status === 401)), e && e.reconnect ? 'Reconnect cTrader' : e && e.status === 404 ? e.message : '');
           }
         })();
-        return () => { dead = true; off.forEach((f) => f()); s.onDead = null; if (s.ws && !s.dead && subbed.length) s.send(2129, { ctidTraderAccountId: c.accountId, symbolId: subbed }).catch(() => {}); rel(); };
+        return () => {
+          dead = true; off.forEach((f) => f()); s.onDead = null;
+          if (s.ws && !s.dead) { for (const [id, per] of tbSubbed) s.send(2136, { ctidTraderAccountId: c.accountId, symbolId: id, period: per }).catch(() => {}); if (subbed.length) s.send(2129, { ctidTraderAccountId: c.accountId, symbolId: subbed }).catch(() => {}); }
+          rel();
+        };
       }
     });
+    h.tbs = tbs;
+    return h;
   },
-  subscribe(hub, ticker, timeframe, seed, onBar) { return hub.add(symbolOf(ticker), candleBuilder(timeframe, seed, onBar)); }
+  subscribe(hub, ticker, timeframe, seed, onBar) { return ctSub(hub, symbolOf(ticker), timeframe, seed, onBar); }
 };
 
 // ---------- the member's cTrader TRADING account as a chart feed (symbol search broker view, admins + beta testers) ----------
@@ -268,7 +310,7 @@ export function useTradeAccount(creds, freshTrade, deps, core) {
     id: 'ctacct', name: 'cTrader', symbolOf: ctKey,
     async info(t, c) {
       const k = ctKey(t); if (!k) return undefined;
-      let r = null, dg = 5; try { r = await symRec(c, k, D); const x = await sessionOf(c, D).call(2116, { symbolId: [r.id] }); const sd = ((x.payload && x.payload.symbol) || [])[0]; if (sd && Number.isInteger(+sd.digits)) dg = +sd.digits; } catch (e) { /* defaults */ }
+      let r = null, dg = 5; try { r = await symRec(c, k, D); const x = await sessionOf(c, D).call(2116, { symbolId: [r.id] }); const sd = ((x.payload && x.payload.symbol) || [])[0]; if (sd && Number.isInteger(+sd.digits)) dg = +sd.digits; if (sd && Number.isInteger(+sd.pipPosition)) QUOTES.setPip(k, Math.pow(10, -sd.pipPosition)); } catch (e) { /* defaults */ }
       const nm = k.slice(3), ps = Math.pow(10, Math.max(0, Math.min(dg, 8)));
       return { ticker: k, tickerid: 'BYO:' + k, prefix: 'BYO', description: ((r && r.desc) || nm) + ' · via cTrader', type: symbolOf(nm) ? (CRYPTO.test(nm) ? 'crypto' : 'forex') : 'cfd', market: symbolOf(nm) ? (CRYPTO.test(nm) ? 'crypto' : 'forex') : 'cfd', currency: '', mintick: 1 / ps, pricescale: ps, minmove: 1, pointvalue: 1, timezone: 'Etc/UTC', session: '24x7' };
     },
@@ -276,7 +318,7 @@ export function useTradeAccount(creds, freshTrade, deps, core) {
     check: async () => {},
     getBars: (c, t, tf, range) => ctrader.getBars.call({ ...ctrader, symbolOf: ctKey }, c, t, tf, range, D),
     hub: (c, onStatus) => ctrader.hub(c, onStatus, D),
-    subscribe(hub, t, tf, seed, onBar) { return hub.add(ctKey(t), candleBuilder(tf, seed, onBar)); }
+    subscribe(hub, t, tf, seed, onBar) { return ctSub(hub, ctKey(t), tf, seed, onBar); }
   };
   ROUTERS.ctacct = (kind, t) => kind === 'byo' && !!ctKey(t);
   const rec = core.statusRec('ctacct');

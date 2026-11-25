@@ -790,7 +790,7 @@ def check_stripe_void():
 def check_ctrader():
     """cTrader (data relay + admin-only trading relay, 23 Nov): allow-lists, per-type checks, gates, audit, idempotency, account lock,
     mocked cTrader end to end. tools/tests/ctrader*.test.mjs. No network, never a real order."""
-    ts = ('ctrader.test.mjs', 'ctrader-trade.test.mjs', 'ctrader-trade-link.test.mjs', 'ctrader-callback.test.mjs', 'ctrader-gate.test.mjs')
+    ts = ('ctrader.test.mjs', 'ctrader-gaps.test.mjs', 'ctrader-trade.test.mjs', 'ctrader-trade-link.test.mjs', 'ctrader-callback.test.mjs', 'ctrader-gate.test.mjs')
     for cmd, r in run_all([['node', 'tools/tests/' + t] for t in ts], timeout=180):
         if r.returncode != 0 or 'Error' in r.stderr:
             fail('ctrader ' + os.path.basename(cmd[1]) + ': ' + (r.stdout + r.stderr).strip()[-300:])

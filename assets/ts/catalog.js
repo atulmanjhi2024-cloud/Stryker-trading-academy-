@@ -1,10 +1,10 @@
 // TradeZoro thinkScript engine: the reference shown in the editor's Docs tab, autocomplete and hover. Pure (no DOM).
 //   catalog() -> [{ name, kind: 'function'|'study'|'constant'|'keyword'|'variable', sig, doc, insert }]
 // Signatures come from the engine itself (natives.js parameters, library.js inputs and plots), so they never drift.
-import { NATIVES, NS, NS_NAMES, BAR_FIELDS } from './natives.js?v=1295';
-import { LIBRARY } from './library.js?v=1295';
-import { DISPLAY } from './compiler.js?v=1295';
-import { parse } from './parser.js?v=1295';
+import { NATIVES, NS, NS_NAMES, BAR_FIELDS } from './natives.js?v=1296';
+import { LIBRARY } from './library.js?v=1296';
+import { DISPLAY } from './compiler.js?v=1296';
+import { parse } from './parser.js?v=1296';
 
 const D = {
   absvalue: 'Absolute value.', max: 'The larger of two values.', min: 'The smaller of two values.', round: 'Rounds to a number of decimal places.',

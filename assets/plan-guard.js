@@ -33,6 +33,8 @@
     const shell = document.querySelector('.dash-shell');
     if (gateOverlay) gateOverlay.style.display = 'none';
     if (shell) shell.classList.remove('gate-pending');
+    // Tell gate-timeout.js (if its notice is up) that access has resolved.
+    try { window.dispatchEvent(new Event('tz:gate-resolved')); } catch (e) {}
   }
 
   // If Firebase itself failed to load, there's no way to check access at
@@ -162,6 +164,11 @@
     handled = true;
 
     const pageKey = document.body.getAttribute('data-page-access');
+
+    // Ungated page (e.g. /charts): there is nothing to decide, so don't hold
+    // the page behind four Firestore reads on a slow phone connection. Reveal
+    // now; the reads below still run for sidebar lock marks / plan global.
+    if (!pageKey) revealPageContent();
 
     // Four independent reads — run them all at once rather than in stages.
     // The old version chained admin -> student -> (plans + pageAccess),

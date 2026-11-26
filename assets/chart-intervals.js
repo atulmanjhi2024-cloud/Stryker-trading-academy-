@@ -36,12 +36,12 @@
 // button, starred on add. TYPED INTERVALS: a digit or "," on the chart opens a small box ("5",
 // "4h", "1D", "15s", "100t") and Enter applies it; keys inside inputs are never taken.
 // No order or trade button anywhere here (Owner rule: no buying/selling on the website).
-import { liveSubscribe } from './chart-live-resume.js?v=1301';
-import { rtReady, rtToken, isRealtimeAdmin } from './rt-access.js?v=1301';
-import { hubLive, hubCovers } from './live-source.js?v=1301';
-import { noteBar, feedKey } from './chart-latency-core.js?v=1301';   // connection chip: "last update" per feed (assets/chart-latency.js)
-import { isFutures } from './chart-sym.js?v=1301';   // one futures test for every symbol form (CME_MINI:MNQ1!, MNQZ6 ...)
-import { parseMonth, isLiveMonth, feedOf, frontCode, label as monthLabel } from './fut-months.js?v=1301';
+import { liveSubscribe } from './chart-live-resume.js?v=1302';
+import { rtReady, rtToken, isRealtimeAdmin } from './rt-access.js?v=1302';
+import { hubLive, hubCovers } from './live-source.js?v=1302';
+import { noteBar, feedKey } from './chart-latency-core.js?v=1302';   // connection chip: "last update" per feed (assets/chart-latency.js)
+import { isFutures } from './chart-sym.js?v=1302';   // one futures test for every symbol form (CME_MINI:MNQ1!, MNQZ6 ...)
+import { parseMonth, isLiveMonth, feedOf, frontCode, label as monthLabel } from './fut-months.js?v=1302';
 
 const LS_FAVS = 'stryker_chart_iv_favs';
 const LS_COLLAPSED = 'stryker_chart_iv_collapsed';
@@ -276,12 +276,12 @@ const rootOfTicker = (ticker) => {
 // not a month, or the live month (its feed loaded): may read the root's trades
 const monthOk = (ticker, tf) => { const mo = parseMonth(ticker || ''); return !mo || (!!feedOf(mo.root) && !secTickBlock(tf, 'futures', ticker)); };
 // a contract month whose feed (front month + expiries) is not loaded yet: load it before deciding
-const monthFeedReady = (ticker) => { const mo = parseMonth(ticker || ''); return mo && !feedOf(mo.root) ? import('./chart-futures-provider.js?v=1301').then((m) => m.loadMonthFeed()).catch(() => null) : Promise.resolve(); };
+const monthFeedReady = (ticker) => { const mo = parseMonth(ticker || ''); return mo && !feedOf(mo.root) ? import('./chart-futures-provider.js?v=1302').then((m) => m.loadMonthFeed()).catch(() => null) : Promise.resolve(); };
 const onHub = (ticker) => hubLive() && hubCovers(rootOfTicker(ticker));
 function hubSecTickSubscribe(ticker, tf, onBar) {
   const root = rootOfTicker(ticker), kind = tf.slice(-1), n = Number(tf.slice(0, -1)) || 1;
   let stopped = false, stop = null, cur = null, count = 0;
-  rtReady().then(() => { if (stopped || !isRealtimeAdmin()) return; return import('./chart-futures-l2.js?v=1301'); }).then((m) => {
+  rtReady().then(() => { if (stopped || !isRealtimeAdmin()) return; return import('./chart-futures-l2.js?v=1302'); }).then((m) => {
     if (!m || stopped) return;
     stop = m.acquire(root, (f) => {
       if (!f || f.type !== 'ticks' || f.symbol !== root) return;
@@ -438,7 +438,7 @@ function secTickGetBars(provider, ticker, p, range) {
       if (!monthOk(ticker, tf)) return [];
       const root = rootOfTicker(ticker);
       // the old source answers once, strictly before the record's first bar (teGetBars); for hub roots it has nothing (the hub is live-only)
-      return import('./chart-tick-engine.js?v=1301').then((m) => m.teWanted(root, tf).then((on) => (on ? m.teGetBars(root, tf, range, p.kind === 'sec' ? (r) => futuresStreamBars(ticker, tf, r) : null).catch(() => futuresStreamBars(ticker, tf, range)) : futuresStreamBars(ticker, tf, range))));
+      return import('./chart-tick-engine.js?v=1302').then((m) => m.teWanted(root, tf).then((on) => (on ? m.teGetBars(root, tf, range, p.kind === 'sec' ? (r) => futuresStreamBars(ticker, tf, r) : null).catch(() => futuresStreamBars(ticker, tf, range)) : futuresStreamBars(ticker, tf, range))));
     });
   }
   const b = builderFor(provider, ticker, p.kind === 'tick' ? 'tick' : 'time', p.n);
@@ -469,7 +469,7 @@ function secTickSubscribe(provider, ticker, p, onBar) {
   if (provider === 'futures') {
     const tf = p.n + (p.kind === 'tick' ? 'T' : 'S');
     let stop = null, dead = false;
-    monthFeedReady(ticker).then(() => { if (!monthOk(ticker, tf)) throw new Error('month'); }).then(() => import('./chart-tick-engine.js?v=1301')).then((m) => { const root = rootOfTicker(ticker); return m.teWanted(root, tf).then((on) => { if (!dead) stop = on ? m.teSubscribe(root, tf, onBar, () => futuresStreamSubscribe(ticker, tf, onBar)) : futuresStreamSubscribe(ticker, tf, onBar); }); }).catch((e) => { if (!dead && !(e && e.message === 'month')) stop = futuresStreamSubscribe(ticker, tf, onBar); });
+    monthFeedReady(ticker).then(() => { if (!monthOk(ticker, tf)) throw new Error('month'); }).then(() => import('./chart-tick-engine.js?v=1302')).then((m) => { const root = rootOfTicker(ticker); return m.teWanted(root, tf).then((on) => { if (!dead) stop = on ? m.teSubscribe(root, tf, onBar, () => futuresStreamSubscribe(ticker, tf, onBar)) : futuresStreamSubscribe(ticker, tf, onBar); }); }).catch((e) => { if (!dead && !(e && e.message === 'month')) stop = futuresStreamSubscribe(ticker, tf, onBar); });
     return () => { dead = true; if (stop) stop(); };
   }
   const b = builderFor(provider, ticker, p.kind === 'tick' ? 'tick' : 'time', p.n);

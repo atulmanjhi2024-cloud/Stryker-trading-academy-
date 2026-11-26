@@ -1,8 +1,8 @@
 // TradeZoro — Charts PAPER TRADING (ES module, charts.html only)
-import * as TM from './chart-trade-menu.js?v=1301';
-import * as BP from './broker-pause.js?v=1301';   // one flag: broker connecting paused for members (Owner 23 Nov)
-import * as TV from './chart-tradeview.js?v=1301';   // Trade display: what the chart shows of the account (Owner 17 Nov)
-import { normFutures } from './chart-sym.js?v=1301';   // one futures test for every symbol form (CME_MINI:MNQ1!, MNQZ6 ...)
+import * as TM from './chart-trade-menu.js?v=1302';
+import * as BP from './broker-pause.js?v=1302';   // one flag: broker connecting paused for members (Owner 23 Nov)
+import * as TV from './chart-tradeview.js?v=1302';   // Trade display: what the chart shows of the account (Owner 17 Nov)
+import { normFutures } from './chart-sym.js?v=1302';   // one futures test for every symbol form (CME_MINI:MNQ1!, MNQZ6 ...)
 // Owner order 2026-10-12: "Add complete full demo/paper trading feature inside the charts, like
 // tradingview". Modelled on TradingView's Paper Trading, in our own look.
 //

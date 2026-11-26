@@ -17,7 +17,7 @@
 //   splitSym(sym)     -> [provider, ticker] with futures folded to ['futures', 'MNQ1!'] / ['futures', 'MNQZ2026'] (lower-case provider)
 //   FUT_EXCH          -> the CME Group exchange prefixes
 // Tests: tools/tests/chart-sym.test.mjs. Education only. Not financial advice.
-import { parseMonth } from './fut-months.js?v=1301';
+import { parseMonth } from './fut-months.js?v=1302';
 
 export const FUT_EXCH = /^(cme|cme_mini|cbot|cbot_mini|comex|comex_mini|nymex|nymex_mini)$/i;
 // The roots we chart or have heard of on CME Group; only used to accept a BARE ticker ('NQ1!', 'MNQZ6') as futures.

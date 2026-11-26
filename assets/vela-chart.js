@@ -440,7 +440,7 @@ function lateLayers(R){
 // panels (watchlist, news, GEX ladder, paper account, Charts bar replay, alerts). Charts page: BT is null, nothing changes.
 const BT = window.__stkBt || null;
 const VELA090 = window.__stkVela090 === true;
-const VELA_BASE = VELA090 ? './vendor/' + (window.__stkVelaDir || 'vela-0.9.0-s17') + '/' : './vendor/vela-0.6.17-s4/';
+const VELA_BASE = VELA090 ? './vendor/' + (window.__stkVelaDir || 'vela-0.9.0-s16') + '/' : './vendor/vela-0.6.17-s4/';
 // One-time migration for members whose saved workspace still carries the old
 // Vela theme defaults (see migrateTvLook below).
 const TV_LOOK_KEY = 'stryker_chart_tv_look';
@@ -940,6 +940,7 @@ function lateLists(provider){
   let Safe = { phone: false, active: false };
   if (!BT) { try { Safe = (await import('./chart-safe-mode.js?v=1302')).createSafeMode(PERSIST_KEY); if (Safe.ready) await Safe.ready; } catch (e) { console.warn('TradeZoro: safe mode', e); } }   // (ready: asks other open tabs if they are alive, max 250 ms, only when one has a mark)
   let FormulaMod = null, FormulaNorm = null;
+  let IndiaMod = null; try { IndiaMod = await import('./chart-india.js?v=1302'); } catch (e) { console.warn('TradeZoro: india', e); }   // Indian markets NSE / BSE, admin + beta only (assets/chart-india.js)
   let DxyMod = null; try { DxyMod = await import('./chart-dxy.js?v=1302'); } catch (e) { console.warn('TradeZoro: dxy', e); }   // calculated dollar index (assets/chart-dxy.js)
   try { [FormulaMod, { normalizeSymbol: FormulaNorm }] = await Promise.all([import('./chart-formula.js?v=1302'), import('./chart-watchlist.js?v=1302')]); } catch (e) { console.warn('TradeZoro: formula', e); }
   try {
@@ -979,6 +980,7 @@ function lateLists(provider){
         // Spot forex pairs (same /api/chart/bars endpoint, Yahoo "=X" series, delayed).
         fx: Replay.wrapFactory(Iv.wrapFactory(() => new (BYO.withByo(FxProvider, 'fx'))(), 'fx'), 'fx'),
         // Calculated US Dollar Index "DXY": candles computed from six fx pairs (assets/chart-dxy.js).
+        ...(IndiaMod ? { india: Replay.wrapFactory(Iv.wrapFactory(() => lateLists(new IndiaMod.IndiaProvider()), 'india', 6000), 'india') } : {}),
         ...(DxyMod ? { dxy: Replay.wrapFactory(Iv.wrapFactory(() => new DxyMod.DxyProvider(), 'dxy'), 'dxy') } : {}),
         // Indices & ETFs (SPX NDX VIX RUT QQQ SPY IWM DIA): same endpoint, Yahoo, delayed; admin live candle from the hub's quote frames.
         idx: Replay.wrapFactory(Iv.wrapFactory(() => new (BYO.withByo(IdxProvider, 'idx'))(), 'idx'), 'idx'),
@@ -1249,7 +1251,7 @@ function legendFold(R) {
     .catch((e) => console.warn('TradeZoro: data banner', e));
   // Data-status dot by each symbol (green real-time / amber delayed / grey closed): assets/chart-data-dot.js.
   import('./chart-data-dot.js?v=1302')
-    .then((m) => m.installDataDot(ws, { rith: rithRef, FuturesProvider, FxProvider, IdxProvider, stockStatus: Stocks.stockStatus, onStockMeta: Stocks.onStockMeta }))
+    .then((m) => m.installDataDot(ws, { rith: rithRef, FuturesProvider, FxProvider, IdxProvider, stockStatus: Stocks.stockStatus, indiaStatus: IndiaMod && IndiaMod.indiaStatus, onStockMeta: Stocks.onStockMeta }))
     .catch((e) => console.warn('TradeZoro: data dot', e));
   // Contract-month charts (futures:MESZ2026, 25 Nov): "MES · Dec 2026 · CME" header, expiry chip, roll switch, empty-month note
   import('./chart-fut-month.js?v=1302').then((m) => m.installFutMonth(ws, { loadFeed: FuturesProvider.loadMonthFeed })).catch((e) => console.warn('TradeZoro: contract months', e));

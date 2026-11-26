@@ -124,6 +124,7 @@ function decFor(sym, price){
   if (isFut(sym) && tick[r] != null) return tick[r];
   if (provOf(sym) === 'fx') return /JPY$/.test(r) ? 3 : 5;
   if (provOf(sym) === 'dxy') return 3;
+  if (provOf(sym) === 'india') return 2;
   if (!Number.isFinite(price)) return 2;
   const a = Math.abs(price);
   return a >= 1000 ? 2 : a >= 1 ? 2 : a >= 0.01 ? 4 : 6;
@@ -159,6 +160,7 @@ function symIndex(feed){
 // Normalise anything a member types or uploads to one of OUR symbols, or null.
 // Accepts "NQ1!", "NQ", "CME_MINI:NQ1!", "futures:NQ1!", "BTCUSDT", "BINANCE:BTCUSDT", "binance:BTCUSDT".
 import { canonicalSymbol as canonicalFormula } from './chart-formula-core.js?v=1302';
+import { entryOf as indiaEntry } from './india-core.js?v=1302';
 import { symLogoOf } from './symbol-logos.js?v=1302';
 import { isFutures, monthOfSym } from './chart-sym.js?v=1302';   // one futures test for every symbol form (CME_MINI:MNQ1!, MNQZ6 ...)
 export function normalizeSymbol(raw, feed){
@@ -170,6 +172,8 @@ export function normalizeSymbol(raw, feed){
   const m = /^([A-Za-z_]+):(.+)$/.exec(s);
   let pre = m ? m[1].toLowerCase() : '';
   let t = (m ? m[2] : s).trim().toUpperCase();
+  // Indian markets (NSE / BSE): "india:NIFTY", "NSE:RELIANCE", "BSE:SENSEX", "NIFTY1!". Admin + beta audience only (assets/india-core.js INDIA_AUDIENCE).
+  if (globalThis.__tzIndiaOk && (pre === 'india' || pre === 'nse' || pre === 'bse' || !pre)) { const ie = indiaEntry(s); if (ie) return ie.sym; }
   if (pre === 'futures' || !pre || /^(cme|cme_mini|cbot|cbot_mini|comex|comex_mini|nymex|nymex_mini)$/.test(pre)) {
     const r = t.replace(/1!$/, '');
     if (FUT_ROOTS.includes(r)) return 'futures:' + r + '1!';

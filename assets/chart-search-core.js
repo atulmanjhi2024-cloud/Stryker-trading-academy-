@@ -11,9 +11,9 @@ export const CRYPTO_VENUES = ['binance', 'coinbase', 'hyperliquid', 'bybit', 'ok
 export const VENUE_LABEL = {
   cme: 'CME', cbot: 'CBOT', comex: 'COMEX', nymex: 'NYMEX', nasdaq: 'NASDAQ', nyse: 'NYSE', amex: 'AMEX', arca: 'NYSE Arca',
   index: 'Index', fx: 'Forex', binance: 'Binance', coinbase: 'Coinbase', hyperliquid: 'Hyperliquid', bybit: 'Bybit', okx: 'OKX',
-  bitget: 'Bitget', kraken: 'Kraken', vest: 'Vest'
+  bitget: 'Bitget', kraken: 'Kraken', vest: 'Vest', nse: 'NSE', bse: 'BSE'
 };
-export const VENUE_ORDER = ['cme', 'cbot', 'comex', 'nymex', 'nyse', 'nasdaq', 'amex', 'arca', 'index', 'fx', 'binance', 'coinbase', 'bybit', 'okx', 'hyperliquid', 'kraken', 'bitget', 'vest'];
+export const VENUE_ORDER = ['cme', 'cbot', 'comex', 'nymex', 'nyse', 'nasdaq', 'amex', 'arca', 'index', 'nse', 'bse', 'fx', 'binance', 'coinbase', 'bybit', 'okx', 'hyperliquid', 'kraken', 'bitget', 'vest'];
 
 const low = (s) => String(s == null ? '' : s).toLowerCase();
 export const symOf = (d) => { const v = d.prefix ?? d.provider; return v ? v + ':' + d.ticker : d.ticker; };
@@ -48,6 +48,7 @@ export function venueOf(d) {
   if (p === 'futures') return low(d.prefix || d.exchange || 'cme');
   if (p === 'fx') return 'fx';
   if (p === 'dxy') return 'index';
+  if (p === 'india') return low(d.exchange) || 'nse';   // NSE / BSE chips
   if (p === 'idx' || p === 'stocks') { const e = low(d.exchange).replace(/^nyse ?arca$/, 'arca'); return e || 'index'; }
   return p || low(d.prefix);
 }
@@ -109,6 +110,7 @@ export function scoreRow(d, q) {
   if (BIG.includes(base) || BIG.includes(root)) s += 30;
   if (pr && !pr.perp) s += 4;
   if (pr && (pr.quote === 'USDT' || pr.quote === 'USD')) s += 6;
+  if (low(d.provider) === 'india') s += 12;   // Indian symbols outrank world-stock look-alikes of the same ticker
   if (low(d.provider) === 'binance') s += 3;
   if (low(d.provider) === 'futures') s += 8;
   return { score: s, hit };

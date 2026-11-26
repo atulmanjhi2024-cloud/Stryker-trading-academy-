@@ -37,6 +37,7 @@ const IDX = /^idx:/i;
 // Bybit blocks some countries (providers/bybit.js sets window.__stkVenueBlocked.bybit on a 403 / refused request).
 const BYBIT_BLOCKED = "Bybit isn't available in your region. Pick another exchange in symbol search.";
 const blockedVenue = (v) => !!(window.__stkVenueBlocked && window.__stkVenueBlocked[v]);
+const INDIA = /^india:/i;
 const STOCKS = /^stocks:/i;   // STOCKS ENGINE (assets/chart-stocks-provider.js stockStatus)
 
 let nyFmt = null;
@@ -152,6 +153,7 @@ export function installDataDot(ws, opts = {}) {
       const m = lag.get(key);
       return { s: 'delayed', text: 'Delayed data' + (m && m.min ? ' · about ' + m.min + ' min' : ''), tag: 'Delayed' + (m && m.min ? ' ' + m.min + 'm' : '') };
     }
+    if (INDIA.test(sym)) { try { return opts.indiaStatus ? opts.indiaStatus(sym) : null; } catch (e) { return null; } }   // NSE / BSE: delay + holidays read from the provider (assets/chart-india.js)
     if (STOCKS.test(sym)) { try { return opts.stockStatus ? opts.stockStatus(sym) : null; } catch (e) { return null; } }
     if (IDX.test(sym)) {
       const now = Date.now(), k = rootOf(sym);
@@ -324,6 +326,7 @@ export function installDataDot(ws, opts = {}) {
   try { if (opts.onStockMeta) opts.onStockMeta(schedule); } catch (e) {}   // a stock answer landed: re-read its line
   window.addEventListener('stryker:l2live', schedule);
   window.addEventListener('tz:byo', schedule);
+  window.addEventListener('stryker:india', schedule);   // the provider's delay answer arrived
   if (rith && rith.client && rith.client.on) { try { rith.client.on((ev) => { if (ev && ev.type === 'state') schedule(); }); } catch (e) {} }
   // Market open/close and the lag re-measure: a light timer, plus straight away when the tab returns.
   setInterval(() => { if (!document.hidden) sync(); }, TICK_MS);

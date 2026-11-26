@@ -44,7 +44,7 @@ put('ZB ZN ZF ZT UB TN ZQ SR3', GL.bond); put('ZC ZS ZW ZL ZM KE ZO', GL.grain);
 put('6E M6E E7', 'fx:EURUSD'); put('6B M6B', 'fx:GBPUSD'); put('6J', 'fx:JPYUSD'); put('6A M6A', 'fx:AUDUSD'); put('6C', 'fx:CADUSD'); put('6S', 'fx:CHFUSD'); put('6N', 'fx:NZDUSD'); put('6M', 'fx:MXNUSD');
 put('BTC MBT', 'c:btc'); put('ETH MET', 'c:eth');
 const USD = '<clipPath id="slgus"><circle cx="12" cy="12" r="12"/></clipPath><g clip-path="url(#slgus)"><rect width="24" height="24" fill="#fff"/><g fill="#d6313a"><rect y="0" width="24" height="3.4"/><rect y="6.8" width="24" height="3.4"/><rect y="13.7" width="24" height="3.4"/><rect y="20.6" width="24" height="3.4"/></g><rect width="12.5" height="10.2" fill="#123a7a"/><g fill="#fff"><circle cx="3.2" cy="2.6" r=".8"/><circle cx="7" cy="2.6" r=".8"/><circle cx="10.4" cy="2.6" r=".8"/><circle cx="5.1" cy="5.2" r=".8"/><circle cx="8.7" cy="5.2" r=".8"/><circle cx="3.2" cy="7.7" r=".8"/><circle cx="7" cy="7.7" r=".8"/><circle cx="10.4" cy="7.7" r=".8"/></g></g>';   // DXY: the US flag (drawn here)
-const INDEX = { DXY: USD, USDX: USD, SPX: IDX.sp, SPXW: IDX.sp, GSPC: IDX.sp, NDX: IDX.ndx, IXIC: IDX.ndx, DJI: IDX.dow, DJIA: IDX.dow, US30: IDX.dow, NAS100: IDX.ndx, US100: IDX.ndx, USTEC: IDX.ndx, SPX500: IDX.sp, US500: IDX.sp, RUT: IDX.rut, VIX: GL.vix, VVIX: GL.vix, NIFTY: GL.nifty, NIFTY50: GL.nifty, BANKNIFTY: GL.bank, NIFTYBANK: GL.bank };
+const INDEX = { DXY: USD, USDX: USD, SPX: IDX.sp, SPXW: IDX.sp, GSPC: IDX.sp, NDX: IDX.ndx, IXIC: IDX.ndx, DJI: IDX.dow, DJIA: IDX.dow, US30: IDX.dow, NAS100: IDX.ndx, US100: IDX.ndx, USTEC: IDX.ndx, SPX500: IDX.sp, US500: IDX.sp, RUT: IDX.rut, VIX: GL.vix, VVIX: GL.vix, NIFTY: GL.nifty, NIFTY50: GL.nifty, BANKNIFTY: GL.bank, NIFTYBANK: GL.bank, FINNIFTY: GL.bank, SENSEX: GL.nifty };
 const FUT_ROOTS = Object.keys(FUT).sort((a, b) => b.length - a.length);
 // fund issuers: ticker -> logo file (issuer mark). Not listed -> description, then the initials badge.
 const ETF = {};
@@ -90,6 +90,13 @@ export function resolve(prefix, ticker, desc, type) {
   if (CRYPTO_V.includes(p) || ty === 'crypto') {
     const b = stripQ(T), c = coin(b);
     return c || { k: 'badge', t: b, coin: 1 };
+  }
+  if (p === 'india') {   // Indian markets: indices (and their futures) use the index marks; stocks the IN- logo files
+    const r = T.replace(/1!$/, '');
+    if (INDEX[r]) return { k: 'svg', html: INDEX[r], t: r };
+    const a = 'IN-' + r.replace(/[^A-Z0-9_]/g, '');
+    if (a in M.s) return { k: 'img', src: DIR + 's/' + a + '.webp', f: M.s[a], t: r };
+    return { k: 'badge', t: r };
   }
   if (INDEX[T] && (ty === 'index' || p === 'idx' || p === '' || !M.s[T])) return { k: 'svg', html: INDEX[T], t: T };
   // stocks / ETFs / OTC: exchange-prefixed tickers ("NASDAQ:AAPL") and share-class dots

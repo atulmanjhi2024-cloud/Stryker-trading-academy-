@@ -3,8 +3,8 @@
 // LIVE: each leg is subscribed through the fx provider; when a leg's candle moves the index candle is rebuilt from the last
 // few bars of all six and pushed, at most once per THROTTLE_MS. The pairs are polled (not tick-streamed) so the index
 // refreshes at their rate. Education only. Not financial advice.
-import { FxProvider } from './chart-futures-provider.js?v=1298';
-import { PAIRS, combine, DESCRIPTION } from './chart-dxy-core.js?v=1298';
+import { FxProvider } from './chart-futures-provider.js?v=1299';
+import { PAIRS, combine, DESCRIPTION } from './chart-dxy-core.js?v=1299';
 
 const TAIL = 4, THROTTLE_MS = 1000, TICK = 0.001;
 const tickerOk = (t) => /^(DXY|USDX|DX1?!?)$/i.test(String(t || '').replace(/^[A-Za-z_]+:/, '').trim());

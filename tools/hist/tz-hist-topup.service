@@ -11,3 +11,4 @@ Environment=INSIGHTSENTRY_ENV=/root/.hermes/profiles/chief-of-staff/scripts/insi
 Environment=FEEDER_ENV=/root/projects/book-feeder/feeder.env
 ExecStart=/usr/bin/python3 /opt/tz-hist/backfill_m1.py --symbols NQ,ES --days 3 --redo-days 2 --out /var/lib/tz-hist --post
 ExecStart=/usr/bin/python3 /opt/tz-hist/backfill_is_m1.py --symbols YM,RTY,MNQ,MES,GC,CL --days 3 --redo-days 2 --out /var/lib/tz-hist --post
+ExecStart=/usr/bin/python3 /opt/tz-hist/fix_opens.py --symbols NQ,ES --days 3 --out /var/lib/tz-hist --post

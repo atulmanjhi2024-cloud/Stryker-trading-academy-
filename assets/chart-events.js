@@ -1,3 +1,4 @@
+import { canvasesOf, rectOf } from './chart-hit-cache.js?v=1303';
 // TradeZoro — Charts: economic events, session breaks, regular-hours shading
 // (ES module, charts.html only). Owner order 2026-10-06 ("Build all", Settings window stage 4).
 //
@@ -187,10 +188,10 @@ let tip = null;
 const fmtIST = new Intl.DateTimeFormat('en-GB', { timeZone: IST, weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
 function onMove(e){
   let found = null, rect = null;
-  for (const cv of document.querySelectorAll('canvas[data-stk-events]')) {
+  for (const cv of canvasesOf('data-stk-events')) {
     const bx = hitBoxes.get(cv);
     if (!bx || !bx.length) continue;               // no markers on this chart: no layout read
-    const r = cv.getBoundingClientRect();
+    const r = rectOf(cv, e);
     const x = e.clientX - r.left, y = e.clientY - r.top;
     if (x < 0 || y < 0 || x > r.width || y > r.height) continue;
     for (const b of hitBoxes.get(cv) || []) if (Math.abs(b.x - x) <= 7 && Math.abs(b.y - y) <= 8) { found = b; rect = r; break; }

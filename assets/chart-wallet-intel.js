@@ -1,3 +1,4 @@
+import { canvasesOf, rectOf } from './chart-hit-cache.js?v=1303';
 // TradeZoro — "Wallet Intel" chart indicator for Hyperliquid charts (free for everyone, signed-out included). ES module.
 // Owner order 2026-11-07: who traded a candle, where tracked wallets' liquidation prices and stop orders cluster, and which tracked
 // wallets have orders at a book level. Data: the book-recorder Worker's /hl-candle /hl-clusters /hl-level /hl-wallet (src/hl.js,
@@ -330,10 +331,10 @@ export function _xy(t, price) {
   return { x: r.left + co.timeToX(t), y: r.top + co.priceToY(price, h.a.scale, h.a.bounds), boxes: h.boxes.map((b) => ({ x: r.left + (b.x0 + b.x1) / 2, y: r.top + (b.y0 + b.y1) / 2, kind: b.c.kind, px: b.c.px, ntl: b.c.ntl })) };
 }
 function hitAt(e) {
-  for (const cv of document.querySelectorAll('canvas[data-stk-wi]')) {
+  for (const cv of canvasesOf('data-stk-wi')) {
     const h = hits.get(cv); if (!h || !h.a) continue;
     if (e.target && e.target.closest && e.target.closest('.stkhll-fab')) return null;
-    const r = cv.getBoundingClientRect(), x = e.clientX - r.left, y = e.clientY - r.top;
+    const r = rectOf(cv, e), x = e.clientX - r.left, y = e.clientY - r.top;
     if (x < 0 || y < 0 || x > r.width || y > r.height) continue;
     let best = null;
     for (const b of h.boxes) if (x >= b.x0 && x <= b.x1 && y >= b.y0 && y <= b.y1 && (!best || b.c.ntl > best.c.ntl)) best = b;

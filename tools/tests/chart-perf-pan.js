@@ -142,12 +142,14 @@ async function open(b, scen, dpr) {
   if (process.env.DBG) p.on('console', (m) => console.log('CON', m.type(), m.text().slice(0, 160)));
   await p.waitForFunction((bare) => { try { const ws = window.STRYKER_VELA; return ws && (bare ? ws.cell(ws.active.id).chart.renderer.renderer.coords.barCount > 20 : window.__stkHeavyReady); } catch (e) { return false; } }, scen === 'bare', { timeout: 90000 }).catch(async (e) => { console.log('boot state', await p.evaluate(() => ({ heavy: !!window.__stkHeavyReady, ws: !!window.STRYKER_VELA, fc: !!window.__stkFirstCandles }))); throw e; });
   if (scen !== 'bare') {
+    if (process.env.PINE) await p.evaluate((src) => { window.__PINE_SRC = src; window.__pineRuns = 0; const o = Worker.prototype.postMessage; Worker.prototype.postMessage = function () { window.__pineRuns++; try { const m = arguments[0]; (window.__pineTypes = window.__pineTypes || {})[(m && (m.kind)) || typeof m] = (((window.__pineTypes || {})[(m && (m.kind)) || typeof m]) || 0) + 1; } catch (e) {} return o.apply(this, arguments); }; }, fs.readFileSync(path.join(__dirname, 'fixtures/scriptlag/qt-style.pine'), 'utf8'));
     await p.evaluate(async ([fp, hm, nat]) => {
       const ws = window.STRYKER_VELA;
       ws.active.setSymbol('futures:NQ1!'); ws.active.setTimeframe('1');
       for (let i = 0; i < 120; i++) { await new Promise((r) => setTimeout(r, 250)); const c = ws.chart; if (c.market.symbol === 'futures:NQ1!' && c.market.timeframe === '1' && c.orchestrator.rawBars.length > 300) break; }
       ws.chart.addNativeIndicator('stk_gex', {});
       for (const t of (nat || '').split(',').filter(Boolean)) ws.chart.addNativeIndicator(t, {});   // NATIVES=ema,bollinger-bands,rsi,vwap,vpvr,macd
+      if (window.__PINE_SRC) { const r = await window.STRYKER_PINE.runOnChart(ws.chart, window.__PINE_SRC, {}); window.__pineRes = r && r.ok; await new Promise((r2) => setTimeout(r2, 4000)); }   // PINE=1: a QT-style script (many plots + labels)
       if (hm) ws.chart.addNativeIndicator('stk_fut_dom', window.__HM_INPUTS || {});
       if (fp) ws.active.setPriceStyle('stk_fp');
       try { ws.context().stateChanged(); } catch (e) {}

@@ -20,7 +20,7 @@ const FONT = '600 11px -apple-system, BlinkMacSystemFont, "Trebuchet MS", Roboto
 const NO_PRICE = new Set(['vline', 'text', 'note', 'callout', 'comment', 'pricenote', 'pricelabel', 'signpost', 'fibtimezones', 'trendfibtime', 'iconstamp', 'flagmark', 'arrowmarkup', 'arrowmarkdown', 'magnifier', 'anchoredvwap', 'fixedrangevp']);
 const LINES = new Set(['hline', 'hray']);
 const TRADE_KEY = 'stk_axtags_trade';
-let WS = null, started = false, tradeOn = true;
+let paints = 0, WS = null, started = false, tradeOn = true;
 try { tradeOn = localStorage.getItem(TRADE_KEY) !== '0'; } catch (e) {}
 const ASK_COLOR = '#ef5350';   // soft red (Owner 25 Nov: no harsh red lines)
 const baKey = () => { let u = ''; try { u = (window.firebase && firebase.auth().currentUser || {}).uid || ''; } catch (e) {} return 'stk_bidask_' + (u || 'guest'); };
@@ -58,9 +58,10 @@ function stateOf(R) {
 // list: [{ price, color, text? }]; text defaults to the price in the symbol's decimals (the same formatter as the axis).
 export function setTags(R, key, list) {
   const s = R && stateOf(R); if (!s) return;
+  s.dirty = true;
   if (list && list.length) s.tags.set(key, list); else s.tags.delete(key);
 }
-export function setTradeTags(on) { tradeOn = !!on; try { localStorage.setItem(TRADE_KEY, on ? '1' : '0'); } catch (e) {} }
+export function setTradeTags(on) { tradeOn = !!on; for (const c of cellsOf()) { const R = rendererOf(c), s = R && states.get(R); if (s) s.dirty = true; } try { localStorage.setItem(TRADE_KEY, on ? '1' : '0'); } catch (e) {} }
 export const tradeTagsOn = () => tradeOn;
 export function drawingTagOn(d) { return !d.style || d.style.axisTag !== false; }
 
@@ -218,9 +219,28 @@ function watchDialogs() {
 
 export function mountAxisTags(ws) {
   WS = ws; if (started) return; started = true;
-  window.__stkAxisTags = { setTags, setTradeTags, get tradeTagsOn() { return tradeOn; }, boxes, layout, rendererOf, cellsOf, bidAskOn, setBidAsk };
-  const tick = () => {
-    if (!document.hidden) for (const cell of cellsOf()) { const R = rendererOf(cell); if (R) { try { paint(cell, R); } catch (e) { console.warn('TradeZoro axis tags', e); } } }
+  window.__stkAxisTags = { get paints() { return paints; }, setTags, setTradeTags, get tradeTagsOn() { return tradeOn; }, boxes, layout, rendererOf, cellsOf, bidAskOn, setBidAsk };
+  // Event-driven (AUTO-SCRIPTLAG2): the engine's renderFrame (every pan / zoom / data change / drawing edit) marks the cell dirty;
+  // the rAF loop only paints dirty cells, so an idle or unchanged frame costs a flag check, not an item list.
+  // A live broker quote (bid/ask) is compared per frame (two numbers); a 500 ms safety repaint covers anything else.
+  const hook = (R) => {
+    if (R.__stkAxHook) return; R.__stkAxHook = true;
+    const orig = R.renderFrame;
+    if (typeof orig !== 'function') return;
+    R.renderFrame = function () { const r = orig.apply(this, arguments); const s = states.get(R); if (s) s.dirty = true; else this.__stkAxDirty = true; return r; };
+  };
+  const tick = (now) => {
+    if (!document.hidden) for (const cell of cellsOf()) {
+      const R = rendererOf(cell); if (!R) continue;
+      hook(R);
+      const s = states.get(R);
+      let due = !s || s.dirty || R.__stkAxDirty || now - (s.last || 0) > 500;
+      if (!due && s.q !== undefined) { const Q = window.__stkQuotes, q = Q && cell.symbol ? Q.get(cell.symbol, R.scene && R.scene.priceMintick) : null, k = q ? q.bid + '/' + q.ask : ''; if (k !== s.q) due = true; }
+      if (!due) continue;
+      R.__stkAxDirty = false; paints++;
+      try { paint(cell, R); } catch (e) { console.warn('TradeZoro axis tags', e); }
+      const s2 = states.get(R); if (s2) { s2.dirty = false; s2.last = now; s2.q = ''; try { const Q = window.__stkQuotes, q = Q && cell.symbol ? Q.get(cell.symbol, R.scene && R.scene.priceMintick) : null; s2.q = q ? q.bid + '/' + q.ask : ''; } catch (e) {} }
+    }
     requestAnimationFrame(tick);
   };
   requestAnimationFrame(tick);

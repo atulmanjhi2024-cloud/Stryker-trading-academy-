@@ -19,6 +19,7 @@
 // DATA: book-recorder /news and /cal (edge-cached; the server feeder is the only caller of the
 // vendor). Education only. Not financial advice.
 
+import { canvasesOf, rectOf } from './chart-hit-cache.js?v=1303';
 import { RECORDER, newsSymOf, fetchNews, replayNow } from './chart-news.js?v=1303';
 
 const PRICING = '/pricing';
@@ -308,10 +309,10 @@ function layer() {
 let tip = null, pop = null;
 const fmt = (ms) => new Date(ms).toLocaleString([], { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', hour12: false });
 function findHit(e) {
-  for (const cv of document.querySelectorAll('canvas[data-stk-nm]')) {
+  for (const cv of canvasesOf('data-stk-nm')) {
     const bx = hits.get(cv);
     if (!bx || !bx.length) continue;
-    const r = cv.getBoundingClientRect();
+    const r = rectOf(cv, e);
     const x = e.clientX - r.left, y = e.clientY - r.top;
     if (x < 0 || y < 0 || x > r.width || y > r.height) continue;
     for (const b of bx) if (Math.abs(b.x - x) <= b.r && Math.abs(b.y - y) <= (b.ry || b.r)) return { b, r };

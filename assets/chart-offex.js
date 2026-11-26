@@ -1,3 +1,4 @@
+import { canvasesOf, rectOf } from './chart-hit-cache.js?v=1303';
 // TradeZoro — "Off-exchange Volume" chart indicator (native, lower pane + price levels). Free. ES module.
 // Owner order 2026-11-04 ("Build everything").
 //
@@ -196,9 +197,9 @@ function layer() {
 }
 let tip = null, pinned = false;
 function find(e) {
-  for (const cv of document.querySelectorAll('canvas[data-stk-offex]')) {
+  for (const cv of canvasesOf('data-stk-offex')) {
     const bx = hits.get(cv); if (!bx || !bx.length) continue;
-    const r = cv.getBoundingClientRect(), x = e.clientX - r.left, y = e.clientY - r.top;
+    const r = rectOf(cv, e), x = e.clientX - r.left, y = e.clientY - r.top;
     for (const b of bx) if (Math.abs(b.x - x) <= b.w / 2 && Math.abs(b.y - y) <= b.h / 2) return { b, r };
   }
   return null;

@@ -46,7 +46,7 @@ window.STRYKER_VELA = new VelaWorkspace('#vela-chart', {
 });
 const LINES = +(new URLSearchParams(location.search).get('lines') || 0);
 if (LINES) (async () => {
-  for (let k = 0; k < 120; k++) { try { const c = window.STRYKER_VELA.cell(window.STRYKER_VELA.active.id).chart; if (c.renderer.renderer.coords.barCount > 20) { for (let i = 0; i < LINES; i++) c.addNativeIndicator('ema', { inputs: { length: 5 + i * 7 } }); window.__perfLines = LINES; return; } } catch (e) {} await new Promise((r) => setTimeout(r, 250)); }
+  for (let k = 0; k < 120; k++) { try { const c = window.STRYKER_VELA.cell(window.STRYKER_VELA.active.id).chart; if (c.renderer.renderer.coords.barCount > 20) { if (new URLSearchParams(location.search).get('mix')) { for (const t of ['ema', 'bollinger-bands', 'rsi', 'vwap', 'vpvr', 'macd'].slice(0, LINES)) c.addNativeIndicator(t, { inputs: {} }); } else for (let i = 0; i < LINES; i++) c.addNativeIndicator('ema', { inputs: { length: 5 + i * 7 } }); window.__perfLines = LINES; return; } } catch (e) {} await new Promise((r) => setTimeout(r, 250)); }
 })();
 </script>
 </body>

@@ -138,19 +138,20 @@ async function open(b, scen, dpr) {
   const p = await ctx.newPage();
   const errors = [];
   p.on('pageerror', (e) => errors.push(String(e).slice(0, 200)));
-  await p.goto(BASE + (scen === 'bare' ? '/tools/tests/perf-bare-vela.html?eng=' + (process.env.ENG || '') + '&lines=' + (process.env.LINES || 0) : '/charts.html'), { waitUntil: 'domcontentloaded' });
+  await p.goto(BASE + (scen === 'bare' ? '/tools/tests/perf-bare-vela.html?eng=' + (process.env.ENG || '') + '&lines=' + (process.env.LINES || 0) + (process.env.MIX ? '&mix=1' : '') : '/charts.html'), { waitUntil: 'domcontentloaded' });
   if (process.env.DBG) p.on('console', (m) => console.log('CON', m.type(), m.text().slice(0, 160)));
   await p.waitForFunction((bare) => { try { const ws = window.STRYKER_VELA; return ws && (bare ? ws.cell(ws.active.id).chart.renderer.renderer.coords.barCount > 20 : window.__stkHeavyReady); } catch (e) { return false; } }, scen === 'bare', { timeout: 90000 }).catch(async (e) => { console.log('boot state', await p.evaluate(() => ({ heavy: !!window.__stkHeavyReady, ws: !!window.STRYKER_VELA, fc: !!window.__stkFirstCandles }))); throw e; });
   if (scen !== 'bare') {
-    await p.evaluate(async ([fp, hm]) => {
+    await p.evaluate(async ([fp, hm, nat]) => {
       const ws = window.STRYKER_VELA;
       ws.active.setSymbol('futures:NQ1!'); ws.active.setTimeframe('1');
       for (let i = 0; i < 120; i++) { await new Promise((r) => setTimeout(r, 250)); const c = ws.chart; if (c.market.symbol === 'futures:NQ1!' && c.market.timeframe === '1' && c.orchestrator.rawBars.length > 300) break; }
       ws.chart.addNativeIndicator('stk_gex', {});
+      for (const t of (nat || '').split(',').filter(Boolean)) ws.chart.addNativeIndicator(t, {});   // NATIVES=ema,bollinger-bands,rsi,vwap,vpvr,macd
       if (hm) ws.chart.addNativeIndicator('stk_fut_dom', window.__HM_INPUTS || {});
       if (fp) ws.active.setPriceStyle('stk_fp');
       try { ws.context().stateChanged(); } catch (e) {}
-    }, [scen === 'heavy' || scen === 'fp', scen === 'heavy' || scen === 'hm']);
+    }, [scen === 'heavy' || scen === 'fp', scen === 'heavy' || scen === 'hm', process.env.NATIVES || '']);
   }
   if (scen === 'bare' && +process.env.LINES) await p.waitForFunction(() => window.__perfLines > 0, null, { timeout: 60000 });
   await sleep(scen === 'bare' ? 3000 : 9000);   // indicators fetch + first paint, history pager settles

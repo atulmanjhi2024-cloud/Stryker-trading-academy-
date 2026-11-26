@@ -144,7 +144,8 @@ export function mountVenueLogos(ws) {
     a.style.background = 'none'; a.replaceChildren(l);
   });
   paintAvatars();
-  new MutationObserver(() => { paintAvatars(); relabel(); }).observe(document.body, { childList: true, subtree: true });
+  let relQ = 0;   // the chart touches the DOM on every pan frame; a label fix 120 ms late is invisible, a full-document query per frame is not
+  new MutationObserver(() => { if (relQ) return; relQ = setTimeout(() => { relQ = 0; paintAvatars(); relabel(); }, 120); }).observe(document.body, { childList: true, subtree: true });
   try { ws.on('state:changed', paintHeader); } catch (e) {}
   const hdr = document.querySelector('.vela-widget-symbol');
   if (hdr) new MutationObserver(paintHeader).observe(hdr, { childList: true });

@@ -50,7 +50,7 @@
     sc.id = 'tz-beta-report-js'; sc.src = '/assets/beta-report.js?v=' + (b ? b.content : '0'); document.head.appendChild(sc);
   }
   function boot() {
-    if (typeof MutationObserver !== 'undefined' && document.body) { hydrate(); new MutationObserver(function () { hydrate(); }).observe(document.body, { childList: true, subtree: true }); }
+    if (typeof MutationObserver !== 'undefined' && document.body) { hydrate(); var hq = 0; new MutationObserver(function () { if (hq) return; hq = setTimeout(function () { hq = 0; hydrate(); }, 150); }).observe(document.body, { childList: true, subtree: true }); }
     if (window.firebase && firebase.auth) firebase.auth().onAuthStateChanged(function (u) {
       if (u) ready().then(function (s) { if (s && s.beta) loadReport(); }); else { st = null; try { sessionStorage.removeItem(KEY); } catch (e) {} }
     });

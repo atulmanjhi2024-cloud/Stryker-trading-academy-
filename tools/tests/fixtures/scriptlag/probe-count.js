@@ -1,0 +1,1 @@
+(() => { if (window.__qsaN != null) return 0; window.__qsaN = 0; const o = Document.prototype.querySelectorAll; Document.prototype.querySelectorAll = function (s) { if (/vela-widget-symbol|data-beta-uid|vela-sl-avatar/.test(s)) window.__qsaN++; return o.apply(this, arguments); }; return 1; })()

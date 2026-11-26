@@ -1,4 +1,4 @@
-import { canvasesOf, rectOf } from './chart-hit-cache.js?v=1303';
+import { canvasesOf, rectOf } from './chart-hit-cache.js?v=1304';
 // TradeZoro — "Wallet Intel" chart indicator for Hyperliquid charts (free for everyone, signed-out included). ES module.
 // Owner order 2026-11-07: who traded a candle, where tracked wallets' liquidation prices and stop orders cluster, and which tracked
 // wallets have orders at a book level. Data: the book-recorder Worker's /hl-candle /hl-clusters /hl-level /hl-wallet (src/hl.js,
@@ -598,7 +598,7 @@ export function mountWalletIntel(ws) {
     get isOpen() { return open; }, get view() { return view; }, _xy
   };
   window.__stkWalletIntel = api;
-  import('./chart-hl-ladders.js?v=1303').then((m) => m.mountLadders(ws, host)).catch((e) => console.warn('TradeZoro: ladders', e));
+  import('./chart-hl-ladders.js?v=1304').then((m) => m.mountLadders(ws, host)).catch((e) => console.warn('TradeZoro: ladders', e));
   return api;
 }
 

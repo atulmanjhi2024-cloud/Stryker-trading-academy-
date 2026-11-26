@@ -4,8 +4,8 @@
 // > 0 = the "N min delayed" tag. Live: the newest page is re-read every POLL_MS (the server shares one provider call between viewers).
 // GATE: INDIA_AUDIENCE in assets/india-core.js (admins + beta testers while 'beta'; the server enforces it too). A member outside the audience
 // sees no Indian symbol in search and the provider answers with no bars. Education only. Not financial advice.
-import { FuturesProvider } from './chart-futures-provider.js?v=1303';
-import { INDIA, entryOf, INDIA_AUDIENCE, audienceOk, calendar, isOpen, nextOpen } from './india-core.js?v=1303';
+import { FuturesProvider } from './chart-futures-provider.js?v=1304';
+import { INDIA, entryOf, INDIA_AUDIENCE, audienceOk, calendar, isOpen, nextOpen } from './india-core.js?v=1304';
 
 const POLL_MS = 6000;
 const INFO = new Map();      // ticker -> { delay, tick, pv, session } (answers only)

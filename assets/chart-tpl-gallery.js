@@ -7,7 +7,7 @@
 // (tools/tests/chart-tpl-thumbs.js regenerates them). They are labelled "Sample data" on the cards.
 // Education only. Not financial advice. A template is a way to set up a chart, not a signal.
 
-import { kindOf, locked, upgrade, proTag } from './chart-pro-gate.js?v=1303';
+import { kindOf, locked, upgrade, proTag } from './chart-pro-gate.js?v=1304';
 
 // Anchors for the composite templates, computed when the template is applied: UTC midnight of the 1st / of this week's Monday.
 const monthStart = () => { const d = new Date(); return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1); };
@@ -149,8 +149,8 @@ export const FILTERS = [
 function thumb(t, cls) {
   const base = 'assets/images/templates/' + t.id;
   return el('div', { class: cls }, [
-    el('img', { class: 'stkt-th-d', src: base + '.webp?v=1303', alt: '', width: '640', height: '360', loading: 'lazy', decoding: 'async' }),
-    el('img', { class: 'stkt-th-l', src: base + '-light.webp?v=1303', alt: '', width: '640', height: '360', loading: 'lazy', decoding: 'async' }),
+    el('img', { class: 'stkt-th-d', src: base + '.webp?v=1304', alt: '', width: '640', height: '360', loading: 'lazy', decoding: 'async' }),
+    el('img', { class: 'stkt-th-l', src: base + '-light.webp?v=1304', alt: '', width: '640', height: '360', loading: 'lazy', decoding: 'async' }),
     el('span', { class: 'stkt-ov' }, [el('span', { class: 'stkt-tf', text: tfLabel(t.tf) }), proKinds(t).length ? proTag() : null]),
     el('span', { class: 'stkt-sample', text: 'Sample data' })
   ]);

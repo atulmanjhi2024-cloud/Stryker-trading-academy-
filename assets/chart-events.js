@@ -1,4 +1,4 @@
-import { canvasesOf, rectOf } from './chart-hit-cache.js?v=1303';
+import { canvasesOf, rectOf } from './chart-hit-cache.js?v=1304';
 // TradeZoro — Charts: economic events, session breaks, regular-hours shading
 // (ES module, charts.html only). Owner order 2026-10-06 ("Build all", Settings window stage 4).
 //

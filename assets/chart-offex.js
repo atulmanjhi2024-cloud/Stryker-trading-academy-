@@ -1,4 +1,4 @@
-import { canvasesOf, rectOf } from './chart-hit-cache.js?v=1303';
+import { canvasesOf, rectOf } from './chart-hit-cache.js?v=1304';
 // TradeZoro — "Off-exchange Volume" chart indicator (native, lower pane + price levels). Free. ES module.
 // Owner order 2026-11-04 ("Build everything").
 //

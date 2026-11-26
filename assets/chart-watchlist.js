@@ -159,10 +159,10 @@ function symIndex(feed){
 
 // Normalise anything a member types or uploads to one of OUR symbols, or null.
 // Accepts "NQ1!", "NQ", "CME_MINI:NQ1!", "futures:NQ1!", "BTCUSDT", "BINANCE:BTCUSDT", "binance:BTCUSDT".
-import { canonicalSymbol as canonicalFormula } from './chart-formula-core.js?v=1303';
-import { entryOf as indiaEntry } from './india-core.js?v=1303';
-import { symLogoOf } from './symbol-logos.js?v=1303';
-import { isFutures, monthOfSym } from './chart-sym.js?v=1303';   // one futures test for every symbol form (CME_MINI:MNQ1!, MNQZ6 ...)
+import { canonicalSymbol as canonicalFormula } from './chart-formula-core.js?v=1304';
+import { entryOf as indiaEntry } from './india-core.js?v=1304';
+import { symLogoOf } from './symbol-logos.js?v=1304';
+import { isFutures, monthOfSym } from './chart-sym.js?v=1304';   // one futures test for every symbol form (CME_MINI:MNQ1!, MNQZ6 ...)
 export function normalizeSymbol(raw, feed){
   let s = String(raw || '').trim().replace(/^["']|["']$/g, '');
   if (!s) return null;
